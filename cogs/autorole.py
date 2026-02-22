@@ -107,7 +107,7 @@ class AutoroleView(discord.ui.LayoutView):
         main.add_item(discord.ui.Separator())
 
         # =====================================================
-        # JOINROLE ERKLÄRUNG + BUTTON RECHTS
+        # JOINROLE ERKLÄRUNG + BUTTON
         # =====================================================
 
         main.add_item(discord.ui.TextDisplay(
@@ -143,13 +143,11 @@ class AutoroleView(discord.ui.LayoutView):
 
         toggle_join.callback = toggle_join_cb
 
-        # ActionRow sorgt für korrektes Layout (rechts daneben)
         main.add_item(discord.ui.ActionRow(toggle_join))
-
         main.add_item(discord.ui.Separator())
 
         # =====================================================
-        # BOTROLE ERKLÄRUNG + BUTTON RECHTS
+        # BOTROLE ERKLÄRUNG + BUTTON
         # =====================================================
 
         main.add_item(discord.ui.TextDisplay(
@@ -185,9 +183,7 @@ class AutoroleView(discord.ui.LayoutView):
 
         toggle_bot.callback = toggle_bot_cb
 
-        # WICHTIG: Button in ActionRow einfügen
         main.add_item(discord.ui.ActionRow(toggle_bot))
-
         main.add_item(discord.ui.Separator())
 
         # =====================================================
@@ -238,7 +234,7 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         role_join.callback = role_join_cb
-        main.add_item(role_join)
+        main.add_item(discord.ui.ActionRow(role_join))
 
         main.add_item(discord.ui.Separator())
 
@@ -290,7 +286,7 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         role_bot.callback = role_bot_cb
-        main.add_item(role_bot)
+        main.add_item(discord.ui.ActionRow(role_bot))
 
         main.add_item(discord.ui.Separator())
 
