@@ -370,34 +370,54 @@ logging.basicConfig(
 async def rotating_presence(bot):
     await bot.wait_until_ready()
 
+    server_count = 0
+    member_count = 0
+    last_update = 0
+
     while not bot.is_closed():
 
-        server_count = len(bot.guilds)
-        member_count = sum(g.member_count for g in bot.guilds)
+        now = datetime.now()
+        current_time = now.timestamp()
+
+        # 🔄 Stats nur alle 5 Minuten neu berechnen
+        if current_time - last_update > 300:
+            server_count = len(bot.guilds)
+            member_count = sum(g.member_count or 0 for g in bot.guilds)
+            last_update = current_time
+
+        # 🇩🇪 Deutsche Tausendertrennung
+        server_str = f"{server_count:,}".replace(",", ".")
+        member_str = f"{member_count:,}".replace(",", ".")
+
+        # 🌙 Nachts automatisch idle (00:00 – 06:00)
+        if 0 <= now.hour < 6:
+            status = discord.Status.idle
+        else:
+            status = discord.Status.online
 
         activities = [
             discord.Activity(
                 type=discord.ActivityType.watching,
-                name=f"{server_count:,} Server"
+                name=f"🌍 {server_str} Server"
             ),
             discord.Activity(
                 type=discord.ActivityType.watching,
-                name=f"{member_count:,} Mitglieder"
+                name=f"👥 {member_str} Mitglieder"
             ),
             discord.Activity(
                 type=discord.ActivityType.watching,
-                name="Interaktives Setup"
+                name="⚙️ Interaktives Setup"
             ),
             discord.Activity(
                 type=discord.ActivityType.watching,
-                name="Modernes Ticket-System"
+                name="🎫 Modernes Ticket-System"
             ),
         ]
 
         for activity in activities:
             await bot.change_presence(
                 activity=activity,
-                status=discord.Status.online
+                status=status
             )
             await asyncio.sleep(30)
 
