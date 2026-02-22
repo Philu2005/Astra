@@ -752,16 +752,6 @@ async def on_ready():
         async with conn.cursor() as cur:
             # Tabelle erstellen, falls sie noch nicht existiert
 
-            await cur.execute("""
-                CREATE TABLE IF NOT EXISTS website_stats (
-                    id INT PRIMARY KEY,
-                    servercount INT,
-                    usercount INT,
-                    commandCount INT,
-                    channelCount INT
-                )
-            """)
-
             # Prüfen, ob Zeile mit id=1 existiert
             await cur.execute("SELECT id FROM website_stats WHERE id=1")
             result = await cur.fetchone()
