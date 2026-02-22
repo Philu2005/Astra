@@ -153,6 +153,7 @@ class Astra(commands.Bot):
 
     async def setup_hook(self):
         try:
+            self.loop.create_task(rotating_presence(self))
             bot.owner_id = 789555434201677824
             self.topggpy = topgg.DBLClient(self, dbl_token)
             bot.topgg_webhook = topgg.WebhookManager(bot).dbl_webhook("/dblwebhook", dbl_password)
@@ -365,6 +366,40 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+async def rotating_presence(bot):
+    await bot.wait_until_ready()
+
+    while not bot.is_closed():
+
+        server_count = len(bot.guilds)
+        member_count = sum(g.member_count for g in bot.guilds)
+
+        activities = [
+            discord.Activity(
+                type=discord.ActivityType.watching,
+                name=f"{server_count:,} Server"
+            ),
+            discord.Activity(
+                type=discord.ActivityType.watching,
+                name=f"{member_count:,} Mitglieder"
+            ),
+            discord.Activity(
+                type=discord.ActivityType.watching,
+                name="Interaktives Setup"
+            ),
+            discord.Activity(
+                type=discord.ActivityType.watching,
+                name="Modernes Ticket-System"
+            ),
+        ]
+
+        for activity in activities:
+            await bot.change_presence(
+                activity=activity,
+                status=discord.Status.online
+            )
+            await asyncio.sleep(30)
 
 class VoteView(discord.ui.View):
     def __init__(self):
@@ -732,12 +767,6 @@ async def on_ready():
                     "UPDATE website_stats SET servercount=%s, usercount=%s, commandCount=%s, channelCount=%s WHERE id=1",
                     (servercount, usercount, commandCount, channelCount)
                 )
-
-            # Dein bisheriger Präsenz- und Command-Teil
-            await bot.change_presence(
-                activity=discord.Game('Astra V2 out now! 💙'),
-                status=discord.Status.online
-            )
             global bot_ready
             bot_ready = True
             logging.info("[API] Bot marked as READY")
