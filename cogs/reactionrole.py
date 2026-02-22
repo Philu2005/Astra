@@ -331,190 +331,21 @@ class CancelButton(ui.Button):
         await interaction.response.send_message("<:Astra_x:1141303954555289600> Reaktionsrollen-Setup abgebrochen.", ephemeral=True)
         self.view.stop()
 
-class ReactionRole(commands.Cog):
+
+@app_commands.guild_only()
+class ReactionRoleGroup(app_commands.Group):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-
-        # Group direkt hier registrieren
-        self.group = ReactionRoleGroup(self)
-        self.bot.tree.add_command(self.group)
-
-    # =============================================
-    # PERSISTENTE VIEW ERSTELLEN
-    # =============================================
-
-    async def setup_persistent_view(self, role_data, style) -> ui.View:
-        view = ui.View(timeout=None)
-
-        def make_button_callback(rid):
-            async def callback(i: Interaction):
-                role = i.guild.get_role(rid)
-
-                if not role:
-                    return await i.response.send_message(
-                        "Rolle existiert nicht mehr.",
-                        ephemeral=True
-                    )
-
-                if role in i.user.roles:
-                    await i.user.remove_roles(role)
-                    await i.response.send_message(
-                        f"Rolle **{role.name}** entfernt.",
-                        ephemeral=True
-                    )
-                else:
-                    await i.user.add_roles(role)
-                    await i.response.send_message(
-                        f"Rolle **{role.name}** vergeben.",
-                        ephemeral=True
-                    )
-            return callback
-
-        # ================= BUTTON STYLE =================
-
-        if style.lower() in ["buttons", "button"]:
-            for r in role_data:
-                btn = ui.Button(
-                    label=r["label"],
-                    emoji=r["emoji"],
-                    style=discord.ButtonStyle.secondary,
-                    custom_id=f"role_button_{r['role_id']}"
-                )
-                btn.callback = make_button_callback(r["role_id"])
-                view.add_item(btn)
-
-        # ================= SELECT STYLE =================
-
-        else:
-            options = []
-
-            for r in role_data:
-                emoji = None
-
-                if r["emoji"]:
-                    if r["emoji"].startswith("<"):
-                        match = re.match(r"<a?:([a-zA-Z0-9_~]+):(\d+)>", r["emoji"])
-                        if match:
-                            emoji = discord.PartialEmoji(
-                                name=match.group(1),
-                                id=int(match.group(2))
-                            )
-                    else:
-                        emoji = r["emoji"]
-
-                options.append(
-                    discord.SelectOption(
-                        label=r["label"],
-                        value=str(r["role_id"]),
-                        emoji=emoji
-                    )
-                )
-
-            select = ui.Select(
-                placeholder="Wähle deine Rolle aus...",
-                options=options,
-                custom_id="reactionrole_select",
-                min_values=0,
-                max_values=len(options)
-            )
-
-            async def select_callback(i: Interaction):
-                selected = [int(v) for v in select.values]
-                added, removed = [], []
-                user_roles = [r.id for r in i.user.roles]
-
-                for option in options:
-                    rid = int(option.value)
-                    role = i.guild.get_role(rid)
-
-                    if not role:
-                        continue
-
-                    if rid in selected and rid not in user_roles:
-                        await i.user.add_roles(role)
-                        added.append(role.name)
-
-                    elif rid not in selected and rid in user_roles:
-                        await i.user.remove_roles(role)
-                        removed.append(role.name)
-
-                msg = []
-
-                if added:
-                    msg.append(f"Rollen vergeben: {', '.join(added)}")
-
-                if removed:
-                    msg.append(f"Rollen entfernt: {', '.join(removed)}")
-
-                if msg:
-                    await i.response.send_message("\n".join(msg), ephemeral=True)
-                else:
-                    await i.response.defer()
-
-            select.callback = select_callback
-            view.add_item(select)
-
-        return view
-
-    # =============================================
-    # BOT RESTART → VIEWS WIEDERHERSTELLEN
-    # =============================================
-
-    @commands.Cog.listener()
-    async def on_ready(self):
-
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-
-                await cursor.execute(
-                    "SELECT message_id, style FROM reactionrole_messages"
-                )
-
-                rows = await cursor.fetchall()
-
-                for msg_id, style in rows:
-
-                    await cursor.execute(
-                        "SELECT role_id, label, emoji "
-                        "FROM reactionrole_entries "
-                        "WHERE message_id = %s",
-                        (msg_id,)
-                    )
-
-                    role_data = [
-                        {"role_id": rid, "label": label, "emoji": emoji}
-                        for rid, label, emoji in await cursor.fetchall()
-                    ]
-
-                    view = await self.setup_persistent_view(role_data, style)
-                    self.bot.add_view(view, message_id=msg_id)
-
-
-# =========================================================
-# GROUP (JETZT AN COG GEBUNDEN)
-# =========================================================
-
-class ReactionRoleGroup(app_commands.Group):
-
-    def __init__(self, cog: ReactionRole):
         super().__init__(
             name="reactionrole",
-            description="ReactionRole Verwaltung"
+            description="Verwalte ReactionRole Panels"
         )
-        self.cog = cog
-        self.bot = cog.bot
-
-    # ================= ERSTELLEN =================
 
     @app_commands.command(
         name="erstellen",
-        description="Erstellt eine Reaction-Role-Nachricht."
+        description="Erstelle ein ReactionRole Panel."
     )
-    @app_commands.describe(
-        style="Art der Auswahl: 'buttons' oder 'select'."
-    )
-    @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_roles=True)
     async def erstellen(
         self,
@@ -555,40 +386,31 @@ class ReactionRoleGroup(app_commands.Group):
 
         role_data = view.role_data
 
-        view_final = await self.cog.setup_persistent_view(role_data, style)
+        cog = self.bot.get_cog("ReactionRole")
+        view_final = await cog.setup_persistent_view(role_data, style)
 
-        msg = await interaction.channel.send(
-            embed=embed,
-            view=view_final
-        )
-
+        msg = await interaction.channel.send(embed=embed, view=view_final)
         self.bot.add_view(view_final, message_id=msg.id)
 
-        async with interaction.client.pool.acquire() as conn:
+        async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
 
                 await cursor.execute("""
-                    INSERT INTO reactionrole_messages 
-                    (message_id, guild_id, channel_id, style, embed_title,
-                     embed_description, embed_color, embed_image, embed_thumbnail)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO reactionrole_messages
+                    (message_id, guild_id, channel_id, style)
+                    VALUES (%s,%s,%s,%s)
                 """, (
                     msg.id,
                     interaction.guild.id,
                     interaction.channel.id,
-                    style,
-                    embed_data["title"],
-                    embed_data["description"],
-                    f"{embed_data['color']:06x}",
-                    embed_data["image"],
-                    embed_data["thumbnail"]
+                    style
                 ))
 
                 for r in role_data:
                     await cursor.execute("""
                         INSERT INTO reactionrole_entries
                         (message_id, role_id, label, emoji)
-                        VALUES (%s, %s, %s, %s)
+                        VALUES (%s,%s,%s,%s)
                     """, (
                         msg.id,
                         r["role_id"],
@@ -596,31 +418,24 @@ class ReactionRoleGroup(app_commands.Group):
                         r["emoji"]
                     ))
 
-                await conn.commit()
-
-    # ================= ANZEIGEN =================
-
     @app_commands.command(
         name="anzeigen",
-        description="Zeigt und verwaltet alle ReactionRole Panels."
+        description="Zeige alle ReactionRole Panels."
     )
-    @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_roles=True)
     async def anzeigen(self, interaction: discord.Interaction):
 
-        async with interaction.client.pool.acquire() as conn:
+        async with self.bot.pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
-
                 await cursor.execute(
                     "SELECT * FROM reactionrole_messages WHERE guild_id = %s",
                     (interaction.guild.id,)
                 )
-
                 panels = await cursor.fetchall()
 
         if not panels:
             return await interaction.response.send_message(
-                "❌ Es existieren keine ReactionRole Panels.",
+                "Keine Panels vorhanden.",
                 ephemeral=True
             )
 
@@ -632,9 +447,150 @@ class ReactionRoleGroup(app_commands.Group):
         )
 
 
-# =========================================================
-# SETUP
-# =========================================================
+class ReactionRole(commands.Cog):
 
-async def setup(bot: commands.Bot):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    async def setup_persistent_view(self, role_data, style) -> ui.View:
+        view = ui.View(timeout=None)
+
+        def make_button_callback(rid):
+            async def callback(i: discord.Interaction):
+                role = i.guild.get_role(rid)
+
+                if not role:
+                    return await i.response.send_message(
+                        "Rolle existiert nicht mehr.",
+                        ephemeral=True
+                    )
+
+                if role in i.user.roles:
+                    await i.user.remove_roles(role)
+                    await i.response.send_message(
+                        f"Rolle **{role.name}** entfernt.",
+                        ephemeral=True
+                    )
+                else:
+                    await i.user.add_roles(role)
+                    await i.response.send_message(
+                        f"Rolle **{role.name}** vergeben.",
+                        ephemeral=True
+                    )
+            return callback
+
+        if style.lower() in ["buttons", "button"]:
+            for r in role_data:
+                btn = ui.Button(
+                    label=r["label"],
+                    emoji=r["emoji"],
+                    style=discord.ButtonStyle.secondary,
+                    custom_id=f"role_button_{r['role_id']}"
+                )
+                btn.callback = make_button_callback(r["role_id"])
+                view.add_item(btn)
+
+        else:
+            options = []
+
+            for r in role_data:
+                emoji = None
+
+                if r["emoji"]:
+                    if r["emoji"].startswith("<"):
+                        match = re.match(r"<a?:([a-zA-Z0-9_~]+):(\d+)>", r["emoji"])
+                        if match:
+                            emoji = discord.PartialEmoji(
+                                name=match.group(1),
+                                id=int(match.group(2))
+                            )
+                    else:
+                        emoji = r["emoji"]
+
+                options.append(
+                    discord.SelectOption(
+                        label=r["label"],
+                        value=str(r["role_id"]),
+                        emoji=emoji
+                    )
+                )
+
+            select = ui.Select(
+                placeholder="Wähle deine Rolle aus...",
+                options=options,
+                custom_id="reactionrole_select",
+                min_values=0,
+                max_values=len(options)
+            )
+
+            async def select_callback(i: discord.Interaction):
+                selected = [int(v) for v in select.values]
+                user_roles = [r.id for r in i.user.roles]
+
+                added, removed = [], []
+
+                for option in options:
+                    rid = int(option.value)
+                    role = i.guild.get_role(rid)
+
+                    if not role:
+                        continue
+
+                    if rid in selected and rid not in user_roles:
+                        await i.user.add_roles(role)
+                        added.append(role.name)
+
+                    elif rid not in selected and rid in user_roles:
+                        await i.user.remove_roles(role)
+                        removed.append(role.name)
+
+                msg = []
+
+                if added:
+                    msg.append(f"Rollen vergeben: {', '.join(added)}")
+
+                if removed:
+                    msg.append(f"Rollen entfernt: {', '.join(removed)}")
+
+                if msg:
+                    await i.response.send_message("\n".join(msg), ephemeral=True)
+                else:
+                    await i.response.defer()
+
+            select.callback = select_callback
+            view.add_item(select)
+
+        return view
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+
+                await cursor.execute(
+                    "SELECT message_id, style FROM reactionrole_messages"
+                )
+
+                rows = await cursor.fetchall()
+
+                for msg_id, style in rows:
+
+                    await cursor.execute(
+                        "SELECT role_id, label, emoji "
+                        "FROM reactionrole_entries "
+                        "WHERE message_id = %s",
+                        (msg_id,)
+                    )
+
+                    role_data = [
+                        {"role_id": rid, "label": label, "emoji": emoji}
+                        for rid, label, emoji in await cursor.fetchall()
+                    ]
+
+                    view = await self.setup_persistent_view(role_data, style)
+                    self.bot.add_view(view, message_id=msg_id)
+
+
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(ReactionRole(bot))
+    bot.tree.add_command(ReactionRoleGroup(bot))
