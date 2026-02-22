@@ -91,7 +91,7 @@ class AutoroleView(discord.ui.LayoutView):
         self.clear_items()
 
         main = discord.ui.Container(
-            accent_color=discord.Colour.blurple().value
+            accent_color=discord.Colour.blue().value
         )
 
         # =====================================================
