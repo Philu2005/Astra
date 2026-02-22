@@ -331,7 +331,6 @@ class CancelButton(ui.Button):
         await interaction.response.send_message("<:Astra_x:1141303954555289600> Reaktionsrollen-Setup abgebrochen.", ephemeral=True)
         self.view.stop()
 
-
 class ReactionRoleGroup(app_commands.Group):
     def __init__(self, cog: "ReactionRole"):
         super().__init__(
@@ -581,3 +580,8 @@ class ReactionRole(commands.Cog):
 
                     view = await self.setup_persistent_view(role_data, style)
                     self.bot.add_view(view, message_id=msg_id)
+
+
+async def setup(bot):
+    await bot.add_cog(ReactionRole(bot))
+    bot.tree.add_command(ReactionRoleGroup(bot))
