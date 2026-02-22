@@ -584,4 +584,3 @@ class ReactionRole(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(ReactionRole(bot))
-    bot.tree.add_command(ReactionRoleGroup(bot))
