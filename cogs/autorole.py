@@ -110,9 +110,7 @@ class AutoroleView(discord.ui.LayoutView):
         # JOINROLE ERKLÄRUNG + BUTTON RECHTS
         # =====================================================
 
-        join_top = discord.ui.Container()
-
-        join_top.add_item(discord.ui.TextDisplay(
+        main.add_item(discord.ui.TextDisplay(
             "## 👋 Joinrole System\n"
             "Vergibt automatisch eine festgelegte Rolle an neue Mitglieder, "
             "sobald sie dem Server beitreten.\n\n"
@@ -126,9 +124,9 @@ class AutoroleView(discord.ui.LayoutView):
         toggle_join = discord.ui.Button(
             label="Aktivieren" if not self.join_enabled else "Deaktivieren",
             emoji="<:Astra_light_on:1141303864134467675>" if not self.join_enabled
-                  else "<:Astra_x:1141303954555289600>",
+            else "<:Astra_x:1141303954555289600>",
             style=discord.ButtonStyle.success if not self.join_enabled
-                  else discord.ButtonStyle.danger
+            else discord.ButtonStyle.danger
         )
 
         async def toggle_join_cb(interaction: discord.Interaction):
@@ -144,20 +142,20 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         toggle_join.callback = toggle_join_cb
-        join_top.add_item(toggle_join)
 
-        main.add_item(join_top)
+        # ActionRow sorgt für korrektes Layout (rechts daneben)
+        main.add_item(discord.ui.ActionRow(toggle_join))
+
         main.add_item(discord.ui.Separator())
 
         # =====================================================
         # BOTROLE ERKLÄRUNG + BUTTON RECHTS
         # =====================================================
 
-        bot_top = discord.ui.Container()
-
-        bot_top.add_item(discord.ui.TextDisplay(
+        main.add_item(discord.ui.TextDisplay(
             "## 🤖 Botrole System\n"
-            "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu.\n\n"
+            "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu, "
+            "sobald sie deinem Server beitreten.\n\n"
             "Perfekt geeignet für:\n"
             "• Bot-Kategorien\n"
             "• Rechteverwaltung für Bots\n"
@@ -168,9 +166,9 @@ class AutoroleView(discord.ui.LayoutView):
         toggle_bot = discord.ui.Button(
             label="Aktivieren" if not self.bot_enabled else "Deaktivieren",
             emoji="<:Astra_light_on:1141303864134467675>" if not self.bot_enabled
-                  else "<:Astra_x:1141303954555289600>",
+            else "<:Astra_x:1141303954555289600>",
             style=discord.ButtonStyle.success if not self.bot_enabled
-                  else discord.ButtonStyle.danger
+            else discord.ButtonStyle.danger
         )
 
         async def toggle_bot_cb(interaction: discord.Interaction):
@@ -186,9 +184,10 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         toggle_bot.callback = toggle_bot_cb
-        bot_top.add_item(toggle_bot)
 
-        main.add_item(bot_top)
+        # WICHTIG: Button in ActionRow einfügen
+        main.add_item(discord.ui.ActionRow(toggle_bot))
+
         main.add_item(discord.ui.Separator())
 
         # =====================================================
