@@ -46,16 +46,28 @@ class joinrole(commands.Cog):
     async def on_member_join(self, member):
         if member.bot:
             return
-        try:
-            async with self.bot.pool.acquire() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute(f"SELECT roleID FROM joinrole WHERE guildID = {member.guild.id}")
-                    result = await cursor.fetchone()
-                    roless = discord.utils.get(member.guild.roles, id=int(result[0]))
 
-                    await member.add_roles(roless)
-        except:
-            pass
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT roleID FROM joinrole WHERE guildID = %s",
+                    (member.guild.id,)
+                )
+                result = await cursor.fetchone()
+
+        if result is None:
+            return
+
+        role = discord.utils.get(member.guild.roles, id=int(result[0]))
+        if role is None:
+            return
+
+        try:
+            await member.add_roles(role)
+        except discord.Forbidden:
+            print("Bot-Rolle ist nicht hoch genug.")
+        except Exception as e:
+            print(f"Joinrole Fehler: {e}")
 
     @app_commands.command(name="joinrole", description="Verwalte die Joinrolle für neue Mitglieder auf diesem Server.")
     @app_commands.guild_only()
@@ -66,75 +78,94 @@ class joinrole(commands.Cog):
         """Lege eine Joinrolle für deinen Server fest."""
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
+
                 if interaction.user.bot:
                     return
-                else:
-                    if argument == "Einschalten":
-                        await cursor.execute(f"SELECT roleID FROM joinrole WHERE guildID = {interaction.guild.id}")
-                        result = await cursor.fetchone()
-                        if result is None:
-                            await cursor.execute(f"INSERT INTO joinrole (roleID, guildID) VALUES (%s, %s)",
-                                                 (role.id, interaction.guild.id))
 
-                            embed = discord.Embed(colour=discord.Colour.orange(),
-                                                  description=f"Joinrole gesetzt auf: {role.mention}")
-                            embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
-                                             icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
-                            embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
-                            await interaction.response.send_message(embed=embed)
-                        if result is not None:
-                            await cursor.execute(
-                                f"UPDATE joinrole SET roleID = {str(role.id)} WHERE guildID = {str(interaction.guild.id)}")
+                if argument == "Einschalten":
 
-                            embed = discord.Embed(colour=discord.Colour.orange(),
-                                                  description=f"Joinrole geändert zu: {role.mention}")
-                            embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
-                                             icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
-                            embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
-                            await interaction.response.send_message(embed=embed)
-                    if argument == "Ausschalten":
-                        await cursor.execute(f"SELECT roleID FROM joinrole WHERE guildID = {interaction.guild.id}")
-                        result = await cursor.fetchone()
-                        if result is None:
-                            return
-                        if result is not None:
-                            roleID = result
-                            if int(role.id, ) in roleID:
-                                await cursor.execute(
-                                    f"DELETE FROM joinrole WHERE roleID = {role.id} AND guildID = {interaction.guild.id}")
-                                embed = discord.Embed(colour=discord.Colour.orange(),
-                                                      description=f"Joinrole entfernt: {role.mention}")
-                                embed.set_footer(
-                                    text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
-                                    icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
-                                embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
-                                await interaction.response.send_message(embed=embed)
-                            else:
-                                embed = discord.Embed(colour=discord.Colour.orange(),
-                                                      description=f"Keine Joinrole gesetzt. Füge eine mit `/joinrole add` hinzu.")
-                                embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
-                                embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
-                                                 icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
-                                await interaction.response.send_message(embed=embed)
-                    if argument == "Anzeigen":
-                        await cursor.execute(f"SELECT roleID FROM joinroles WHERE guildID = {interaction.guild.id}")
-                        result = await cursor.fetchone()
-                        if result is not None:
-                            roless = discord.utils.get(interaction.guild.roles, id=int(result[0]))
+                    if role is None:
+                        await interaction.response.send_message("Du musst eine Rolle angeben.", ephemeral=True)
+                        return
 
-                            embed = discord.Embed(colour=discord.Colour.orange(),
-                                                  description=f"Joinrole dieses Servers: {roless.mention}")
-                            embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
-                            embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
-                                             icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
-                            await interaction.response.send_message(embed=embed)
-                        if result is None:
-                            embed = discord.Embed(colour=discord.Colour.orange(),
-                                                  description=f"Keine Joinrole gesetzt. Füge eine mit `/joinrole add` hinzu")
-                            embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
-                            embed.set_footer(text="Make sure that my role is higher than the joinrole",
-                                             icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
-                            await interaction.response.send_message(embed=embed)
+                    await cursor.execute(
+                        "SELECT roleID FROM joinrole WHERE guildID = %s",
+                        (interaction.guild.id,)
+                    )
+                    result = await cursor.fetchone()
+
+                    if result is None:
+                        await cursor.execute(
+                            "INSERT INTO joinrole (roleID, guildID) VALUES (%s, %s)",
+                            (role.id, interaction.guild.id)
+                        )
+                        text = f"Joinrole gesetzt auf: {role.mention}"
+                    else:
+                        await cursor.execute(
+                            "UPDATE joinrole SET roleID = %s WHERE guildID = %s",
+                            (role.id, interaction.guild.id)
+                        )
+                        text = f"Joinrole geändert zu: {role.mention}"
+
+                    await conn.commit()
+
+                    embed = discord.Embed(colour=discord.Colour.orange(),
+                                          description=text)
+                    embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
+                                     icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
+                    embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+                    await interaction.response.send_message(embed=embed)
+
+                if argument == "Ausschalten":
+
+                    await cursor.execute(
+                        "SELECT roleID FROM joinrole WHERE guildID = %s",
+                        (interaction.guild.id,)
+                    )
+                    result = await cursor.fetchone()
+
+                    if result is None:
+                        await interaction.response.send_message("Keine Joinrole gesetzt.", ephemeral=True)
+                        return
+
+                    await cursor.execute(
+                        "DELETE FROM joinrole WHERE guildID = %s",
+                        (interaction.guild.id,)
+                    )
+
+                    await conn.commit()
+
+                    embed = discord.Embed(colour=discord.Colour.orange(),
+                                          description="Joinrole entfernt.")
+                    embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
+                                     icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
+                    embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+                    await interaction.response.send_message(embed=embed)
+
+                if argument == "Anzeigen":
+
+                    await cursor.execute(
+                        "SELECT roleID FROM joinrole WHERE guildID = %s",
+                        (interaction.guild.id,)
+                    )
+                    result = await cursor.fetchone()
+
+                    if result is None:
+                        await interaction.response.send_message("Keine Joinrole gesetzt.", ephemeral=True)
+                        return
+
+                    roless = discord.utils.get(interaction.guild.roles, id=int(result[0]))
+
+                    if roless is None:
+                        await interaction.response.send_message("Gespeicherte Rolle existiert nicht mehr.", ephemeral=True)
+                        return
+
+                    embed = discord.Embed(colour=discord.Colour.orange(),
+                                          description=f"Joinrole dieses Servers: {roless.mention}")
+                    embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+                    embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
+                                     icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
+                    await interaction.response.send_message(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:
