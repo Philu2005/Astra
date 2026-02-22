@@ -399,8 +399,8 @@ class astra(commands.Cog):
     async def invite(self, interaction: discord.Interaction):
         """Link um Astra einzuladen."""
         embed = discord.Embed(colour=discord.Colour.blue(), title=f"Nutze Astra auch auf deinem Server!",
-                              description=f"Mit klicken auf [Invite Astra](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands) kannst du Astra auch auf deinen Server einladen.",
-                              url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands")
+                              description=f"Mit klicken auf [Invite Astra](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands) kannst du Astra auch auf deinen Server einladen.",
+                              url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands")
         embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed)
 
@@ -410,8 +410,8 @@ class astra(commands.Cog):
     async def support(self, interaction: discord.Interaction):
         """Link zu unserem Support Server."""
         embed = discord.Embed(colour=discord.Colour.blue(), title="Wir freuen uns dir helfen zu können!",
-                              description="Hast du Fragen oder ein Problem? Wir freuen uns dir auf unserem [support server](https://discord.gg/M2QykAY3Bv) helfen zu können.",
-                              url="https://discord.gg/M2QykAY3Bv")
+                              description="Hast du Fragen oder ein Problem? Wir freuen uns dir auf unserem [support server](https://astra-bot.de/support) helfen zu können.",
+                              url="https://astra-bot.de/support")
         embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed)
 

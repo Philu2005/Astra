@@ -1299,7 +1299,7 @@ async def advert(ctx):
     """
     embed = discord.Embed(
         title="`🎃` Astra x Astra Support",
-        url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands",
+        url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands",
         description=(
             "Astra ist der einzige Bot, den Sie zur Verwaltung Ihres gesamten Servers benötigen. "
             "Es gibt viele Server, die Astra verwenden. Vielleicht sind Sie der Nächste?\n\n"
@@ -1311,7 +1311,7 @@ async def advert(ctx):
             "・<:Astra_herz:1141303857855594527> Reaktionsrollen\n"
             "・<:Astra_global1:1141303843993436200> Globalchat\n\n\n"
             "> __**Nützliche Links:**__\n"
-            "・[Astra einladen ➚](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n"
+            "・[Astra einladen ➚](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n"
             "・[Support erhalten ➚](https://discord.gg/eatdJPfjWc)"
         ),
         colour=discord.Colour.blue()

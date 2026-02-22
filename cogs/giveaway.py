@@ -97,7 +97,7 @@ async def gwtimes(bot: commands.Bot, when: datetime, messageid: int):
                     description=(
                         f"🏆 Preis: {prize}\n"
                         "`🤖` [Astra Einladen]"
-                        "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                        "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                         "<:Astra_gw_open2:1141303850125504533> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
                         "<:Astra_arrow:1141303823600717885> Niemand hat das Gewinnspiel gewonnen.\n"
                         f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
@@ -123,7 +123,7 @@ async def gwtimes(bot: commands.Bot, when: datetime, messageid: int):
                         description=(
                             f"🏆 Preis: {prize}\n"
                             "`🤖` [Astra Einladen]"
-                            "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                            "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                             f"`🎉` Du hast ein Gewinnspiel auf [{guild.name}]"
                             f"(https://discord.com/channels/{guild.id}/{channel.id}/{msg.id}) gewonnen.\n"
                             f"`⏰` Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}"
@@ -145,7 +145,7 @@ async def gwtimes(bot: commands.Bot, when: datetime, messageid: int):
                         description=(
                             f"🏆 Preis: {prize}\n"
                             "`🤖` [Astra Einladen]"
-                            "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                            "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                             "<:Astra_gw_open2:1141303850125504533> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
                             "<:Astra_arrow:1141303823600717885> Niemand hat das Gewinnspiel gewonnen.\n"
                             f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
@@ -161,7 +161,7 @@ async def gwtimes(bot: commands.Bot, when: datetime, messageid: int):
                         description=(
                             f"🏆 Preis: {prize}\n"
                             "`🤖` [Astra Einladen]"
-                            "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                            "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                             "<:Astra_gw_open2:1141303850125504533> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
                             f"<:Astra_arrow:1141303823600717885> {mentions} hat das Gewinnspiel gewonnen.\n"
                             f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
@@ -248,7 +248,7 @@ class GiveawayButton(discord.ui.View):
                         title=" ",
                         description=(
                             f"🏆 Preis: {prize}\n"
-                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                             "<:Astra_info:1141303860556738620> » __**Informationen:**__\n"
                             f"<:Astra_arrow:1141303823600717885> Erstellt von {getattr(creator, 'mention', interaction.user.mention)}\n"
                             f"<:Astra_arrow:1141303823600717885> **{winners}** Gewinner\n"
@@ -272,7 +272,7 @@ class GiveawayButton(discord.ui.View):
                         title=" ",
                         description=(
                             f"🏆 Preis: {prize}\n"
-                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                             f"`🎉` Deine Teilnahme auf [{guild.name}](https://discord.com/channels/{guild.id}/{interaction.channel.id}/{messageID}) war erfolgreich.\n"
                             f"`⏰` Das Gewinnspiel endet {discord.utils.format_dt(t_end, 'R')}."
                         ),
@@ -336,7 +336,7 @@ class GiveawayButton(discord.ui.View):
                         title=" ",
                         description=(
                             f"🏆 Preis: {prize}\n"
-                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                             f"`🎉` Deine Teilnahme auf [{guild.name}](https://discord.com/channels/{guild.id}/{interaction.channel.id}/{messageID}) war **nicht** erfolgreich.\n"
                             f"`⏰` Das Gewinnspiel endet {discord.utils.format_dt(t_end, 'R')}.\n\n"
                             "`🧨` __**Gründe**__\n" + "\n".join(reasons_lines)
@@ -473,7 +473,7 @@ class Giveaway(app_commands.Group):
                     title=" ",
                     description=(
                         f"🏆 Preis: {preis}\n"
-                        "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                        "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                         "<:Astra_info:1141303860556738620> » __**Informationen:**__\n"
                         f"<:Astra_arrow:1141303823600717885> Erstellt von {interaction.user.mention}\n"
                         f"<:Astra_arrow:1141303823600717885> **{gewinner}** Gewinner\n"
@@ -634,7 +634,7 @@ class Giveaway(app_commands.Group):
                             title=" ",
                             description=(
                                 f"🏆 Preis: {preis}\n"
-                                "`🤖` [Invite Astra here](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                                "`🤖` [Invite Astra here](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                                 "<:Astra_gw_open2:1061384624951021578> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
                                 "<:Astra_arrow:1141303823600717885> Niemand hat das Gewinnspiel gewonnen.\n"
                                 f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
@@ -683,7 +683,7 @@ class Giveaway(app_commands.Group):
                                 title=" ",
                                 description=(
                                     f"🏆 Preis: {preis}\n"
-                                    "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                                    "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                                     "<:Astra_gw_open2:1061384624951021578> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
                                     "<:Astra_arrow:1141303823600717885> Niemand hat gewonnen – **keiner** erfüllte die Anforderungen.\n"
                                     f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
@@ -704,7 +704,7 @@ class Giveaway(app_commands.Group):
                                         title=" ",
                                         description=(
                                             f"🏆 Preis: {preis}\n"
-                                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                                             f"`🎉` Du hast ein Gewinnspiel auf [{guild.name}](https://discord.com/channels/{guild.id}/{channel.id}/{msg.id}) gewonnen.\n"
                                             f"`⏰` Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}"
                                         ),
@@ -721,7 +721,7 @@ class Giveaway(app_commands.Group):
                                 title=" ",
                                 description=(
                                     f"🏆 Preis: {preis}\n"
-                                    "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                                    "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                                     "<:Astra_gw_open2:1061384624951021578> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
                                     f"<:Astra_arrow:1141303823600717885> {mentions} hat das Gewinnspiel gewonnen.\n"
                                     f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
@@ -837,7 +837,7 @@ class Giveaway(app_commands.Group):
                                 title=" ",
                                 description=(
                                     f"🏆 Preis: {preis}\n"
-                                    "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                                    "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                                     f"`🎉` Du hast ein Gewinnspiel auf [{interaction.guild.name}](https://discord.com/channels/{interaction.guild.id}/{channel.id}/{msg.id}) gewonnen.\n"
                                     f"`⏰` Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}"
                                 ),
@@ -854,7 +854,7 @@ class Giveaway(app_commands.Group):
                         title=" ",
                         description=(
                             f"🏆 Preis: {preis}\n"
-                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=1899359446&scope=bot%20applications.commands)\n\n"
+                            "`🤖` [Astra Einladen](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
                             "<:Astra_gw_open2:1061384624951021578> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
                             f"<:Astra_arrow:1141303823600717885> {mentions} hat das Gewinnspiel gewonnen.\n"
                             f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
