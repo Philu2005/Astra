@@ -398,11 +398,11 @@ async def rotating_presence(bot):
         activities = [
             discord.Activity(
                 type=discord.ActivityType.watching,
-                name=f"🌍 {server_str} Server"
+                name=f"🔹 {server_str} Server"
             ),
             discord.Activity(
                 type=discord.ActivityType.watching,
-                name=f"👥 {member_str} Mitglieder"
+                name=f"🔹 {member_str} Mitglieder"
             ),
             discord.Activity(
                 type=discord.ActivityType.watching,
