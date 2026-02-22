@@ -134,7 +134,6 @@ class Astra(commands.Bot):
             "cogs.fun",
             "cogs.tempchannel",
             "cogs.afk",
-            "cogs.joinrole",
             "cogs.autorole",
             "cogs.reactionrole",
             "cogs.welcome",
