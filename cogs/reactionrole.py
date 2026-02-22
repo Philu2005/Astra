@@ -423,29 +423,37 @@ class ReactionRoleGroup(app_commands.Group):
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
-
                 await cursor.execute("""
-                    INSERT INTO reactionrole_messages
-                    (message_id, guild_id, channel_id, style)
-                    VALUES (%s,%s,%s,%s)
-                """, (
-                    msg.id,
-                    interaction.guild.id,
-                    interaction.channel.id,
-                    style
-                ))
+                                     INSERT INTO reactionrole_messages
+                                     (message_id, guild_id, channel_id, style,
+                                      embed_title, embed_description, embed_color,
+                                      embed_image, embed_thumbnail)
+                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     """, (
+                                         msg.id,
+                                         interaction.guild.id,
+                                         interaction.channel.id,
+                                         style,
+                                         embed_data["title"],
+                                         embed_data["description"],
+                                         f"{embed_data['color']:06x}",
+                                         embed_data["image"],
+                                         embed_data["thumbnail"]
+                                     ))
 
                 for r in role_data:
                     await cursor.execute("""
-                        INSERT INTO reactionrole_entries
-                        (message_id, role_id, label, emoji)
-                        VALUES (%s,%s,%s,%s)
-                    """, (
-                        msg.id,
-                        r["role_id"],
-                        r["label"],
-                        r["emoji"]
-                    ))
+                                         INSERT INTO reactionrole_entries
+                                             (message_id, role_id, label, emoji)
+                                         VALUES (%s, %s, %s, %s)
+                                         """, (
+                                             msg.id,
+                                             r["role_id"],
+                                             r["label"],
+                                             r["emoji"]
+                                         ))
+
+                await conn.commit()
 
     @app_commands.command(
         name="anzeigen",
