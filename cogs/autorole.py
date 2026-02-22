@@ -148,7 +148,7 @@ class AutoroleView(discord.ui.LayoutView):
         main.add_item(discord.ui.TextDisplay(
             "Vergibt automatisch eine festgelegte Rolle an neue Mitglieder, "
             "sobald sie dem Server beitreten.\n\n"
-            "Ideal für:\n"
+            "**Ideal für:**\n"
             "<:Astra_punkt:1141303896745201696> Standard-Mitgliedsrollen\n"
             "<:Astra_punkt:1141303896745201696> Verifizierungsprozesse\n"
             "<:Astra_punkt:1141303896745201696> Automatische Grundrechte\n\n"
@@ -238,7 +238,7 @@ class AutoroleView(discord.ui.LayoutView):
         main.add_item(discord.ui.TextDisplay(
             "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu, "
             "sobald sie deinem Server beitreten.\n\n"
-            "Perfekt geeignet für:\n"
+            "**Perfekt geeignet für:**\n"
             "<:Astra_punkt:1141303896745201696> Bot-Kategorien\n"
             "<:Astra_punkt:1141303896745201696> Rechteverwaltung für Bots\n"
             "<:Astra_punkt:1141303896745201696> Klare optische Trennung von Bots & Mitgliedern\n\n"
