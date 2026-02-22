@@ -235,7 +235,6 @@ class Astra(commands.Bot):
                                       ORDER BY next_vote_epoch ASC
                                       """)
                     eintraege2 = await cur.fetchall()
-                    logging.info(f"[Resume] {len(eintraege2)} offene Vote-Reminder aus DB geladen")
 
                     async def starte_voterole_tasks():
                         now = datetime.now(timezone.utc)
@@ -245,10 +244,7 @@ class Astra(commands.Bot):
                                     continue
                                 when = datetime.fromtimestamp(int(ts), timezone.utc)
                                 if when <= now:
-                                    logging.info(f"[Resume] Reminder für {user_id} überfällig – feuere sofort")
                                     when = now
-                                else:
-                                    logging.info(f"[Resume] Reminder neu geplant für {user_id} um {when.isoformat()}")
                                 asyncio.create_task(funktion2(user_id, when))
                                 await asyncio.sleep(0.05)
                             except Exception as e:
@@ -655,7 +651,6 @@ async def on_dbl_vote(data):
         logging.error(f"Fehler beim Senden im Channel: {e}")
 
     when = datetime.fromtimestamp(next_vote_ts, timezone.utc)
-    logging.info(f"[VoteReminder] scheduled DM for {user_id} at {when.isoformat()} (ts={next_vote_ts})")
     asyncio.create_task(funktion2(user_id, when))
 
     return None
@@ -785,7 +780,6 @@ async def on_ready():
                 )
             global bot_ready
             bot_ready = True
-            logging.info("[API] Bot marked as READY")
 
 
 async def funktion2(user_id: int, when: datetime):
@@ -794,11 +788,8 @@ async def funktion2(user_id: int, when: datetime):
     # UTC-sicher
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
-
-    logging.info(f"[VoteReminder] task scheduled for {user_id} -> {when.isoformat()}")
     await discord.utils.sleep_until(when)
     now = datetime.now(timezone.utc)
-    logging.info(f"[VoteReminder] task woke up for {user_id} at {now.isoformat()}")
 
     async with bot.pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -810,10 +801,8 @@ async def funktion2(user_id: int, when: datetime):
                 row = await cur.fetchone()
                 current_ts = row[0] if row else None
                 if current_ts is None:
-                    logging.info(f"[VoteReminder] skip {user_id} – next_vote_epoch bereits verbraucht")
                     return
                 if current_ts > int(when.timestamp()):
-                    logging.info(f"[VoteReminder] skip {user_id} – neuerer Reminder existiert (ts={current_ts})")
                     return
             except Exception as e:
                 logging.warning(f"[VoteReminder] Vorab-Check fehlgeschlagen ({user_id}): {e}")
@@ -821,7 +810,6 @@ async def funktion2(user_id: int, when: datetime):
             # --- DM senden ---
             try:
                 user = bot.get_user(user_id) or await bot.fetch_user(user_id)
-                logging.info(f"[VoteReminder] Versuche DM an {user_id} zu senden...")
                 embed = discord.Embed(
                     title="<:Astra_time:1141303932061233202> Du kannst wieder voten!",
                     url="https://top.gg/de/bot/1113403511045107773/vote",
@@ -832,7 +820,6 @@ async def funktion2(user_id: int, when: datetime):
                     colour=discord.Colour.blue()
                 )
                 await user.send(embed=embed)
-                logging.info(f"[VoteReminder] DM erfolgreich an {user_id} gesendet")
             except Exception as e:
                 logging.warning(f"[VoteReminder] ❌ DM an {user_id} fehlgeschlagen: {e}")
 
@@ -847,7 +834,6 @@ async def funktion2(user_id: int, when: datetime):
                 if member and voterole in getattr(member, "roles", []):
                     try:
                         await member.remove_roles(voterole, reason="Voterole Cooldown abgelaufen")
-                        logging.info(f"[VoteReminder] Rolle entfernt bei {user_id}")
                     except Exception as e:
                         logging.warning(f"[VoteReminder] Rolle entfernen fehlgeschlagen ({user_id}): {e}")
 
@@ -865,8 +851,6 @@ async def funktion2(user_id: int, when: datetime):
             await conn.commit()
         except Exception:
             pass
-
-    logging.info("[VoteReminder] finished")
 
 
 
