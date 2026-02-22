@@ -332,19 +332,23 @@ class CancelButton(ui.Button):
         self.view.stop()
 
 class ReactionRoleGroup(app_commands.Group):
-    def __init__(self, cog: "ReactionRole"):
+    def __init__(self, bot: commands.Bot):
         super().__init__(
             name="reactionrole",
             description="ReactionRole Verwaltung"
         )
-        self.cog = cog
+        self.bot = bot
+
+    # ===============================
+    # ERSTELLEN
+    # ===============================
 
     @app_commands.command(
         name="erstellen",
         description="Erstellt eine Reaction-Role-Nachricht."
     )
     @app_commands.describe(
-        style="Art der Auswahl: 'buttons' (Buttons) oder 'select' (Auswahlliste)."
+        style="Art der Auswahl: 'buttons' oder 'select'."
     )
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_roles=True)
@@ -354,7 +358,10 @@ class ReactionRoleGroup(app_commands.Group):
         style: Literal["buttons", "select"]
     ):
 
-        roles = [role for role in interaction.guild.roles if role.name != "@everyone"]
+        roles = [
+            role for role in interaction.guild.roles
+            if role.name != "@everyone"
+        ]
 
         view = RoleSelectView(interaction, roles, style)
 
@@ -365,33 +372,34 @@ class ReactionRoleGroup(app_commands.Group):
 
         await view.wait()
 
-        if not hasattr(view, 'embed_data'):
+        if not hasattr(view, "embed_data"):
             return
 
         embed_data = view.embed_data
 
         embed = discord.Embed(
-            title=embed_data['title'],
-            description=embed_data['description'],
-            color=embed_data['color']
+            title=embed_data["title"],
+            description=embed_data["description"],
+            color=embed_data["color"]
         )
 
-        if embed_data['thumbnail']:
-            embed.set_thumbnail(url=embed_data['thumbnail'])
+        if embed_data["thumbnail"]:
+            embed.set_thumbnail(url=embed_data["thumbnail"])
 
-        if embed_data['image']:
-            embed.set_image(url=embed_data['image'])
+        if embed_data["image"]:
+            embed.set_image(url=embed_data["image"])
 
         role_data = view.role_data
 
-        view_final = await self.cog.setup_persistent_view(role_data, style)
+        cog = self.bot.get_cog("ReactionRole")
+        view_final = await cog.setup_persistent_view(role_data, style)
 
         msg = await interaction.channel.send(
             embed=embed,
             view=view_final
         )
 
-        self.cog.bot.add_view(view_final, message_id=msg.id)
+        self.bot.add_view(view_final, message_id=msg.id)
 
         async with interaction.client.pool.acquire() as conn:
             async with conn.cursor() as cursor:
@@ -406,11 +414,11 @@ class ReactionRoleGroup(app_commands.Group):
                     interaction.guild.id,
                     interaction.channel.id,
                     style,
-                    embed_data['title'],
-                    embed_data['description'],
+                    embed_data["title"],
+                    embed_data["description"],
                     f"{embed_data['color']:06x}",
-                    embed_data['image'],
-                    embed_data['thumbnail']
+                    embed_data["image"],
+                    embed_data["thumbnail"]
                 ))
 
                 for r in role_data:
@@ -420,12 +428,16 @@ class ReactionRoleGroup(app_commands.Group):
                         VALUES (%s, %s, %s, %s)
                     """, (
                         msg.id,
-                        r['role_id'],
-                        r['label'],
-                        r['emoji']
+                        r["role_id"],
+                        r["label"],
+                        r["emoji"]
                     ))
 
                 await conn.commit()
+
+    # ===============================
+    # ANZEIGEN
+    # ===============================
 
     @app_commands.command(
         name="anzeigen",
@@ -445,6 +457,12 @@ class ReactionRoleGroup(app_commands.Group):
 
                 panels = await cursor.fetchall()
 
+        if not panels:
+            return await interaction.response.send_message(
+                "❌ Es existieren keine ReactionRole Panels.",
+                ephemeral=True
+            )
+
         view = ReactionRoleManageView(interaction, panels)
 
         await interaction.response.send_message(
@@ -456,9 +474,6 @@ class ReactionRoleGroup(app_commands.Group):
 class ReactionRole(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-        self.group = ReactionRoleGroup(self)
-        bot.tree.add_command(self.group)
 
     async def setup_persistent_view(self, role_data, style) -> ui.View:
         view = ui.View(timeout=None)
@@ -582,5 +597,6 @@ class ReactionRole(commands.Cog):
                     self.bot.add_view(view, message_id=msg_id)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(ReactionRole(bot))
+    bot.tree.add_command(ReactionRoleGroup(bot))
