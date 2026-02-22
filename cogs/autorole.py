@@ -140,7 +140,7 @@ class AutoroleView(discord.ui.LayoutView):
 
         # SECTION (Text links, Button rechts)
         main.add_item(discord.ui.Section(
-            discord.ui.TextDisplay("## 👋 Joinrole System"),
+            discord.ui.TextDisplay("## Joinrole System"),
             accessory=toggle_join
         ))
 
@@ -149,9 +149,9 @@ class AutoroleView(discord.ui.LayoutView):
             "Vergibt automatisch eine festgelegte Rolle an neue Mitglieder, "
             "sobald sie dem Server beitreten.\n\n"
             "Ideal für:\n"
-            "• Standard-Mitgliedsrollen\n"
-            "• Verifizierungsprozesse\n"
-            "• Automatische Grundrechte\n\n"
+            "<:Astra_punkt:1141303896745201696> Standard-Mitgliedsrollen\n"
+            "<:Astra_punkt:1141303896745201696> Verifizierungsprozesse\n"
+            "<:Astra_punkt:1141303896745201696> Automatische Grundrechte\n\n"
             "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
         ))
 
@@ -231,7 +231,7 @@ class AutoroleView(discord.ui.LayoutView):
         toggle_bot.callback = toggle_bot_cb
 
         main.add_item(discord.ui.Section(
-            discord.ui.TextDisplay("## 🤖 Botrole System"),
+            discord.ui.TextDisplay("## Botrole System"),
             accessory=toggle_bot
         ))
 
@@ -239,9 +239,9 @@ class AutoroleView(discord.ui.LayoutView):
             "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu, "
             "sobald sie deinem Server beitreten.\n\n"
             "Perfekt geeignet für:\n"
-            "• Bot-Kategorien\n"
-            "• Rechteverwaltung für Bots\n"
-            "• Klare optische Trennung von Bots & Mitgliedern\n\n"
+            "<:Astra_punkt:1141303896745201696> Bot-Kategorien\n"
+            "<:Astra_punkt:1141303896745201696> Rechteverwaltung für Bots\n"
+            "<:Astra_punkt:1141303896745201696> Klare optische Trennung von Bots & Mitgliedern\n\n"
             "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
         ))
 
