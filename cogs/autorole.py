@@ -107,19 +107,14 @@ class AutoroleView(discord.ui.LayoutView):
         main.add_item(discord.ui.Separator())
 
         # =====================================================
-        # JOINROLE ERKLÄRUNG + BUTTON
+        # JOINROLE SECTION
         # =====================================================
 
-        main.add_item(discord.ui.TextDisplay(
-            "## 👋 Joinrole System\n"
-            "Vergibt automatisch eine festgelegte Rolle an neue Mitglieder, "
-            "sobald sie dem Server beitreten.\n\n"
-            "Ideal für:\n"
-            "• Standard-Mitgliedsrollen\n"
-            "• Verifizierungsprozesse\n"
-            "• Automatische Grundrechte\n\n"
-            "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
-        ))
+        join_status = (
+            "<:Astra_accept:1141303821176422460> Aktiviert"
+            if self.join_enabled
+            else "<:Astra_x:1141303954555289600> Deaktiviert"
+        )
 
         toggle_join = discord.ui.Button(
             label="Aktivieren" if not self.join_enabled else "Deaktivieren",
@@ -143,61 +138,25 @@ class AutoroleView(discord.ui.LayoutView):
 
         toggle_join.callback = toggle_join_cb
 
-        main.add_item(discord.ui.ActionRow(toggle_join))
-        main.add_item(discord.ui.Separator())
+        # SECTION (Text links, Button rechts)
+        main.add_item(discord.ui.Section(
+            discord.ui.TextDisplay("## 👋 Joinrole System"),
+            accessory=toggle_join
+        ))
 
-        # =====================================================
-        # BOTROLE ERKLÄRUNG + BUTTON
-        # =====================================================
-
+        # Erklärung
         main.add_item(discord.ui.TextDisplay(
-            "## 🤖 Botrole System\n"
-            "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu, "
-            "sobald sie deinem Server beitreten.\n\n"
-            "Perfekt geeignet für:\n"
-            "• Bot-Kategorien\n"
-            "• Rechteverwaltung für Bots\n"
-            "• Klare optische Trennung von Bots & Mitgliedern\n\n"
+            "Vergibt automatisch eine festgelegte Rolle an neue Mitglieder, "
+            "sobald sie dem Server beitreten.\n\n"
+            "Ideal für:\n"
+            "• Standard-Mitgliedsrollen\n"
+            "• Verifizierungsprozesse\n"
+            "• Automatische Grundrechte\n\n"
             "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
         ))
 
-        toggle_bot = discord.ui.Button(
-            label="Aktivieren" if not self.bot_enabled else "Deaktivieren",
-            emoji="<:Astra_light_on:1141303864134467675>" if not self.bot_enabled
-            else "<:Astra_x:1141303954555289600>",
-            style=discord.ButtonStyle.success if not self.bot_enabled
-            else discord.ButtonStyle.danger
-        )
-
-        async def toggle_bot_cb(interaction: discord.Interaction):
-            if interaction.user.id != self.invoker.id:
-                return await interaction.response.send_message(
-                    "<:Astra_x:1141303954555289600> Nur der Ersteller darf dieses Panel bedienen.",
-                    ephemeral=True
-                )
-
-            self.bot_enabled = not self.bot_enabled
-            await self._save()
-            self._build()
-            await interaction.response.edit_message(view=self)
-
-        toggle_bot.callback = toggle_bot_cb
-
-        main.add_item(discord.ui.ActionRow(toggle_bot))
-        main.add_item(discord.ui.Separator())
-
-        # =====================================================
-        # JOINROLE VERWALTUNG
-        # =====================================================
-
-        join_status = (
-            "<:Astra_accept:1141303821176422460> Aktiviert"
-            if self.join_enabled
-            else "<:Astra_x:1141303954555289600> Deaktiviert"
-        )
-
+        # Status + Rolle
         main.add_item(discord.ui.TextDisplay(
-            "### 👋 Joinrole Verwaltung\n"
             f"Status: {join_status}\n"
             f"Aktuelle Rolle: {self.join_role.mention if self.join_role else '`Nicht gesetzt`'}"
         ))
@@ -234,12 +193,13 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         role_join.callback = role_join_cb
+
         main.add_item(discord.ui.ActionRow(role_join))
 
         main.add_item(discord.ui.Separator())
 
         # =====================================================
-        # BOTROLE VERWALTUNG
+        # BOTROLE SECTION
         # =====================================================
 
         bot_status = (
@@ -248,8 +208,44 @@ class AutoroleView(discord.ui.LayoutView):
             else "<:Astra_x:1141303954555289600> Deaktiviert"
         )
 
+        toggle_bot = discord.ui.Button(
+            label="Aktivieren" if not self.bot_enabled else "Deaktivieren",
+            emoji="<:Astra_light_on:1141303864134467675>" if not self.bot_enabled
+            else "<:Astra_x:1141303954555289600>",
+            style=discord.ButtonStyle.success if not self.bot_enabled
+            else discord.ButtonStyle.danger
+        )
+
+        async def toggle_bot_cb(interaction: discord.Interaction):
+            if interaction.user.id != self.invoker.id:
+                return await interaction.response.send_message(
+                    "<:Astra_x:1141303954555289600> Nur der Ersteller darf dieses Panel bedienen.",
+                    ephemeral=True
+                )
+
+            self.bot_enabled = not self.bot_enabled
+            await self._save()
+            self._build()
+            await interaction.response.edit_message(view=self)
+
+        toggle_bot.callback = toggle_bot_cb
+
+        main.add_item(discord.ui.Section(
+            discord.ui.TextDisplay("## 🤖 Botrole System"),
+            accessory=toggle_bot
+        ))
+
         main.add_item(discord.ui.TextDisplay(
-            "### 🤖 Botrole Verwaltung\n"
+            "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu, "
+            "sobald sie deinem Server beitreten.\n\n"
+            "Perfekt geeignet für:\n"
+            "• Bot-Kategorien\n"
+            "• Rechteverwaltung für Bots\n"
+            "• Klare optische Trennung von Bots & Mitgliedern\n\n"
+            "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
+        ))
+
+        main.add_item(discord.ui.TextDisplay(
             f"Status: {bot_status}\n"
             f"Aktuelle Rolle: {self.bot_role.mention if self.bot_role else '`Nicht gesetzt`'}"
         ))
@@ -286,6 +282,7 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         role_bot.callback = role_bot_cb
+
         main.add_item(discord.ui.ActionRow(role_bot))
 
         main.add_item(discord.ui.Separator())
