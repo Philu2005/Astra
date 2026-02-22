@@ -324,10 +324,10 @@ class HelpCog(commands.Cog):
         embed.add_field(
             name="Letzte Updates",
             value=(
-                f"> <:Astra_pin:1141303893616250900> Statistik System hinzugefügt\n"
-                f"> <:Astra_user:1141303940365959241> Joinrole und Botrole nun als </autorole:{self._cid('autorole')}> zusammengeführt!"
+                f"> <:Astra_user:1141303940365959241> Joinrole und Botrole nun als </autorole:{self._cid('autorole')}> zusammengeführt!\n"
                 "> <:Astra_settings:1141303908778639490> Automod System nun mit neuem Setup und Config Command.\n"
                 "> <:Astra_ticket:1141833836204937347> Ticket System nun mit neuem Setup command.\n"
+                f"> <:Astra_pin:1141303893616250900> Statistik System hinzugefügt."
             ),
             inline=False,
         )
