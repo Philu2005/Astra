@@ -46,6 +46,132 @@ class FinalEmbedModal(ui.Modal, title="Erstelle das endgültige Embed"):
         await interaction.response.defer()
         self.stop()
 
+class ReactionRoleManageView(discord.ui.LayoutView):
+
+    def __init__(self, interaction: discord.Interaction, panels: list[dict]):
+        super().__init__(timeout=300)
+
+        self.interaction = interaction
+        self.panels = panels
+        self.selected_panel = None
+
+        self._build()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.interaction.user.id
+
+    def _build(self):
+        self.clear_items()
+
+        container = discord.ui.Container(
+            accent_color=discord.Color.orange().value
+        )
+
+        container.add_item(discord.ui.TextDisplay(
+            "# 📋 ReactionRole Verwaltung\n"
+            "Wähle ein Panel aus, um es zu verwalten."
+        ))
+
+        container.add_item(discord.ui.Separator())
+
+        if not self.panels:
+            container.add_item(discord.ui.TextDisplay(
+                "❌ Es existieren keine ReactionRole Panels."
+            ))
+            self.add_item(container)
+            return
+
+        options = [
+            discord.SelectOption(
+                label=p["embed_title"][:100],
+                description=f"Channel: {p['channel_id']} | Style: {p['style']}",
+                value=str(p["message_id"])
+            )
+            for p in self.panels
+        ]
+
+        select = discord.ui.Select(
+            placeholder="Panel auswählen...",
+            options=options
+        )
+
+        async def select_callback(interaction: discord.Interaction):
+            panel_id = int(select.values[0])
+            self.selected_panel = next(
+                (p for p in self.panels if p["message_id"] == panel_id),
+                None
+            )
+
+            self._build()
+            await interaction.response.edit_message(view=self)
+
+        select.callback = select_callback
+        container.add_item(discord.ui.ActionRow(select))
+
+        if self.selected_panel:
+            container.add_item(discord.ui.Separator())
+
+            container.add_item(discord.ui.TextDisplay(
+                f"## 📝 Panel Informationen\n"
+                f"**Titel:** {self.selected_panel['embed_title']}\n"
+                f"**Channel:** <#{self.selected_panel['channel_id']}>\n"
+                f"**Style:** {self.selected_panel['style']}\n"
+                f"**Message ID:** `{self.selected_panel['message_id']}`"
+            ))
+
+            delete_btn = discord.ui.Button(
+                label="Panel löschen",
+                style=discord.ButtonStyle.danger,
+                emoji="🗑"
+            )
+
+            async def delete_callback(interaction: discord.Interaction):
+
+                async with interaction.client.pool.acquire() as conn:
+                    async with conn.cursor() as cursor:
+
+                        await cursor.execute(
+                            "DELETE FROM reactionrole_entries WHERE message_id = %s",
+                            (self.selected_panel["message_id"],)
+                        )
+
+                        await cursor.execute(
+                            "DELETE FROM reactionrole_messages WHERE message_id = %s",
+                            (self.selected_panel["message_id"],)
+                        )
+
+                        await conn.commit()
+
+                channel = interaction.guild.get_channel(self.selected_panel["channel_id"])
+                if channel:
+                    try:
+                        msg = await channel.fetch_message(self.selected_panel["message_id"])
+                        await msg.delete()
+                    except:
+                        pass
+
+                await interaction.response.send_message(
+                    "✅ Panel wurde gelöscht.",
+                    ephemeral=True
+                )
+
+                self.panels = [
+                    p for p in self.panels
+                    if p["message_id"] != self.selected_panel["message_id"]
+                ]
+                self.selected_panel = None
+                self._build()
+                await interaction.edit_original_response(view=self)
+
+            delete_btn.callback = delete_callback
+
+            container.add_item(discord.ui.ActionRow(delete_btn))
+
+        self.add_item(container)
+
+
+
+
 class RoleSelectView(discord.ui.LayoutView):
 
     def __init__(self, interaction: discord.Interaction, roles: List[discord.Role], style: str):
@@ -205,111 +331,76 @@ class CancelButton(ui.Button):
         await interaction.response.send_message("<:Astra_x:1141303954555289600> Reaktionsrollen-Setup abgebrochen.", ephemeral=True)
         self.view.stop()
 
-class ReactionRole(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
 
-    async def setup_persistent_view(self, role_data, style) -> ui.View:
-        view = ui.View(timeout=None)
+class ReactionRoleGroup(app_commands.Group):
+    def __init__(self, cog: "ReactionRole"):
+        super().__init__(
+            name="reactionrole",
+            description="ReactionRole Verwaltung"
+        )
+        self.cog = cog
 
-        def make_button_callback(rid):
-            async def callback(i: Interaction):
-                role = i.guild.get_role(rid)
-                if role in i.user.roles:
-                    await i.user.remove_roles(role)
-                    await i.response.send_message(f"<:Astra_accept:1141303821176422460> Rolle **{role.name}** entfernt.", ephemeral=True)
-                else:
-                    await i.user.add_roles(role)
-                    await i.response.send_message(f"<:Astra_accept:1141303821176422460> Rolle **{role.name}** vergeben.", ephemeral=True)
-            return callback
-
-        if style.lower() in ["buttons", "button"]:
-            for r in role_data:
-                btn = ui.Button(label=r['label'], emoji=r['emoji'], style=discord.ButtonStyle.secondary, custom_id=f"role_button_{r['role_id']}")
-                btn.callback = make_button_callback(r['role_id'])
-                view.add_item(btn)
-        else:
-            options = []
-            for r in role_data:
-                emoji = None
-
-                if r['emoji']:
-                    if r['emoji'].startswith("<"):
-                        # Custom Emoji parsen
-                        match = re.match(r'<a?:([a-zA-Z0-9_~]+):(\d+)>', r['emoji'])
-                        if match:
-                            name = match.group(1)
-                            emoji_id = int(match.group(2))
-                            emoji = discord.PartialEmoji(name=name, id=emoji_id)
-                    else:
-                        # Standard Unicode Emoji
-                        emoji = r['emoji']
-                options.append(discord.SelectOption(label=r['label'], value=str(r['role_id']), emoji=emoji))
-
-            select = ui.Select(placeholder="Wähle deine Rolle aus...", options=options, custom_id="reactionrole_select", min_values=0, max_values=len(options))
-
-            async def select_callback(i: Interaction):
-                selected = [int(v) for v in select.values]
-                added, removed = [], []
-                user_roles = [r.id for r in i.user.roles]
-
-                for option in options:
-                    rid = int(option.value)
-                    role = i.guild.get_role(rid)
-                    if rid in selected and rid not in user_roles:
-                        await i.user.add_roles(role)
-                        added.append(role.name)
-                    elif rid not in selected and rid in user_roles:
-                        await i.user.remove_roles(role)
-                        removed.append(role.name)
-                msg = []
-                if added:
-                    msg.append(f"<:Astra_accept:1141303821176422460> Rollen vergeben: {', '.join(added)}")
-                if removed:
-                    msg.append(f"<:Astra_x:1141303954555289600> Rollen entfernt: {', '.join(removed)}")
-                if msg:
-                    await i.response.send_message('\n'.join(msg), ephemeral=True)
-                else:
-                    await i.response.defer()
-
-            select.callback = select_callback
-            view.add_item(select)
-
-        return view
-
-    @app_commands.command(name="reactionrole", description="Erstellt eine Reaction-Role-Nachricht.")
-    @app_commands.describe(style="Art der Auswahl: 'buttons' (Buttons) oder 'select' (Auswahlliste).")
+    @app_commands.command(
+        name="erstellen",
+        description="Erstellt eine Reaction-Role-Nachricht."
+    )
+    @app_commands.describe(
+        style="Art der Auswahl: 'buttons' (Buttons) oder 'select' (Auswahlliste)."
+    )
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_roles=True)
-    async def reactionrole(self, interaction: discord.Interaction, style: Literal["buttons", "select"]):
+    async def erstellen(
+        self,
+        interaction: discord.Interaction,
+        style: Literal["buttons", "select"]
+    ):
+
         roles = [role for role in interaction.guild.roles if role.name != "@everyone"]
+
         view = RoleSelectView(interaction, roles, style)
+
         await interaction.response.send_message(
             view=view,
             ephemeral=True
         )
+
         await view.wait()
 
         if not hasattr(view, 'embed_data'):
             return
 
         embed_data = view.embed_data
-        embed = discord.Embed(title=embed_data['title'], description=embed_data['description'], color=embed_data['color'])
+
+        embed = discord.Embed(
+            title=embed_data['title'],
+            description=embed_data['description'],
+            color=embed_data['color']
+        )
+
         if embed_data['thumbnail']:
             embed.set_thumbnail(url=embed_data['thumbnail'])
+
         if embed_data['image']:
             embed.set_image(url=embed_data['image'])
 
         role_data = view.role_data
-        view_final = await self.setup_persistent_view(role_data, style)
-        msg = await interaction.channel.send(embed=embed, view=view_final)
-        self.bot.add_view(view_final, message_id=msg.id)
+
+        view_final = await self.cog.setup_persistent_view(role_data, style)
+
+        msg = await interaction.channel.send(
+            embed=embed,
+            view=view_final
+        )
+
+        self.cog.bot.add_view(view_final, message_id=msg.id)
 
         async with interaction.client.pool.acquire() as conn:
             async with conn.cursor() as cursor:
+
                 await cursor.execute("""
                     INSERT INTO reactionrole_messages 
-                    (message_id, guild_id, channel_id, style, embed_title, embed_description, embed_color, embed_image, embed_thumbnail)
+                    (message_id, guild_id, channel_id, style, embed_title,
+                     embed_description, embed_color, embed_image, embed_thumbnail)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     msg.id,
@@ -325,7 +416,8 @@ class ReactionRole(commands.Cog):
 
                 for r in role_data:
                     await cursor.execute("""
-                        INSERT INTO reactionrole_entries (message_id, role_id, label, emoji)
+                        INSERT INTO reactionrole_entries
+                        (message_id, role_id, label, emoji)
                         VALUES (%s, %s, %s, %s)
                     """, (
                         msg.id,
@@ -334,19 +426,158 @@ class ReactionRole(commands.Cog):
                         r['emoji']
                     ))
 
+                await conn.commit()
+
+    @app_commands.command(
+        name="anzeigen",
+        description="Zeigt und verwaltet alle ReactionRole Panels."
+    )
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def anzeigen(self, interaction: discord.Interaction):
+
+        async with interaction.client.pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+
+                await cursor.execute(
+                    "SELECT * FROM reactionrole_messages WHERE guild_id = %s",
+                    (interaction.guild.id,)
+                )
+
+                panels = await cursor.fetchall()
+
+        view = ReactionRoleManageView(interaction, panels)
+
+        await interaction.response.send_message(
+            view=view,
+            ephemeral=True
+        )
+
+
+class ReactionRole(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+        self.group = ReactionRoleGroup(self)
+        bot.tree.add_command(self.group)
+
+    async def setup_persistent_view(self, role_data, style) -> ui.View:
+        view = ui.View(timeout=None)
+
+        def make_button_callback(rid):
+            async def callback(i: Interaction):
+                role = i.guild.get_role(rid)
+                if role in i.user.roles:
+                    await i.user.remove_roles(role)
+                    await i.response.send_message(
+                        f"<:Astra_accept:1141303821176422460> Rolle **{role.name}** entfernt.",
+                        ephemeral=True
+                    )
+                else:
+                    await i.user.add_roles(role)
+                    await i.response.send_message(
+                        f"<:Astra_accept:1141303821176422460> Rolle **{role.name}** vergeben.",
+                        ephemeral=True
+                    )
+            return callback
+
+        if style.lower() in ["buttons", "button"]:
+            for r in role_data:
+                btn = ui.Button(
+                    label=r['label'],
+                    emoji=r['emoji'],
+                    style=discord.ButtonStyle.secondary,
+                    custom_id=f"role_button_{r['role_id']}"
+                )
+                btn.callback = make_button_callback(r['role_id'])
+                view.add_item(btn)
+        else:
+            options = []
+
+            for r in role_data:
+                emoji = None
+
+                if r['emoji']:
+                    if r['emoji'].startswith("<"):
+                        match = re.match(r'<a?:([a-zA-Z0-9_~]+):(\d+)>', r['emoji'])
+                        if match:
+                            name = match.group(1)
+                            emoji_id = int(match.group(2))
+                            emoji = discord.PartialEmoji(name=name, id=emoji_id)
+                    else:
+                        emoji = r['emoji']
+
+                options.append(
+                    discord.SelectOption(
+                        label=r['label'],
+                        value=str(r['role_id']),
+                        emoji=emoji
+                    )
+                )
+
+            select = ui.Select(
+                placeholder="Wähle deine Rolle aus...",
+                options=options,
+                custom_id="reactionrole_select",
+                min_values=0,
+                max_values=len(options)
+            )
+
+            async def select_callback(i: Interaction):
+                selected = [int(v) for v in select.values]
+                added, removed = [], []
+                user_roles = [r.id for r in i.user.roles]
+
+                for option in options:
+                    rid = int(option.value)
+                    role = i.guild.get_role(rid)
+
+                    if rid in selected and rid not in user_roles:
+                        await i.user.add_roles(role)
+                        added.append(role.name)
+
+                    elif rid not in selected and rid in user_roles:
+                        await i.user.remove_roles(role)
+                        removed.append(role.name)
+
+                msg = []
+
+                if added:
+                    msg.append(f"<:Astra_accept:1141303821176422460> Rollen vergeben: {', '.join(added)}")
+
+                if removed:
+                    msg.append(f"<:Astra_x:1141303954555289600> Rollen entfernt: {', '.join(removed)}")
+
+                if msg:
+                    await i.response.send_message('\n'.join(msg), ephemeral=True)
+                else:
+                    await i.response.defer()
+
+            select.callback = select_callback
+            view.add_item(select)
+
+        return view
+
     @commands.Cog.listener()
     async def on_ready(self):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute("SELECT message_id, style FROM reactionrole_messages")
+
+                await cursor.execute(
+                    "SELECT message_id, style FROM reactionrole_messages"
+                )
+
                 for msg_id, style in await cursor.fetchall():
-                    await cursor.execute("SELECT role_id, label, emoji FROM reactionrole_entries WHERE message_id = %s", (msg_id,))
+
+                    await cursor.execute(
+                        "SELECT role_id, label, emoji FROM reactionrole_entries WHERE message_id = %s",
+                        (msg_id,)
+                    )
+
                     role_data = [
                         {"role_id": rid, "label": label, "emoji": emoji}
                         for rid, label, emoji in await cursor.fetchall()
                     ]
+
                     view = await self.setup_persistent_view(role_data, style)
                     self.bot.add_view(view, message_id=msg_id)
-
-async def setup(bot):
-    await bot.add_cog(ReactionRole(bot))
