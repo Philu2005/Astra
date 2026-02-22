@@ -100,7 +100,7 @@ class AutoroleView(discord.ui.LayoutView):
 
         main.add_item(discord.ui.TextDisplay(
             "# ⚙️ Autorole\n"
-            "Das Autorole-System ermöglicht dir eine automatische Rollenvergabe, "
+            "Das Autorole-System ermöglicht dir eine automatische Rollenvergabe,\n"
             "sobald neue Mitglieder oder Bots deinem Server beitreten."
         ))
 
@@ -146,7 +146,7 @@ class AutoroleView(discord.ui.LayoutView):
 
         # Erklärung
         main.add_item(discord.ui.TextDisplay(
-            "Vergibt automatisch eine festgelegte Rolle an neue Mitglieder, "
+            "Vergibt automatisch eine festgelegte Rolle an neue Mitglieder,\n"
             "sobald sie dem Server beitreten.\n\n"
             "**Ideal für:**\n"
             "<:Astra_punkt:1141303896745201696> Standard-Mitgliedsrollen\n"
@@ -236,7 +236,7 @@ class AutoroleView(discord.ui.LayoutView):
         ))
 
         main.add_item(discord.ui.TextDisplay(
-            "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu, "
+            "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu,\n"
             "sobald sie deinem Server beitreten.\n\n"
             "**Perfekt geeignet für:**\n"
             "<:Astra_punkt:1141303896745201696> Bot-Kategorien\n"
