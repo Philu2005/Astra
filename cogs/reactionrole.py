@@ -46,50 +46,144 @@ class FinalEmbedModal(ui.Modal, title="Erstelle das endgültige Embed"):
         await interaction.response.defer()
         self.stop()
 
-class RoleSelectView(ui.View):
+class RoleSelectView(discord.ui.LayoutView):
+
     def __init__(self, interaction: discord.Interaction, roles: List[discord.Role], style: str):
         super().__init__(timeout=None)
+
         self.interaction = interaction
         self.roles = roles
-        self.selected = []
-        self.role_data = []
-        self.embed_message = None
-        self.embed = discord.Embed(title="Reaktionsrollen Setup", description="Füge Rollen über das Select-Menü hinzu oder entferne sie durch erneute Auswahl.", color=discord.Color.blue())
-        self.embed.set_footer(text="Reaction Roles Setup")
         self.style = style
+        self.role_data = []
         self.embed_data = None
 
-        # ✨ Nutze natives RoleSelect-Menü
-        self.select = NativeRoleSelect(placeholder="Wähle eine Rolle aus", min_values=1, max_values=1, custom_id="native_role_select")
-        self.select.callback = self.select_callback
-        self.add_item(self.select)
+        self._build()
 
-        self.add_item(SaveButton())
-        self.add_item(CancelButton())
+    def _build(self):
+        self.clear_items()
 
-    async def select_callback(self, interaction: Interaction):
-        role_id = int(interaction.data["values"][0])
-        role = interaction.guild.get_role(role_id)
+        main = discord.ui.Container(
+            accent_color=discord.Colour.blurple().value
+        )
 
-        existing = next((r for r in self.role_data if r["role_id"] == role_id), None)
-        if existing:
-            self.role_data.remove(existing)
-            self.selected.remove(role_id)
+        # ================= HEADER =================
+
+        main.add_item(discord.ui.TextDisplay(
+            "# 🎭 ReactionRole Setup\n"
+            "Wähle hier die Rollen aus, die später im Panel auswählbar sein sollen.\n"
+            "Klicke eine Rolle an, um sie hinzuzufügen oder wieder zu entfernen."
+        ))
+
+        main.add_item(discord.ui.Separator())
+
+        # ================= ROLE SELECT =================
+
+        role_select = discord.ui.RoleSelect(
+            placeholder="🎭 Rolle auswählen",
+            min_values=1,
+            max_values=1
+        )
+
+        async def role_select_cb(interaction: discord.Interaction):
+
+            selected_role = role_select.values[0]
+
+            existing = next(
+                (r for r in self.role_data if r["role_id"] == selected_role.id),
+                None
+            )
+
+            # Rolle entfernen wenn bereits vorhanden
+            if existing:
+                self.role_data.remove(existing)
+                await interaction.response.send_message(
+                    f"<:Astra_x:1141303954555289600> Rolle **{selected_role.name}** entfernt.",
+                    ephemeral=True
+                )
+            else:
+                modal = RoleConfigModal(selected_role)
+                await interaction.response.send_modal(modal)
+                await modal.wait()
+
+                if hasattr(modal, "result") and modal.result:
+                    self.role_data.append(modal.result)
+
+            self._build()
+            await interaction.edit_original_response(view=self)
+
+        role_select.callback = role_select_cb
+
+        main.add_item(discord.ui.Section(
+            discord.ui.TextDisplay("## Rollen hinzufügen"),
+            accessory=role_select
+        ))
+
+        # ================= AKTUELLE ROLLEN =================
+
+        if self.role_data:
+            roles_text = "\n".join(
+                f"<@&{r['role_id']}> → **{r['label']}**"
+                for r in self.role_data
+            )
         else:
-            modal = RoleConfigModal(role)
+            roles_text = "`Noch keine Rollen hinzugefügt.`"
+
+        main.add_item(discord.ui.TextDisplay(
+            f"### 📋 Aktuelle Konfiguration\n{roles_text}"
+        ))
+
+        main.add_item(discord.ui.Separator())
+
+        # ================= BUTTONS =================
+
+        finish_btn = discord.ui.Button(
+            label="Fertig",
+            style=discord.ButtonStyle.success,
+            emoji="<:Astra_accept:1141303821176422460>"
+        )
+
+        cancel_btn = discord.ui.Button(
+            label="Abbrechen",
+            style=discord.ButtonStyle.danger,
+            emoji="<:Astra_x:1141303954555289600>"
+        )
+
+        async def finish_cb(interaction: discord.Interaction):
+
+            if not self.role_data:
+                return await interaction.response.send_message(
+                    "<:Astra_x:1141303954555289600> Du musst mindestens eine Rolle hinzufügen.",
+                    ephemeral=True
+                )
+
+            modal = FinalEmbedModal()
             await interaction.response.send_modal(modal)
             await modal.wait()
-            self.role_data.append(modal.result)
-            self.selected.append(role_id)
 
-        self.embed.clear_fields()
-        for r in self.role_data:
-            self.embed.add_field(name=r["label"], value=f"<@&{r['role_id']}>", inline=False)
+            if hasattr(modal, "embed_data") and modal.embed_data:
+                self.embed_data = modal.embed_data
+                self.stop()
 
-        if self.embed_message is None:
-            self.embed_message = await interaction.followup.send(embed=self.embed, view=self, ephemeral=True)
-        else:
-            await self.embed_message.edit(embed=self.embed, view=self)
+        async def cancel_cb(interaction: discord.Interaction):
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Reaktionsrollen-Setup abgebrochen.",
+                ephemeral=True
+            )
+            self.stop()
+
+        finish_btn.callback = finish_cb
+        cancel_btn.callback = cancel_cb
+
+        main.add_item(discord.ui.ActionRow(finish_btn, cancel_btn))
+
+        main.add_item(discord.ui.Separator())
+
+        main.add_item(discord.ui.TextDisplay(
+            f"<:Astra_support:1141303923752325210> "
+            f"Setup gestartet von {self.interaction.user.mention}"
+        ))
+
+        self.add_item(main)
 
 class SaveButton(ui.Button):
     def __init__(self):
@@ -111,175 +205,65 @@ class CancelButton(ui.Button):
         await interaction.response.send_message("<:Astra_x:1141303954555289600> Reaktionsrollen-Setup abgebrochen.", ephemeral=True)
         self.view.stop()
 
-class ReactionRoleContainerView(discord.ui.LayoutView):
-
-    def __init__(
-        self,
-        bot: commands.Bot,
-        guild: discord.Guild,
-        role_data: list,
-        style: str
-    ):
-        super().__init__(timeout=None)
-
-        self.bot = bot
-        self.guild = guild
-        self.role_data = role_data
-        self.style = style.lower()
-
-        self._build()
-
-    # =========================================================
-    # BUILD PANEL
-    # =========================================================
-
-    def _build(self):
-        self.clear_items()
-
-        main = discord.ui.Container(
-            accent_color=discord.Colour.blue().value
-        )
-
-        # =====================================================
-        # HEADER
-        # =====================================================
-
-        main.add_item(discord.ui.TextDisplay(
-            "# 🎭 ReactionRole System\n"
-            "Wähle deine gewünschten Rollen ganz bequem über die untenstehenden\n"
-            "Buttons oder das Auswahlmenü aus.\n\n"
-            "Du kannst Rollen jederzeit wieder entfernen."
-        ))
-
-        main.add_item(discord.ui.Separator())
-
-        # =====================================================
-        # INFO SECTION
-        # =====================================================
-
-        style_text = "Buttons" if self.style == "buttons" else "Auswahlliste"
-
-        main.add_item(discord.ui.TextDisplay(
-            f"## ⚙️ Auswahlmodus\n"
-            f"**Aktueller Stil:** `{style_text}`\n\n"
-            "<:Astra_punkt:1141303896745201696> Mehrfachauswahl möglich\n"
-            "<:Astra_punkt:1141303896745201696> Rollen können wieder entfernt werden\n"
-            "<:Astra_punkt:1141303896745201696> Änderungen sind sofort aktiv"
-        ))
-
-        main.add_item(discord.ui.Separator())
-
-        # =====================================================
-        # ROLE COMPONENTS
-        # =====================================================
-
-        if self.style in ["buttons", "button"]:
-
-            for r in self.role_data:
-
-                role = self.guild.get_role(r['role_id'])
-
-                btn = discord.ui.Button(
-                    label=r['label'],
-                    emoji=r['emoji'],
-                    style=discord.ButtonStyle.secondary,
-                    custom_id=f"rr_button_{r['role_id']}"
-                )
-
-                async def button_callback(interaction: discord.Interaction, rid=r['role_id']):
-                    role = interaction.guild.get_role(rid)
-
-                    if role in interaction.user.roles:
-                        await interaction.user.remove_roles(role)
-                        await interaction.response.send_message(
-                            f"<:Astra_accept:1141303821176422460> Rolle **{role.name}** entfernt.",
-                            ephemeral=True
-                        )
-                    else:
-                        await interaction.user.add_roles(role)
-                        await interaction.response.send_message(
-                            f"<:Astra_accept:1141303821176422460> Rolle **{role.name}** vergeben.",
-                            ephemeral=True
-                        )
-
-                btn.callback = button_callback
-                main.add_item(discord.ui.ActionRow(btn))
-
-        else:
-
-            options = []
-
-            for r in self.role_data:
-                options.append(
-                    discord.SelectOption(
-                        label=r['label'],
-                        value=str(r['role_id']),
-                        emoji=r['emoji']
-                    )
-                )
-
-            select = discord.ui.Select(
-                placeholder="🎭 Wähle deine Rollen aus...",
-                options=options,
-                min_values=0,
-                max_values=len(options),
-                custom_id="rr_select_container"
-            )
-
-            async def select_callback(interaction: discord.Interaction):
-                selected = [int(v) for v in select.values]
-                added, removed = [], []
-
-                user_roles = [r.id for r in interaction.user.roles]
-
-                for option in options:
-                    rid = int(option.value)
-                    role = interaction.guild.get_role(rid)
-
-                    if rid in selected and rid not in user_roles:
-                        await interaction.user.add_roles(role)
-                        added.append(role.name)
-
-                    elif rid not in selected and rid in user_roles:
-                        await interaction.user.remove_roles(role)
-                        removed.append(role.name)
-
-                msg = []
-
-                if added:
-                    msg.append(
-                        f"<:Astra_accept:1141303821176422460> Rollen vergeben: {', '.join(added)}"
-                    )
-
-                if removed:
-                    msg.append(
-                        f"<:Astra_x:1141303954555289600> Rollen entfernt: {', '.join(removed)}"
-                    )
-
-                if msg:
-                    await interaction.response.send_message(
-                        "\n".join(msg),
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.response.defer()
-
-            select.callback = select_callback
-
-            main.add_item(discord.ui.ActionRow(select))
-
-        main.add_item(discord.ui.Separator())
-
-        main.add_item(discord.ui.TextDisplay(
-            "<:Astra_support:1141303923752325210> "
-            "Wähle oder entferne deine Rollen jederzeit über dieses Panel."
-        ))
-
-        self.add_item(main)
-
 class ReactionRole(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def setup_persistent_view(self, role_data, style) -> ui.View:
+        view = ui.View(timeout=None)
+
+        def make_button_callback(rid):
+            async def callback(i: Interaction):
+                role = i.guild.get_role(rid)
+                if role in i.user.roles:
+                    await i.user.remove_roles(role)
+                    await i.response.send_message(f"<:Astra_accept:1141303821176422460> Rolle **{role.name}** entfernt.", ephemeral=True)
+                else:
+                    await i.user.add_roles(role)
+                    await i.response.send_message(f"<:Astra_accept:1141303821176422460> Rolle **{role.name}** vergeben.", ephemeral=True)
+            return callback
+
+        if style.lower() in ["buttons", "button"]:
+            for r in role_data:
+                btn = ui.Button(label=r['label'], emoji=r['emoji'], style=discord.ButtonStyle.secondary, custom_id=f"role_button_{r['role_id']}")
+                btn.callback = make_button_callback(r['role_id'])
+                view.add_item(btn)
+        else:
+            options = []
+            for r in role_data:
+                emoji = r['emoji'] if r['emoji'] and is_valid_emoji(r['emoji']) else None
+                options.append(discord.SelectOption(label=r['label'], value=str(r['role_id']), emoji=emoji))
+
+            select = ui.Select(placeholder="Wähle deine Rolle aus...", options=options, custom_id="reactionrole_select", min_values=0, max_values=len(options))
+
+            async def select_callback(i: Interaction):
+                selected = [int(v) for v in select.values]
+                added, removed = [], []
+                user_roles = [r.id for r in i.user.roles]
+
+                for option in options:
+                    rid = int(option.value)
+                    role = i.guild.get_role(rid)
+                    if rid in selected and rid not in user_roles:
+                        await i.user.add_roles(role)
+                        added.append(role.name)
+                    elif rid not in selected and rid in user_roles:
+                        await i.user.remove_roles(role)
+                        removed.append(role.name)
+                msg = []
+                if added:
+                    msg.append(f"<:Astra_accept:1141303821176422460> Rollen vergeben: {', '.join(added)}")
+                if removed:
+                    msg.append(f"<:Astra_x:1141303954555289600> Rollen entfernt: {', '.join(removed)}")
+                if msg:
+                    await i.response.send_message('\n'.join(msg), ephemeral=True)
+                else:
+                    await i.response.defer()
+
+            select.callback = select_callback
+            view.add_item(select)
+
+        return view
 
     @app_commands.command(name="reactionrole", description="Erstellt eine Reaction-Role-Nachricht.")
     @app_commands.describe(style="Art der Auswahl: 'buttons' (Buttons) oder 'select' (Auswahlliste).")
@@ -288,7 +272,10 @@ class ReactionRole(commands.Cog):
     async def reactionrole(self, interaction: discord.Interaction, style: Literal["buttons", "select"]):
         roles = [role for role in interaction.guild.roles if role.name != "@everyone"]
         view = RoleSelectView(interaction, roles, style)
-        await interaction.response.send_message("Wähle Rollen für deine Reaktionsrollen aus.", view=view, ephemeral=True)
+        await interaction.response.send_message(
+            view=view,
+            ephemeral=True
+        )
         await view.wait()
 
         if not hasattr(view, 'embed_data'):
@@ -302,12 +289,7 @@ class ReactionRole(commands.Cog):
             embed.set_image(url=embed_data['image'])
 
         role_data = view.role_data
-        view_final = ReactionRoleContainerView(
-            self.bot,
-            interaction.guild,
-            role_data,
-            style
-        )
+        view_final = await self.setup_persistent_view(role_data, style)
         msg = await interaction.channel.send(embed=embed, view=view_final)
         self.bot.add_view(view_final, message_id=msg.id)
 
