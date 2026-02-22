@@ -55,6 +55,10 @@ class ReactionRoleManageView(discord.ui.LayoutView):
         self.panels = panels
         self.selected_panel = None
 
+        # Wenn genau 1 Panel existiert → direkt anzeigen
+        if len(self.panels) == 1:
+            self.selected_panel = self.panels[0]
+
         self._build()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -74,6 +78,8 @@ class ReactionRoleManageView(discord.ui.LayoutView):
 
         container.add_item(discord.ui.Separator())
 
+        # ================= KEINE PANELS =================
+
         if not self.panels:
             container.add_item(discord.ui.TextDisplay(
                 "❌ Es existieren keine ReactionRole Panels."
@@ -81,94 +87,117 @@ class ReactionRoleManageView(discord.ui.LayoutView):
             self.add_item(container)
             return
 
-        options = [
-            discord.SelectOption(
-                label=p["embed_title"][:100],
-                description=f"Channel: {p['channel_id']} | Style: {p['style']}",
-                value=str(p["message_id"])
-            )
-            for p in self.panels
-        ]
+        # ================= MEHR ALS 1 PANEL & KEINS GEWÄHLT =================
 
-        select = discord.ui.Select(
-            placeholder="Panel auswählen...",
-            options=options
-        )
+        if len(self.panels) > 1 and not self.selected_panel:
 
-        async def select_callback(interaction: discord.Interaction):
-            panel_id = int(select.values[0])
-            self.selected_panel = next(
-                (p for p in self.panels if p["message_id"] == panel_id),
-                None
+            options = [
+                discord.SelectOption(
+                    label=p["embed_title"][:100],
+                    description=f"Channel: {p['channel_id']} | Style: {p['style']}",
+                    value=str(p["message_id"])
+                )
+                for p in self.panels
+            ]
+
+            select = discord.ui.Select(
+                placeholder="Panel auswählen...",
+                options=options
             )
 
-            self._build()
-            await interaction.response.edit_message(view=self)
-
-        select.callback = select_callback
-        container.add_item(discord.ui.ActionRow(select))
-
-        if self.selected_panel:
-            container.add_item(discord.ui.Separator())
-
-            container.add_item(discord.ui.TextDisplay(
-                f"## 📝 Panel Informationen\n"
-                f"**Titel:** {self.selected_panel['embed_title']}\n"
-                f"**Channel:** <#{self.selected_panel['channel_id']}>\n"
-                f"**Style:** {self.selected_panel['style']}\n"
-                f"**Message ID:** `{self.selected_panel['message_id']}`"
-            ))
-
-            delete_btn = discord.ui.Button(
-                label="Panel löschen",
-                style=discord.ButtonStyle.danger,
-                emoji="🗑"
-            )
-
-            async def delete_callback(interaction: discord.Interaction):
-
-                async with interaction.client.pool.acquire() as conn:
-                    async with conn.cursor() as cursor:
-
-                        await cursor.execute(
-                            "DELETE FROM reactionrole_entries WHERE message_id = %s",
-                            (self.selected_panel["message_id"],)
-                        )
-
-                        await cursor.execute(
-                            "DELETE FROM reactionrole_messages WHERE message_id = %s",
-                            (self.selected_panel["message_id"],)
-                        )
-
-                        await conn.commit()
-
-                channel = interaction.guild.get_channel(self.selected_panel["channel_id"])
-                if channel:
-                    try:
-                        msg = await channel.fetch_message(self.selected_panel["message_id"])
-                        await msg.delete()
-                    except:
-                        pass
-
-                await interaction.response.send_message(
-                    "✅ Panel wurde gelöscht.",
-                    ephemeral=True
+            async def select_callback(interaction: discord.Interaction):
+                panel_id = int(select.values[0])
+                self.selected_panel = next(
+                    (p for p in self.panels if p["message_id"] == panel_id),
+                    None
                 )
 
-                self.panels = [
-                    p for p in self.panels
-                    if p["message_id"] != self.selected_panel["message_id"]
-                ]
-                self.selected_panel = None
                 self._build()
-                await interaction.edit_original_response(view=self)
+                await interaction.response.edit_message(view=self)
 
-            delete_btn.callback = delete_callback
+            select.callback = select_callback
+            container.add_item(discord.ui.ActionRow(select))
 
-            container.add_item(discord.ui.ActionRow(delete_btn))
+            self.add_item(container)
+            return
+
+        # ================= PANEL DETAILS =================
+
+        if not self.selected_panel and len(self.panels) == 1:
+            self.selected_panel = self.panels[0]
+
+        container.add_item(discord.ui.TextDisplay(
+            f"## 📝 Panel Informationen\n"
+            f"**Titel:** {self.selected_panel['embed_title']}\n"
+            f"**Channel:** <#{self.selected_panel['channel_id']}>\n"
+            f"**Style:** {self.selected_panel['style']}\n"
+            f"**Message ID:** `{self.selected_panel['message_id']}`"
+        ))
+
+        container.add_item(discord.ui.Separator())
+
+        delete_btn = discord.ui.Button(
+            label="Panel löschen",
+            style=discord.ButtonStyle.danger,
+            emoji="🗑"
+        )
+
+        async def delete_callback(interaction: discord.Interaction):
+
+            # DB löschen
+            async with interaction.client.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+
+                    await cursor.execute(
+                        "DELETE FROM reactionrole_entries WHERE message_id = %s",
+                        (self.selected_panel["message_id"],)
+                    )
+
+                    await cursor.execute(
+                        "DELETE FROM reactionrole_messages WHERE message_id = %s",
+                        (self.selected_panel["message_id"],)
+                    )
+
+                    await conn.commit()
+
+            # Discord Message löschen
+            channel = interaction.guild.get_channel(self.selected_panel["channel_id"])
+            if channel:
+                try:
+                    msg = await channel.fetch_message(self.selected_panel["message_id"])
+                    await msg.delete()
+                except:
+                    pass
+
+            # Panel aus Liste entfernen
+            self.panels = [
+                p for p in self.panels
+                if p["message_id"] != self.selected_panel["message_id"]
+            ]
+
+            # LOGIK NACH LÖSCHEN
+
+            if len(self.panels) > 1:
+                # Mehr als 1 übrig → zurück zur Startansicht
+                self.selected_panel = None
+
+            elif len(self.panels) == 1:
+                # Nur 1 übrig → direkt anzeigen
+                self.selected_panel = self.panels[0]
+
+            else:
+                # Kein Panel übrig
+                self.selected_panel = None
+
+            self._build()
+
+            await interaction.response.edit_message(view=self)
+
+        delete_btn.callback = delete_callback
+
+        container.add_item(discord.ui.ActionRow(delete_btn))
 
         self.add_item(container)
-
 
 
 
