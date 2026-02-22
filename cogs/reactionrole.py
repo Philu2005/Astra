@@ -231,7 +231,19 @@ class ReactionRole(commands.Cog):
         else:
             options = []
             for r in role_data:
-                emoji = r['emoji'] if r['emoji'] and is_valid_emoji(r['emoji']) else None
+                emoji = None
+
+                if r['emoji']:
+                    if r['emoji'].startswith("<"):
+                        # Custom Emoji parsen
+                        match = re.match(r'<a?:([a-zA-Z0-9_~]+):(\d+)>', r['emoji'])
+                        if match:
+                            name = match.group(1)
+                            emoji_id = int(match.group(2))
+                            emoji = discord.PartialEmoji(name=name, id=emoji_id)
+                    else:
+                        # Standard Unicode Emoji
+                        emoji = r['emoji']
                 options.append(discord.SelectOption(label=r['label'], value=str(r['role_id']), emoji=emoji))
 
             select = ui.Select(placeholder="Wähle deine Rolle aus...", options=options, custom_id="reactionrole_select", min_values=0, max_values=len(options))
