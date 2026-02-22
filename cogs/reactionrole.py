@@ -78,6 +78,8 @@ class RoleSelectView(discord.ui.LayoutView):
 
         # ================= ROLE SELECT =================
 
+        main.add_item(discord.ui.TextDisplay("## Rollen hinzufügen"))
+
         role_select = discord.ui.RoleSelect(
             placeholder="🎭 Rolle auswählen",
             min_values=1,
@@ -93,7 +95,6 @@ class RoleSelectView(discord.ui.LayoutView):
                 None
             )
 
-            # Rolle entfernen wenn bereits vorhanden
             if existing:
                 self.role_data.remove(existing)
                 await interaction.response.send_message(
@@ -108,15 +109,14 @@ class RoleSelectView(discord.ui.LayoutView):
                 if hasattr(modal, "result") and modal.result:
                     self.role_data.append(modal.result)
 
+            # View neu bauen und aktualisieren
             self._build()
             await interaction.edit_original_response(view=self)
 
         role_select.callback = role_select_cb
 
-        main.add_item(discord.ui.Section(
-            discord.ui.TextDisplay("## Rollen hinzufügen"),
-            accessory=role_select
-        ))
+        # ⚠️ WICHTIG: Select darf NICHT in Section accessory
+        main.add_item(discord.ui.ActionRow(role_select))
 
         # ================= AKTUELLE ROLLEN =================
 
