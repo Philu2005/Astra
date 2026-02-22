@@ -153,8 +153,8 @@ class Astra(commands.Bot):
 
     async def setup_hook(self):
         try:
-            self.loop.create_task(rotating_presence(self))
-            bot.owner_id = 789555434201677824
+            self.loop.create_task(rotating_presence())
+            self.owner_id = 789555434201677824
             self.topggpy = topgg.DBLClient(self, dbl_token)
             bot.topgg_webhook = topgg.WebhookManager(bot).dbl_webhook("/dblwebhook", dbl_password)
             await bot.topgg_webhook.run(int(dbl_port))
@@ -361,15 +361,9 @@ class Astra(commands.Bot):
 
 bot = Astra()
 
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
-async def rotating_presence():
+async def rotating_presence(client: commands.Bot):
     await bot.wait_until_ready()
 
     server_count = 0
@@ -384,8 +378,8 @@ async def rotating_presence():
 
         # 🔄 Stats nur alle 5 Minuten neu berechnen
         if current_time - last_update > 300:
-            server_count = len(bot.guilds)
-            member_count = sum(g.member_count or 0 for g in bot.guilds)
+            server_count = len(client.guilds)
+            member_count = sum(g.member_count or 0 for g in client.guilds)
             last_update = current_time
 
         # 🇩🇪 Deutsche Tausendertrennung
@@ -419,7 +413,7 @@ async def rotating_presence():
                 activity=activity,
                 status=astra_status
             )
-            asyncio.sleep(30)
+            await asyncio.sleep(30)
 
 class VoteView(discord.ui.View):
     def __init__(self):
@@ -746,6 +740,8 @@ def all_app_commands(bot):
 
 @bot.event
 async def on_ready():
+    if bot.pool is None:
+        return
     with guild_cache_lock:
         guild_cache.clear()
         for g in bot.guilds:
