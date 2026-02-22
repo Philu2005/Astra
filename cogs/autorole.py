@@ -90,7 +90,7 @@ class AutoroleView(discord.ui.LayoutView):
     def _build(self):
         self.clear_items()
 
-        container = discord.ui.Container(
+        main = discord.ui.Container(
             accent_color=discord.Colour.blurple().value
         )
 
@@ -98,20 +98,29 @@ class AutoroleView(discord.ui.LayoutView):
         # HEADER
         # =====================================================
 
-        container.add_item(discord.ui.TextDisplay(
+        main.add_item(discord.ui.TextDisplay(
             "# ⚙️ Autorole\n"
-            "Verwalte automatische Rollen für Bots und neue Mitglieder."
+            "Das Autorole-System ermöglicht dir eine automatische Rollenvergabe, "
+            "sobald neue Mitglieder oder Bots deinem Server beitreten."
         ))
 
-        container.add_item(discord.ui.Separator())
+        main.add_item(discord.ui.Separator())
 
         # =====================================================
-        # JOINROLE ERKLÄRUNG + TOGGLE (NEBENEINANDER)
+        # JOINROLE ERKLÄRUNG + BUTTON RECHTS
         # =====================================================
 
-        container.add_item(discord.ui.TextDisplay(
+        join_top = discord.ui.Container()
+
+        join_top.add_item(discord.ui.TextDisplay(
             "## 👋 Joinrole System\n"
-            "Automatische Rollenvergabe für neue Mitglieder."
+            "Vergibt automatisch eine festgelegte Rolle an neue Mitglieder, "
+            "sobald sie dem Server beitreten.\n\n"
+            "Ideal für:\n"
+            "• Standard-Mitgliedsrollen\n"
+            "• Verifizierungsprozesse\n"
+            "• Automatische Grundrechte\n\n"
+            "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
         ))
 
         toggle_join = discord.ui.Button(
@@ -135,18 +144,25 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         toggle_join.callback = toggle_join_cb
+        join_top.add_item(toggle_join)
 
-        container.add_item(discord.ui.ActionRow(toggle_join))
-
-        container.add_item(discord.ui.Separator())
+        main.add_item(join_top)
+        main.add_item(discord.ui.Separator())
 
         # =====================================================
-        # BOTROLE ERKLÄRUNG + TOGGLE (NEBENEINANDER)
+        # BOTROLE ERKLÄRUNG + BUTTON RECHTS
         # =====================================================
 
-        container.add_item(discord.ui.TextDisplay(
+        bot_top = discord.ui.Container()
+
+        bot_top.add_item(discord.ui.TextDisplay(
             "## 🤖 Botrole System\n"
-            "Automatische Rollenvergabe für neue Bots."
+            "Weist neu hinzugefügten Bots automatisch eine definierte Rolle zu.\n\n"
+            "Perfekt geeignet für:\n"
+            "• Bot-Kategorien\n"
+            "• Rechteverwaltung für Bots\n"
+            "• Klare optische Trennung von Bots & Mitgliedern\n\n"
+            "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
         ))
 
         toggle_bot = discord.ui.Button(
@@ -170,13 +186,13 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         toggle_bot.callback = toggle_bot_cb
+        bot_top.add_item(toggle_bot)
 
-        container.add_item(discord.ui.ActionRow(toggle_bot))
-
-        container.add_item(discord.ui.Separator())
+        main.add_item(bot_top)
+        main.add_item(discord.ui.Separator())
 
         # =====================================================
-        # JOINROLE SECTION
+        # JOINROLE VERWALTUNG
         # =====================================================
 
         join_status = (
@@ -185,7 +201,7 @@ class AutoroleView(discord.ui.LayoutView):
             else "<:Astra_x:1141303954555289600> Deaktiviert"
         )
 
-        container.add_item(discord.ui.TextDisplay(
+        main.add_item(discord.ui.TextDisplay(
             "### 👋 Joinrole Verwaltung\n"
             f"Status: {join_status}\n"
             f"Aktuelle Rolle: {self.join_role.mention if self.join_role else '`Nicht gesetzt`'}"
@@ -207,8 +223,7 @@ class AutoroleView(discord.ui.LayoutView):
 
             if selected >= self.guild.me.top_role:
                 return await interaction.response.send_message(
-                    "<:Astra_x:1141303954555289600> Diese Rolle ist höher oder gleich meiner Rolle.\n"
-                    "Ziehe meine Rolle darüber.",
+                    "<:Astra_x:1141303954555289600> Diese Rolle ist höher oder gleich meiner Rolle.",
                     ephemeral=True
                 )
 
@@ -224,12 +239,12 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         role_join.callback = role_join_cb
-        container.add_item(discord.ui.ActionRow(role_join))
+        main.add_item(role_join)
 
-        container.add_item(discord.ui.Separator())
+        main.add_item(discord.ui.Separator())
 
         # =====================================================
-        # BOTROLE SECTION
+        # BOTROLE VERWALTUNG
         # =====================================================
 
         bot_status = (
@@ -238,7 +253,7 @@ class AutoroleView(discord.ui.LayoutView):
             else "<:Astra_x:1141303954555289600> Deaktiviert"
         )
 
-        container.add_item(discord.ui.TextDisplay(
+        main.add_item(discord.ui.TextDisplay(
             "### 🤖 Botrole Verwaltung\n"
             f"Status: {bot_status}\n"
             f"Aktuelle Rolle: {self.bot_role.mention if self.bot_role else '`Nicht gesetzt`'}"
@@ -260,8 +275,7 @@ class AutoroleView(discord.ui.LayoutView):
 
             if selected >= self.guild.me.top_role:
                 return await interaction.response.send_message(
-                    "<:Astra_x:1141303954555289600> Diese Rolle ist höher oder gleich meiner Rolle.\n"
-                    "Ziehe meine Rolle darüber.",
+                    "<:Astra_x:1141303954555289600> Diese Rolle ist höher oder gleich meiner Rolle.",
                     ephemeral=True
                 )
 
@@ -277,15 +291,15 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         role_bot.callback = role_bot_cb
-        container.add_item(discord.ui.ActionRow(role_bot))
+        main.add_item(role_bot)
 
-        container.add_item(discord.ui.Separator())
+        main.add_item(discord.ui.Separator())
 
-        container.add_item(discord.ui.TextDisplay(
+        main.add_item(discord.ui.TextDisplay(
             f"<:Astra_support:1141303923752325210> Bedienung durch {self.invoker.mention}"
         ))
 
-        self.add_item(container)
+        self.add_item(main)
 
 
 # =========================================================
