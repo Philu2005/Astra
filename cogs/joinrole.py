@@ -94,6 +94,12 @@ class joinrole(commands.Cog):
                             ephemeral=True
                         )
                         return
+                    if role.is_default():
+                        await interaction.response.send_message(
+                            "<:Astra_x:1141303954555289600> Die @everyone Rolle kann nicht als Joinrole gesetzt werden.",
+                            ephemeral=True
+                        )
+                        return
 
                     await cursor.execute(
                         "SELECT roleID FROM joinrole WHERE guildID = %s",
