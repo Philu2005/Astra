@@ -152,13 +152,13 @@ class AutoroleView(discord.ui.LayoutView):
             "<:Astra_punkt:1141303896745201696> Standard-Mitgliedsrollen\n"
             "<:Astra_punkt:1141303896745201696> Verifizierungsprozesse\n"
             "<:Astra_punkt:1141303896745201696> Automatische Grundrechte\n\n"
-            "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
+            "<:Astra_light_on:1141303864134467675> Meine Bot-Rolle muss über der gewählten Rolle stehen."
         ))
 
         # Status + Rolle
         main.add_item(discord.ui.TextDisplay(
-            f"Status: {join_status}\n"
-            f"Aktuelle Rolle: {self.join_role.mention if self.join_role else '`Nicht gesetzt`'}"
+            f"**Status:** {join_status}\n"
+            f"**Aktuelle Rolle:** {self.join_role.mention if self.join_role else '`Nicht gesetzt`'}"
         ))
 
         role_join = discord.ui.RoleSelect(
@@ -242,12 +242,12 @@ class AutoroleView(discord.ui.LayoutView):
             "<:Astra_punkt:1141303896745201696> Bot-Kategorien\n"
             "<:Astra_punkt:1141303896745201696> Rechteverwaltung für Bots\n"
             "<:Astra_punkt:1141303896745201696> Klare optische Trennung von Bots & Mitgliedern\n\n"
-            "Hinweis: Meine Bot-Rolle muss über der gewählten Rolle stehen."
+            "<:Astra_light_on:1141303864134467675> Meine Bot-Rolle muss über der gewählten Rolle stehen."
         ))
 
         main.add_item(discord.ui.TextDisplay(
-            f"Status: {bot_status}\n"
-            f"Aktuelle Rolle: {self.bot_role.mention if self.bot_role else '`Nicht gesetzt`'}"
+            f"**Status:** {bot_status}\n"
+            f"**Aktuelle Rolle:** {self.bot_role.mention if self.bot_role else '`Nicht gesetzt`'}"
         ))
 
         role_bot = discord.ui.RoleSelect(
