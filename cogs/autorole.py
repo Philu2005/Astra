@@ -95,107 +95,27 @@ class AutoroleView(discord.ui.LayoutView):
         )
 
         # =====================================================
-        # BOTROLE SECTION
+        # HEADER
         # =====================================================
 
-        bot_status = (
-            "<:Astra_accept:1141303821176422460> **Aktiviert**"
-            if self.bot_enabled
-            else "<:Astra_x:1141303954555289600> **Deaktiviert**"
-        )
-
         container.add_item(discord.ui.TextDisplay(
-            "# 🤖 Botrole System\n"
-            "Automatische Rollenvergabe für neue Bots\n\n"
-            f"**Status:** {bot_status}\n"
-            f"**Aktuelle Rolle:** {self.bot_role.mention if self.bot_role else '`Nicht gesetzt`'}"
+            "# ⚙️ Autorole\n"
+            "Verwalte automatische Rollen für Bots und neue Mitglieder."
         ))
 
         container.add_item(discord.ui.Separator())
 
-        toggle_bot = discord.ui.Button(
-            label="System aktivieren" if not self.bot_enabled else "System deaktivieren",
-            emoji="<:Astra_light_on:1141303864134467675>" if not self.bot_enabled
-                  else "<:Astra_x:1141303954555289600>",
-            style=discord.ButtonStyle.success if not self.bot_enabled
-                  else discord.ButtonStyle.danger
-        )
-
-        async def toggle_bot_cb(interaction: discord.Interaction):
-
-            if interaction.user.id != self.invoker.id:
-                return await interaction.response.send_message(
-                    "<:Astra_x:1141303954555289600> Nur der Ersteller darf dieses Panel bedienen.",
-                    ephemeral=True
-                )
-
-            self.bot_enabled = not self.bot_enabled
-            await self._save()
-            self._build()
-            await interaction.response.edit_message(view=self)
-
-        toggle_bot.callback = toggle_bot_cb
-        container.add_item(discord.ui.ActionRow(toggle_bot))
-
-        role_bot = discord.ui.RoleSelect(
-            placeholder="🎭 Botrolle auswählen oder ändern",
-            disabled=not self.bot_enabled
-        )
-
-        async def role_bot_cb(interaction: discord.Interaction):
-
-            if interaction.user.id != self.invoker.id:
-                return await interaction.response.send_message(
-                    "<:Astra_x:1141303954555289600> Nur der Ersteller darf dieses Panel bedienen.",
-                    ephemeral=True
-                )
-
-            selected = role_bot.values[0]
-
-            if selected >= self.guild.me.top_role:
-                return await interaction.response.send_message(
-                    "<:Astra_x:1141303954555289600> Diese Rolle ist höher oder gleich meiner Rolle.\n"
-                    "Ziehe meine Rolle darüber.",
-                    ephemeral=True
-                )
-
-            if selected.is_default():
-                return await interaction.response.send_message(
-                    "<:Astra_x:1141303954555289600> Die @everyone Rolle ist nicht erlaubt.",
-                    ephemeral=True
-                )
-
-            self.bot_role = selected
-            await self._save()
-            self._build()
-            await interaction.response.edit_message(view=self)
-
-        role_bot.callback = role_bot_cb
-        container.add_item(discord.ui.ActionRow(role_bot))
-
-        container.add_item(discord.ui.Separator())
-
         # =====================================================
-        # JOINROLE SECTION
+        # JOINROLE ERKLÄRUNG + TOGGLE (NEBENEINANDER)
         # =====================================================
-
-        join_status = (
-            "<:Astra_accept:1141303821176422460> **Aktiviert**"
-            if self.join_enabled
-            else "<:Astra_x:1141303954555289600> **Deaktiviert**"
-        )
 
         container.add_item(discord.ui.TextDisplay(
-            "# 👋 Joinrole System\n"
-            "Automatische Rollenvergabe für neue Mitglieder\n\n"
-            f"**Status:** {join_status}\n"
-            f"**Aktuelle Rolle:** {self.join_role.mention if self.join_role else '`Nicht gesetzt`'}"
+            "## 👋 Joinrole System\n"
+            "Automatische Rollenvergabe für neue Mitglieder."
         ))
-
-        container.add_item(discord.ui.Separator())
 
         toggle_join = discord.ui.Button(
-            label="System aktivieren" if not self.join_enabled else "System deaktivieren",
+            label="Aktivieren" if not self.join_enabled else "Deaktivieren",
             emoji="<:Astra_light_on:1141303864134467675>" if not self.join_enabled
                   else "<:Astra_x:1141303954555289600>",
             style=discord.ButtonStyle.success if not self.join_enabled
@@ -203,7 +123,6 @@ class AutoroleView(discord.ui.LayoutView):
         )
 
         async def toggle_join_cb(interaction: discord.Interaction):
-
             if interaction.user.id != self.invoker.id:
                 return await interaction.response.send_message(
                     "<:Astra_x:1141303954555289600> Nur der Ersteller darf dieses Panel bedienen.",
@@ -216,7 +135,61 @@ class AutoroleView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         toggle_join.callback = toggle_join_cb
+
         container.add_item(discord.ui.ActionRow(toggle_join))
+
+        container.add_item(discord.ui.Separator())
+
+        # =====================================================
+        # BOTROLE ERKLÄRUNG + TOGGLE (NEBENEINANDER)
+        # =====================================================
+
+        container.add_item(discord.ui.TextDisplay(
+            "## 🤖 Botrole System\n"
+            "Automatische Rollenvergabe für neue Bots."
+        ))
+
+        toggle_bot = discord.ui.Button(
+            label="Aktivieren" if not self.bot_enabled else "Deaktivieren",
+            emoji="<:Astra_light_on:1141303864134467675>" if not self.bot_enabled
+                  else "<:Astra_x:1141303954555289600>",
+            style=discord.ButtonStyle.success if not self.bot_enabled
+                  else discord.ButtonStyle.danger
+        )
+
+        async def toggle_bot_cb(interaction: discord.Interaction):
+            if interaction.user.id != self.invoker.id:
+                return await interaction.response.send_message(
+                    "<:Astra_x:1141303954555289600> Nur der Ersteller darf dieses Panel bedienen.",
+                    ephemeral=True
+                )
+
+            self.bot_enabled = not self.bot_enabled
+            await self._save()
+            self._build()
+            await interaction.response.edit_message(view=self)
+
+        toggle_bot.callback = toggle_bot_cb
+
+        container.add_item(discord.ui.ActionRow(toggle_bot))
+
+        container.add_item(discord.ui.Separator())
+
+        # =====================================================
+        # JOINROLE SECTION
+        # =====================================================
+
+        join_status = (
+            "<:Astra_accept:1141303821176422460> Aktiviert"
+            if self.join_enabled
+            else "<:Astra_x:1141303954555289600> Deaktiviert"
+        )
+
+        container.add_item(discord.ui.TextDisplay(
+            "### 👋 Joinrole Verwaltung\n"
+            f"Status: {join_status}\n"
+            f"Aktuelle Rolle: {self.join_role.mention if self.join_role else '`Nicht gesetzt`'}"
+        ))
 
         role_join = discord.ui.RoleSelect(
             placeholder="🎭 Joinrolle auswählen oder ändern",
@@ -224,7 +197,6 @@ class AutoroleView(discord.ui.LayoutView):
         )
 
         async def role_join_cb(interaction: discord.Interaction):
-
             if interaction.user.id != self.invoker.id:
                 return await interaction.response.send_message(
                     "<:Astra_x:1141303954555289600> Nur der Ersteller darf dieses Panel bedienen.",
@@ -253,6 +225,59 @@ class AutoroleView(discord.ui.LayoutView):
 
         role_join.callback = role_join_cb
         container.add_item(discord.ui.ActionRow(role_join))
+
+        container.add_item(discord.ui.Separator())
+
+        # =====================================================
+        # BOTROLE SECTION
+        # =====================================================
+
+        bot_status = (
+            "<:Astra_accept:1141303821176422460> Aktiviert"
+            if self.bot_enabled
+            else "<:Astra_x:1141303954555289600> Deaktiviert"
+        )
+
+        container.add_item(discord.ui.TextDisplay(
+            "### 🤖 Botrole Verwaltung\n"
+            f"Status: {bot_status}\n"
+            f"Aktuelle Rolle: {self.bot_role.mention if self.bot_role else '`Nicht gesetzt`'}"
+        ))
+
+        role_bot = discord.ui.RoleSelect(
+            placeholder="🎭 Botrolle auswählen oder ändern",
+            disabled=not self.bot_enabled
+        )
+
+        async def role_bot_cb(interaction: discord.Interaction):
+            if interaction.user.id != self.invoker.id:
+                return await interaction.response.send_message(
+                    "<:Astra_x:1141303954555289600> Nur der Ersteller darf dieses Panel bedienen.",
+                    ephemeral=True
+                )
+
+            selected = role_bot.values[0]
+
+            if selected >= self.guild.me.top_role:
+                return await interaction.response.send_message(
+                    "<:Astra_x:1141303954555289600> Diese Rolle ist höher oder gleich meiner Rolle.\n"
+                    "Ziehe meine Rolle darüber.",
+                    ephemeral=True
+                )
+
+            if selected.is_default():
+                return await interaction.response.send_message(
+                    "<:Astra_x:1141303954555289600> Die @everyone Rolle ist nicht erlaubt.",
+                    ephemeral=True
+                )
+
+            self.bot_role = selected
+            await self._save()
+            self._build()
+            await interaction.response.edit_message(view=self)
+
+        role_bot.callback = role_bot_cb
+        container.add_item(discord.ui.ActionRow(role_bot))
 
         container.add_item(discord.ui.Separator())
 
