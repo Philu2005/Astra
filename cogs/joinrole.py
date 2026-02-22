@@ -87,6 +87,13 @@ class joinrole(commands.Cog):
                     if role is None:
                         await interaction.response.send_message("Du musst eine Rolle angeben.", ephemeral=True)
                         return
+                    if role >= interaction.guild.me.top_role:
+                        await interaction.response.send_message(
+                            "<:Astra_x:1141303954555289600> Diese Rolle ist höher oder gleich meiner Rolle.\n"
+                            "Bitte ziehe meine Rolle in den Servereinstellungen über diese Rolle.",
+                            ephemeral=True
+                        )
+                        return
 
                     await cursor.execute(
                         "SELECT roleID FROM joinrole WHERE guildID = %s",
