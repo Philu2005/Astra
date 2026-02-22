@@ -87,6 +87,7 @@ class joinrole(commands.Cog):
                     if role is None:
                         await interaction.response.send_message("Du musst eine Rolle angeben.", ephemeral=True)
                         return
+
                     if role >= interaction.guild.me.top_role:
                         await interaction.response.send_message(
                             "<:Astra_x:1141303954555289600> Diese Rolle ist höher oder gleich meiner Rolle.\n"
@@ -94,6 +95,7 @@ class joinrole(commands.Cog):
                             ephemeral=True
                         )
                         return
+
                     if role.is_default():
                         await interaction.response.send_message(
                             "<:Astra_x:1141303954555289600> Die @everyone Rolle kann nicht als Joinrole gesetzt werden.",
@@ -112,21 +114,29 @@ class joinrole(commands.Cog):
                             "INSERT INTO joinrole (roleID, guildID) VALUES (%s, %s)",
                             (role.id, interaction.guild.id)
                         )
-                        text = f"Joinrole gesetzt auf: {role.mention}"
+                        text = f"**Joinrole aktiviert**\n\nNeue Mitglieder erhalten nun automatisch {role.mention}."
                     else:
                         await cursor.execute(
                             "UPDATE joinrole SET roleID = %s WHERE guildID = %s",
                             (role.id, interaction.guild.id)
                         )
-                        text = f"Joinrole geändert zu: {role.mention}"
+                        text = f"**Joinrole aktualisiert**\n\nNeue Mitglieder erhalten nun {role.mention}."
 
                     await conn.commit()
 
-                    embed = discord.Embed(colour=discord.Colour.orange(),
-                                          description=text)
-                    embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
-                                     icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
-                    embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+                    embed = discord.Embed(
+                        colour=discord.Colour.blurple(),
+                        description=text
+                    )
+                    embed.set_author(
+                        name="Joinrole-System",
+                        icon_url=self.bot.user.display_avatar.url
+                    )
+                    embed.set_footer(
+                        text=f"Ausgeführt von {interaction.user}",
+                        icon_url=interaction.user.display_avatar.url
+                    )
+
                     await interaction.response.send_message(embed=embed)
 
                 if argument == "Ausschalten":
@@ -148,11 +158,19 @@ class joinrole(commands.Cog):
 
                     await conn.commit()
 
-                    embed = discord.Embed(colour=discord.Colour.orange(),
-                                          description="Joinrole entfernt.")
-                    embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
-                                     icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
-                    embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+                    embed = discord.Embed(
+                        colour=discord.Colour.blurple(),
+                        description="**Joinrole deaktiviert**\n\nNeue Mitglieder erhalten keine automatische Rolle mehr."
+                    )
+                    embed.set_author(
+                        name="Joinrole-System",
+                        icon_url=self.bot.user.display_avatar.url
+                    )
+                    embed.set_footer(
+                        text=f"Ausgeführt von {interaction.user}",
+                        icon_url=interaction.user.display_avatar.url
+                    )
+
                     await interaction.response.send_message(embed=embed)
 
                 if argument == "Anzeigen":
@@ -173,11 +191,19 @@ class joinrole(commands.Cog):
                         await interaction.response.send_message("Gespeicherte Rolle existiert nicht mehr.", ephemeral=True)
                         return
 
-                    embed = discord.Embed(colour=discord.Colour.orange(),
-                                          description=f"Joinrole dieses Servers: {roless.mention}")
-                    embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
-                    embed.set_footer(text="Stelle sicher, dass Astras Rolle über der Joinrole ist.",
-                                     icon_url="https://cdn.discordapp.com/emojis/814202875387183145.png")
+                    embed = discord.Embed(
+                        colour=discord.Colour.blurple(),
+                        description=f"**Aktive Joinrole**\n\nNeue Mitglieder erhalten automatisch {roless.mention}."
+                    )
+                    embed.set_author(
+                        name="Joinrole-System",
+                        icon_url=self.bot.user.display_avatar.url
+                    )
+                    embed.set_footer(
+                        text=f"Abgerufen von {interaction.user}",
+                        icon_url=interaction.user.display_avatar.url
+                    )
+
                     await interaction.response.send_message(embed=embed)
 
 
