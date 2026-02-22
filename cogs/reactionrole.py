@@ -46,6 +46,70 @@ class FinalEmbedModal(ui.Modal, title="Erstelle das endgültige Embed"):
         await interaction.response.defer()
         self.stop()
 
+class RoleSelectView(ui.View):
+    def __init__(self, interaction: discord.Interaction, roles: List[discord.Role], style: str):
+        super().__init__(timeout=None)
+        self.interaction = interaction
+        self.roles = roles
+        self.selected = []
+        self.role_data = []
+        self.embed_message = None
+        self.embed = discord.Embed(title="Reaktionsrollen Setup", description="Füge Rollen über das Select-Menü hinzu oder entferne sie durch erneute Auswahl.", color=discord.Color.blue())
+        self.embed.set_footer(text="Reaction Roles Setup")
+        self.style = style
+        self.embed_data = None
+
+        # ✨ Nutze natives RoleSelect-Menü
+        self.select = NativeRoleSelect(placeholder="Wähle eine Rolle aus", min_values=1, max_values=1, custom_id="native_role_select")
+        self.select.callback = self.select_callback
+        self.add_item(self.select)
+
+        self.add_item(SaveButton())
+        self.add_item(CancelButton())
+
+    async def select_callback(self, interaction: Interaction):
+        role_id = int(interaction.data["values"][0])
+        role = interaction.guild.get_role(role_id)
+
+        existing = next((r for r in self.role_data if r["role_id"] == role_id), None)
+        if existing:
+            self.role_data.remove(existing)
+            self.selected.remove(role_id)
+        else:
+            modal = RoleConfigModal(role)
+            await interaction.response.send_modal(modal)
+            await modal.wait()
+            self.role_data.append(modal.result)
+            self.selected.append(role_id)
+
+        self.embed.clear_fields()
+        for r in self.role_data:
+            self.embed.add_field(name=r["label"], value=f"<@&{r['role_id']}>", inline=False)
+
+        if self.embed_message is None:
+            self.embed_message = await interaction.followup.send(embed=self.embed, view=self, ephemeral=True)
+        else:
+            await self.embed_message.edit(embed=self.embed, view=self)
+
+class SaveButton(ui.Button):
+    def __init__(self):
+        super().__init__(label="Fertig", style=discord.ButtonStyle.green, emoji="<:Astra_accept:1141303821176422460>", custom_id="save_button")
+
+    async def callback(self, interaction: Interaction):
+        final_modal = FinalEmbedModal()
+        await interaction.response.send_modal(final_modal)
+        await final_modal.wait()
+        self.view.embed_data = final_modal.embed_data
+        await interaction.followup.send("<:Astra_accept:1141303821176422460> Embed-Konfiguration abgeschlossen.", ephemeral=True)
+        self.view.stop()
+
+class CancelButton(ui.Button):
+    def __init__(self):
+        super().__init__(label="Abbrechen", style=discord.ButtonStyle.danger, emoji="<:Astra_x:1141303954555289600>", custom_id="cancel_button")
+
+    async def callback(self, interaction: Interaction):
+        await interaction.response.send_message("<:Astra_x:1141303954555289600> Reaktionsrollen-Setup abgebrochen.", ephemeral=True)
+        self.view.stop()
 
 class ReactionRoleContainerView(discord.ui.LayoutView):
 
