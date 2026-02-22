@@ -14,7 +14,7 @@ import io
 import hashlib
 import json
 import platform
-import datetime
+from zoneinfo import ZoneInfo
 import tempfile
 from pathlib import Path
 from topgg import WebhookManager
@@ -367,7 +367,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-async def rotating_presence(bot):
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
+
+async def rotating_presence():
     await bot.wait_until_ready()
 
     server_count = 0
@@ -376,7 +378,8 @@ async def rotating_presence(bot):
 
     while not bot.is_closed():
 
-        now = datetime.now()
+        # 🕒 Deutsche Zeit erzwingen
+        now = datetime.now(BERLIN_TZ)
         current_time = now.timestamp()
 
         # 🔄 Stats nur alle 5 Minuten neu berechnen
@@ -389,11 +392,8 @@ async def rotating_presence(bot):
         server_str = f"{server_count:,}".replace(",", ".")
         member_str = f"{member_count:,}".replace(",", ".")
 
-        # 🌙 Nachts automatisch idle (00:00 – 06:00)
-        if 0 <= now.hour < 6:
-            status = discord.Status.idle
-        else:
-            status = discord.Status.online
+        # 🌙 Idle zwischen 00:00–06:00 deutscher Zeit
+        astra_status = discord.Status.idle if 0 <= now.hour < 6 else discord.Status.online
 
         activities = [
             discord.Activity(
@@ -417,9 +417,9 @@ async def rotating_presence(bot):
         for activity in activities:
             await bot.change_presence(
                 activity=activity,
-                status=status
+                status=astra_status
             )
-            await asyncio.sleep(30)
+            asyncio.sleep(30)
 
 class VoteView(discord.ui.View):
     def __init__(self):
