@@ -325,8 +325,8 @@ class HelpCog(commands.Cog):
             name="Letzte Updates",
             value=(
                 f"> <:Astra_user:1141303940365959241> Joinrole und Botrole nun als </autorole:{self._cid('autorole')}> zusammengeführt!"
-                "> <:Astra_settings:1141303908778639490> Automod System nun mit neuem Setup und Config Command"
-                "> <:Astra_ticket:1141833836204937347> Ticket System nun mit neuem Setup command."
+                "> <:Astra_settings:1141303908778639490> Automod System nun mit neuem Setup und Config Command.\n"
+                "> <:Astra_ticket:1141833836204937347> Ticket System nun mit neuem Setup command.\n"
                 f"> <:Astra_file1:1141303837181886494> Backup-System: </backup erstellen:{self._cid('backup erstellen')}>, </backup laden:{self._cid('backup laden')}>, </backup zurücksetzen:{self._cid('backup zurücksetzen')}>\n"
                 f"> <:Astra_news:1141303885533827072> Benachrichtigungssystem: </benachrichtigung youtube:{self._cid('benachrichtigung youtube')}>, </benachrichtigung twitch:{self._cid('benachrichtigung twitch')}>\n"
             ),
