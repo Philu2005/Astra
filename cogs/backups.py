@@ -118,13 +118,39 @@ def join_limit(names: list[str], *, max_len: int = 900) -> str:
 
 def compute_includes(payload: dict) -> str:
     parts = []
+
     if payload.get("roles"):
         parts.append("roles")
-    chans = payload.get("channels") or []
-    if chans:
+
+    has_channels = False
+    has_overwrites = False
+
+    # Neues Format
+    for cat in payload.get("categories", []) or []:
+        has_channels = True
+        if cat.get("overwrites"):
+            has_overwrites = True
+        for ch in cat.get("channels", []):
+            has_channels = True
+            if ch.get("overwrites"):
+                has_overwrites = True
+
+    for ch in payload.get("uncategorized", []) or []:
+        has_channels = True
+        if ch.get("overwrites"):
+            has_overwrites = True
+
+    # Altes Format
+    for ch in payload.get("channels", []) or []:
+        has_channels = True
+        if ch.get("overwrites"):
+            has_overwrites = True
+
+    if has_channels:
         parts.append("channels")
-        if any((c.get("overwrites") or []) for c in chans):
-            parts.append("overwrites")
+    if has_overwrites:
+        parts.append("overwrites")
+
     return ",".join(parts)
 
 def build_progress_embed(*, title: str, step: int, total: int, status: str,
@@ -730,6 +756,7 @@ class BackupCog(commands.Cog):
 
     # ---------- Snapshot ----------
     async def _snapshot_guild(self, guild: discord.Guild) -> dict:
+
         roles = [{
             "name": r.name,
             "color": r.color.value,
@@ -739,10 +766,9 @@ class BackupCog(commands.Cog):
             "mentionable": r.mentionable
         } for r in sorted(guild.roles, key=lambda x: x.position)]
 
-        channels = []
-        for ch in sorted(guild.channels, key=lambda x: (0 if isinstance(x, discord.CategoryChannel) else 1, x.position)):
+        def serialize_overwrites(channel):
             overwrites = []
-            for target, po in ch.overwrites.items():
+            for target, po in channel.overwrites.items():
                 allow, deny = po.pair()
                 overwrites.append({
                     "target_name": target.name,
@@ -750,16 +776,51 @@ class BackupCog(commands.Cog):
                     "allow": allow.value,
                     "deny": deny.value
                 })
-            channels.append({
-                "type": int(ch.type.value),
-                "parent_name": ch.category.name if ch.category else None,
-                "name": ch.name,
-                "topic": getattr(ch, "topic", None),
-                "position": ch.position,
-                "nsfw": getattr(ch, "nsfw", False),
-                "overwrites": overwrites
-            })
-        return {"version": BACKUP_VERSION, "roles": roles, "channels": channels}
+            return overwrites
+
+        categories = []
+        uncategorized = []
+
+        # Kategorien zuerst
+        for cat in sorted(guild.categories, key=lambda x: x.position):
+
+            cat_data = {
+                "name": cat.name,
+                "position": cat.position,
+                "overwrites": serialize_overwrites(cat),
+                "channels": []
+            }
+
+            for ch in sorted(cat.channels, key=lambda x: x.position):
+                cat_data["channels"].append({
+                    "type": int(ch.type.value),
+                    "name": ch.name,
+                    "topic": getattr(ch, "topic", None),
+                    "position": ch.position,
+                    "nsfw": getattr(ch, "nsfw", False),
+                    "overwrites": serialize_overwrites(ch)
+                })
+
+            categories.append(cat_data)
+
+        # Channels ohne Kategorie
+        for ch in guild.channels:
+            if ch.category is None and not isinstance(ch, discord.CategoryChannel):
+                uncategorized.append({
+                    "type": int(ch.type.value),
+                    "name": ch.name,
+                    "topic": getattr(ch, "topic", None),
+                    "position": ch.position,
+                    "nsfw": getattr(ch, "nsfw", False),
+                    "overwrites": serialize_overwrites(ch)
+                })
+
+        return {
+            "version": BACKUP_VERSION,
+            "roles": roles,
+            "categories": categories,
+            "uncategorized": uncategorized
+        }
 
     # ---------- Restore / Undo ----------
     def _build_overwrites(self, guild: discord.Guild, ow_data: list[dict]):
@@ -783,34 +844,81 @@ class BackupCog(commands.Cog):
             self._last_embed_edit[job_id] = now
 
     async def _restore_to_guild(self, guild: discord.Guild, data: dict, job_id: int):
-        """Erstellt nur fehlende Objekte. total_steps = Anzahl der tatsächlich neu zu erstellenden Objekte."""
+        """Erstellt nur fehlende Objekte. Unterstützt altes & neues Backup-Format.
+        Stellt danach Rollen-, Kategorien- und Channel-Positionen korrekt wieder her.
+        """
+
         created_ids = {"roles": [], "channels": []}
-
-        # --- Step 1: Vorzählen, was wirklich fehlt (für korrekte total_steps) ---
         roles_data = data.get("roles", []) or []
-        channels_data = data.get("channels", []) or []
 
+        # =====================================================
+        # FORMAT ERKENNUNG
+        # =====================================================
+        if "categories" in data:
+            categories_data = data.get("categories", []) or []
+            uncategorized_data = data.get("uncategorized", []) or []
+        else:
+            channels_data = data.get("channels", []) or []
+            categories_data = []
+            uncategorized_data = []
+
+            categories_map = {}
+            for ch in channels_data:
+                if ch["type"] == discord.ChannelType.category.value:
+                    categories_map[ch["name"]] = {
+                        "data": ch,
+                        "channels": []
+                    }
+
+            for ch in channels_data:
+                if ch["type"] != discord.ChannelType.category.value:
+                    parent = ch.get("parent_name")
+                    if parent and parent in categories_map:
+                        categories_map[parent]["channels"].append(ch)
+                    else:
+                        uncategorized_data.append(ch)
+
+            for name, bundle in categories_map.items():
+                categories_data.append({
+                    "name": name,
+                    "position": bundle["data"].get("position", 0),
+                    "overwrites": bundle["data"].get("overwrites", []),
+                    "channels": bundle["channels"]
+                })
+
+        # =====================================================
+        # VORZÄHLEN
+        # =====================================================
         existing_roles = {r.name for r in guild.roles}
-        roles_to_create = sum(1 for r in roles_data if r["name"] not in existing_roles)
-
         existing_categories = {c.name: c for c in guild.categories}
-        cats_to_create = sum(1 for ch in channels_data
-                             if ch["type"] == discord.ChannelType.category.value and ch["name"] not in existing_categories)
+        existing_channels = {c.name for c in guild.channels}
 
-        existing_channel_names = {c.name for c in guild.channels}
-        chans_to_create = sum(1 for ch in channels_data
-                              if ch["type"] != discord.ChannelType.category.value and ch["name"] not in existing_channel_names)
+        roles_to_create = sum(1 for r in roles_data if r["name"] not in existing_roles)
+        cats_to_create = sum(1 for c in categories_data if c["name"] not in existing_categories)
+
+        chans_to_create = 0
+        for cat in categories_data:
+            for ch in cat.get("channels", []):
+                if ch["name"] not in existing_channels:
+                    chans_to_create += 1
+
+        for ch in uncategorized_data:
+            if ch["name"] not in existing_channels:
+                chans_to_create += 1
 
         total = roles_to_create + cats_to_create + chans_to_create
         step = 0
+
         await self._update_job(job_id, step=step, total_steps=total)
         await self._maybe_edit_progress_embed(job_id, running_status="Starte Restore …", force=True)
 
-        # --- Step 2: Rollen erzeugen ---
+        # =====================================================
+        # 1️⃣ ROLLEN ERSTELLEN
+        # =====================================================
         for r in roles_data:
             if r["name"] not in existing_roles:
                 try:
-                    new_role = await guild.create_role(
+                    role = await guild.create_role(
                         name=r["name"],
                         permissions=discord.Permissions(r["permissions"]),
                         colour=discord.Colour(r["color"]),
@@ -818,75 +926,191 @@ class BackupCog(commands.Cog):
                         mentionable=r["mentionable"],
                         reason="Astra Backup Restore"
                     )
-                    created_ids["roles"].append(new_role.id)
+                    created_ids["roles"].append(role.id)
                 except discord.Forbidden:
                     pass
                 finally:
-                    step += 1  # Schritt zählt auch, wenn Erstellung nicht erlaubt war
+                    step += 1
                     await self._update_job(job_id, step=step)
                     await self._maybe_edit_progress_embed(job_id, running_status="Erstelle Rollen …")
                     await gentle_sleep()
 
-        # --- Step 3: Kategorien erzeugen ---
-        # update existing_categories map in case roles step changed nothing
+        # Refresh nach Rollen
         existing_categories = {c.name: c for c in guild.categories}
-        for ch in channels_data:
-            if ch["type"] == discord.ChannelType.category.value and ch["name"] not in existing_categories:
+        existing_channels = {c.name: c for c in guild.channels}
+
+        # =====================================================
+        # 2️⃣ KATEGORIEN + CHANNELS ERSTELLEN
+        # =====================================================
+        for cat in categories_data:
+
+            cat_name = cat["name"]
+
+            if cat_name not in existing_categories:
                 try:
-                    cat = await guild.create_category(
-                        ch["name"],
-                        overwrites=self._build_overwrites(guild, ch.get("overwrites", [])),
+                    new_cat = await guild.create_category(
+                        cat_name,
+                        overwrites=self._build_overwrites(guild, cat.get("overwrites", [])),
                         reason="Astra Backup Restore"
                     )
-                    created_ids["channels"].append(cat.id)
-                    existing_categories[cat.name] = cat
+                    created_ids["channels"].append(new_cat.id)
+                    existing_categories[cat_name] = new_cat
                 except discord.Forbidden:
-                    pass
+                    continue
                 finally:
                     step += 1
                     await self._update_job(job_id, step=step)
                     await self._maybe_edit_progress_embed(job_id, running_status="Erstelle Kategorien …")
                     await gentle_sleep()
 
-        # --- Step 4: Channels erzeugen ---
-        existing_channel_names = {c.name for c in guild.channels}
-        for ch in channels_data:
-            if ch["type"] == discord.ChannelType.category.value:
-                continue
-            if ch["name"] not in existing_channel_names:
-                parent = existing_categories.get(ch.get("parent_name")) if ch.get("parent_name") else None
+            parent_category = existing_categories.get(cat_name)
+
+            for ch in cat.get("channels", []):
+
+                if ch["name"] in existing_channels:
+                    continue
+
                 overwrites = self._build_overwrites(guild, ch.get("overwrites", []))
                 ctype = discord.ChannelType(ch["type"])
+
                 try:
                     if ctype in (discord.ChannelType.text, discord.ChannelType.news):
                         new_ch = await guild.create_text_channel(
-                            name=ch["name"], topic=ch.get("topic"), nsfw=ch.get("nsfw", False),
-                            category=parent, overwrites=overwrites, reason="Astra Backup Restore"
+                            name=ch["name"],
+                            topic=ch.get("topic"),
+                            nsfw=ch.get("nsfw", False),
+                            category=parent_category,
+                            overwrites=overwrites,
+                            reason="Astra Backup Restore"
                         )
+
                     elif ctype is discord.ChannelType.voice:
                         new_ch = await guild.create_voice_channel(
-                            name=ch["name"], category=parent, overwrites=overwrites, reason="Astra Backup Restore"
+                            name=ch["name"],
+                            category=parent_category,
+                            overwrites=overwrites,
+                            reason="Astra Backup Restore"
                         )
+
                     elif ctype is discord.ChannelType.stage_voice and hasattr(guild, "create_stage_channel"):
                         new_ch = await guild.create_stage_channel(
-                            name=ch["name"], category=parent, overwrites=overwrites, reason="Astra Backup Restore"
+                            name=ch["name"],
+                            category=parent_category,
+                            overwrites=overwrites,
+                            reason="Astra Backup Restore"
                         )
+
                     elif ctype is discord.ChannelType.forum and hasattr(guild, "create_forum"):
                         new_ch = await guild.create_forum(
-                            name=ch["name"], category=parent, overwrites=overwrites, reason="Astra Backup Restore"
+                            name=ch["name"],
+                            category=parent_category,
+                            overwrites=overwrites,
+                            reason="Astra Backup Restore"
                         )
                     else:
-                        new_ch = await guild.create_text_channel(
-                            name=ch["name"], topic=ch.get("topic"), nsfw=ch.get("nsfw", False),
-                            category=parent, overwrites=overwrites, reason="Astra Backup Restore"
-                        )
+                        continue
+
                     created_ids["channels"].append(new_ch.id)
+
                 except discord.Forbidden:
                     pass
                 finally:
                     step += 1
                     await self._update_job(job_id, step=step)
                     await self._maybe_edit_progress_embed(job_id, running_status="Erstelle Channels …")
+                    await gentle_sleep()
+
+        # =====================================================
+        # 3️⃣ UNCATEGORIZED CHANNELS
+        # =====================================================
+        for ch in uncategorized_data:
+
+            if ch["name"] in existing_channels:
+                continue
+
+            overwrites = self._build_overwrites(guild, ch.get("overwrites", []))
+            ctype = discord.ChannelType(ch["type"])
+
+            try:
+                if ctype in (discord.ChannelType.text, discord.ChannelType.news):
+                    new_ch = await guild.create_text_channel(
+                        name=ch["name"],
+                        topic=ch.get("topic"),
+                        nsfw=ch.get("nsfw", False),
+                        overwrites=overwrites,
+                        reason="Astra Backup Restore"
+                    )
+
+                elif ctype is discord.ChannelType.voice:
+                    new_ch = await guild.create_voice_channel(
+                        name=ch["name"],
+                        overwrites=overwrites,
+                        reason="Astra Backup Restore"
+                    )
+                else:
+                    continue
+
+                created_ids["channels"].append(new_ch.id)
+
+            except discord.Forbidden:
+                pass
+            finally:
+                step += 1
+                await self._update_job(job_id, step=step)
+                await self._maybe_edit_progress_embed(job_id, running_status="Erstelle Channels …")
+                await gentle_sleep()
+
+        # =====================================================
+        # 🔥 POSITION RESTORE (NEU)
+        # =====================================================
+        await self._maybe_edit_progress_embed(job_id, running_status="Stelle Reihenfolge wieder her …", force=True)
+
+        # Rollen sortieren
+        sorted_roles = sorted(
+            [(discord.utils.get(guild.roles, name=r["name"]), r.get("position", 0)) for r in roles_data],
+            key=lambda x: x[1]
+        )
+
+        for index, (role, _) in enumerate(sorted_roles):
+            if role:
+                try:
+                    await role.edit(position=index)
+                except Exception:
+                    pass
+                await gentle_sleep()
+
+        # Kategorien sortieren
+        sorted_cats = sorted(
+            [(discord.utils.get(guild.categories, name=c["name"]), c.get("position", 0)) for c in categories_data],
+            key=lambda x: x[1]
+        )
+
+        for index, (cat_obj, _) in enumerate(sorted_cats):
+            if cat_obj:
+                try:
+                    await cat_obj.edit(position=index)
+                except Exception:
+                    pass
+                await gentle_sleep()
+
+        # Channels innerhalb Kategorien sortieren
+        for cat in categories_data:
+            parent = discord.utils.get(guild.categories, name=cat["name"])
+            if not parent:
+                continue
+
+            sorted_channels = sorted(
+                [(discord.utils.get(parent.channels, name=ch["name"]), ch.get("position", 0))
+                 for ch in cat.get("channels", [])],
+                key=lambda x: x[1]
+            )
+
+            for index, (ch_obj, _) in enumerate(sorted_channels):
+                if ch_obj:
+                    try:
+                        await ch_obj.edit(position=index)
+                    except Exception:
+                        pass
                     await gentle_sleep()
 
         await self._maybe_edit_progress_embed(job_id, running_status="Abschließen …", force=True)
@@ -1000,25 +1224,6 @@ class Backup(app_commands.Group):
     async def backup_list(self, interaction: discord.Interaction):
         cog = self._cog()
 
-        def esc(s: str) -> str:
-            return discord.utils.escape_markdown(s or "")
-
-        def pretty_list(names: list[str], prefix: str = "", max_len: int = 900) -> str:
-            # "x · y · z … +N weitere"
-            items = [f"{prefix}{esc(n)}" for n in names]
-            out, used = [], 0
-            for i, it in enumerate(items):
-                add = (" · " if out else "") + it
-                if used + len(add) > max_len:
-                    rest = len(items) - i
-                    if rest > 0:
-                        out.append(f" … +{rest} weitere")
-                    break
-                out.append(add if out else it)
-                used += len(add)
-            return "".join(out) if out else "—"
-
-        # Backups holen
         async with cog.pool.acquire() as conn, conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute(
                 """
@@ -1032,11 +1237,14 @@ class Backup(app_commands.Group):
             rows = await cur.fetchall()
 
         if not rows:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Es sind keine Backups vorhanden.", ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Es sind keine Backups vorhanden.",
+                ephemeral=True
+            )
             return
 
-        # Inhalte analysieren
         entries: list[dict] = []
+
         for r in rows:
             blob = r["data_blob"]
             buf = memoryview(blob)
@@ -1051,13 +1259,44 @@ class Backup(app_commands.Group):
             data = loads(raw)
 
             roles = data.get("roles", []) or []
-            chans = data.get("channels", []) or []
 
-            # sortierte Namen
-            role_names = sorted([x["name"] for x in roles if x.get("name") and x["name"] != "@everyone"],
-                                key=lambda s: s.casefold())
+            # =====================================================
+            # FORMAT FIX
+            # =====================================================
+            if "categories" in data:
+                chans = []
+
+                for cat in data.get("categories", []):
+                    # Kategorie selbst
+                    chans.append({
+                        "type": discord.ChannelType.category.value,
+                        "name": cat.get("name")
+                    })
+
+                    # Unterchannels
+                    for ch in cat.get("channels", []):
+                        ch_copy = ch.copy()
+                        ch_copy["parent_name"] = cat.get("name")
+                        chans.append(ch_copy)
+
+                # Uncategorized
+                for ch in data.get("uncategorized", []):
+                    ch_copy = ch.copy()
+                    ch_copy["parent_name"] = None
+                    chans.append(ch_copy)
+
+            else:
+                chans = data.get("channels", []) or []
+
+            # =====================================================
+            # ANALYSE
+            # =====================================================
+            role_names = sorted(
+                [x["name"] for x in roles if x.get("name") and x["name"] != "@everyone"],
+                key=lambda s: s.casefold()
+            )
+
             categories = [c for c in chans if c.get("type") == discord.ChannelType.category.value]
-            category_tree = build_category_tree_block(interaction.guild, chans)
             text = [c for c in chans if
                     c.get("type") in (discord.ChannelType.text.value, discord.ChannelType.news.value)]
             voice = [c for c in chans if c.get("type") == discord.ChannelType.voice.value]
@@ -1065,10 +1304,7 @@ class Backup(app_commands.Group):
             forum = [c for c in chans if c.get("type") == discord.ChannelType.forum.value]
             news = [c for c in chans if c.get("type") == discord.ChannelType.news.value]
 
-            cat_names = sorted([c["name"] for c in categories if c.get("name")], key=lambda s: s.casefold())
-            text_names = sorted([c["name"] for c in text if c.get("name")], key=lambda s: s.casefold())
-            voice_names = sorted([c["name"] for c in voice if c.get("name")], key=lambda s: s.casefold())
-
+            category_tree = build_category_tree_block(interaction.guild, chans)
 
             entries.append({
                 "code": r["code"],
@@ -1076,85 +1312,95 @@ class Backup(app_commands.Group):
                 "version": r["version"],
                 "size": human_bytes(r["size_bytes"]) if isinstance(r["size_bytes"], (int, float)) else "?",
                 "roles_count": len(role_names),
-                "categories_count": len(cat_names),
+                "categories_count": len(categories),
                 "category_tree": category_tree,
                 "channels_total": len(chans) - len(categories),
-                "text_count": len(text_names),
-                "voice_count": len(voice_names),
+                "text_count": len(text),
+                "voice_count": len(voice),
                 "stage_count": len(stage),
                 "forum_count": len(forum),
                 "news_count": len(news),
                 "overwrites_total": sum(len(c.get("overwrites") or []) for c in chans),
                 "role_names": role_names,
-                "cat_names": cat_names,
-                "text_names": text_names,
-                "voice_names": voice_names,
+                "text_names": sorted([c["name"] for c in text if c.get("name")], key=lambda s: s.casefold()),
+                "voice_names": sorted([c["name"] for c in voice if c.get("name")], key=lambda s: s.casefold()),
             })
 
         total = len(entries)
 
-        # hübsches Embed für EIN Backup
         def build_embed(entry: dict, idx: int, total_count: int) -> discord.Embed:
             guild = interaction.guild
             ts = int(entry["created_at"].timestamp())
+
             head = (
                 f"<:Astra_info:1141303860556738620> **`{entry['code']}`**  •  v{entry['version']}  •  {entry['size']}\n"
                 f"<:Astra_calender:1141303828625489940> <t:{ts}:f> • <t:{ts}:R>\n"
                 f"<:Astra_file2:1141303839543279666> Insgesamt **{total_count}** Backups (neu → alt)."
             )
 
-            e = discord.Embed(title="Astra • Backups (Detailansicht)", description=head, color=discord.Colour.blue())
+            e = discord.Embed(
+                title="Astra • Backups (Detailansicht)",
+                description=head,
+                color=discord.Colour.blue()
+            )
 
-            # Zähler hübsch in zwei Reihen
             row1 = " | ".join([
                 f"<:Astra_users:1141303946602872872> Rollen **{entry['roles_count']}**",
                 f"<:Astra_file2:1141303839543279666> Kategorien **{entry['categories_count']}**",
                 f"<:Astra_messages:1141303867850641488> Text **{entry['text_count']}**",
                 f"<:Astra_hear:1141303854881833081> Voice **{entry['voice_count']}**",
             ])
+
             row2 = " | ".join([
                 f"<:Astra_news:1141303885533827072> News **{entry['news_count']}**",
                 f"<:Astra_mic_on:1141303873294844005> Stage **{entry['stage_count']}**",
                 f"<:Astra_stift:1141825585836998716> Forum **{entry['forum_count']}**",
                 f"<:Astra_locked:1141824745243942912> Berechtigungen **{entry['overwrites_total']}**",
             ])
+
             e.add_field(name="Inhalt (Zähler)", value=f"{row1}\n{row2}", inline=False)
 
-            # Vertikale Listen mit Pings (untereinander)
             e.add_field(
                 name=f"Rollen ({entry['roles_count']})",
                 value=build_vertical_list_role_mentions(guild, entry["role_names"]),
                 inline=False
             )
 
-            # Kategorie-Baum: Kategorie → darunter Channels (mit Pings)
-            # Dafür brauchen wir die original Channel-Struktur aus dem Backup;
-            # packen wir in entry["tree"] beim Aufbereiten (siehe unten) – oder bauen hier schnell aus Counts:
             e.add_field(
                 name=f"Kategorien ({entry['categories_count']}) & Kanäle",
-                value=entry.get("category_tree", "—"),
+                value=entry["category_tree"],
                 inline=False
             )
 
-            # Zusätzlich (falls du explizit getrennte Listen willst)
             e.add_field(
                 name=f"Textkanäle ({entry['text_count']})",
-                value=build_vertical_list_mentions(guild, entry["text_names"],
-                                                   prefix_channel_type=discord.ChannelType.text.value),
-                inline=False
-            )
-            e.add_field(
-                name=f"Voicekanäle ({entry['voice_count']})",
-                value=build_vertical_list_mentions(guild, entry["voice_names"],
-                                                   prefix_channel_type=discord.ChannelType.voice.value),
+                value=build_vertical_list_mentions(
+                    guild,
+                    entry["text_names"],
+                    prefix_channel_type=discord.ChannelType.text.value
+                ),
                 inline=False
             )
 
-            e.set_footer(text=f"Seite {idx + 1}/{total_count} — Dropdown/Buttons zum Wechseln (eine Nachricht).")
+            e.add_field(
+                name=f"Voicekanäle ({entry['voice_count']})",
+                value=build_vertical_list_mentions(
+                    guild,
+                    entry["voice_names"],
+                    prefix_channel_type=discord.ChannelType.voice.value
+                ),
+                inline=False
+            )
+
+            e.set_footer(text=f"Seite {idx + 1}/{total_count}")
             return e
 
         view = BackupListView(entries, build_embed)
-        await interaction.response.send_message(embed=build_embed(entries[0], 0, total), view=view, ephemeral=True)
+        await interaction.response.send_message(
+            embed=build_embed(entries[0], 0, total),
+            view=view,
+            ephemeral=True
+        )
 
     @app_commands.command(name="laden", description="Stellt ein Backup mithilfe eines Codes wieder her.")
     @app_commands.checks.has_permissions(administrator=True)
