@@ -844,8 +844,10 @@ class BackupCog(commands.Cog):
             self._last_embed_edit[job_id] = now
 
     async def _restore_to_guild(self, guild: discord.Guild, data: dict, job_id: int):
-        """Erstellt nur fehlende Objekte. Unterstützt altes & neues Backup-Format.
-        Stellt danach Rollen-, Kategorien- und Channel-Positionen korrekt wieder her.
+        """Vollständiges Restore:
+        - erstellt fehlende Objekte
+        - repariert existierende Objekte
+        - stellt Kategorien & Positionen exakt wieder her
         """
 
         created_ids = {"roles": [], "channels": []}
@@ -889,35 +891,25 @@ class BackupCog(commands.Cog):
         # =====================================================
         # VORZÄHLEN
         # =====================================================
-        existing_roles = {r.name for r in guild.roles}
-        existing_categories = {c.name: c for c in guild.categories}
-        existing_channels = {c.name for c in guild.channels}
+        total = (
+                len(roles_data)
+                + len(categories_data)
+                + sum(len(c.get("channels", [])) for c in categories_data)
+                + len(uncategorized_data)
+        )
 
-        roles_to_create = sum(1 for r in roles_data if r["name"] not in existing_roles)
-        cats_to_create = sum(1 for c in categories_data if c["name"] not in existing_categories)
-
-        chans_to_create = 0
-        for cat in categories_data:
-            for ch in cat.get("channels", []):
-                if ch["name"] not in existing_channels:
-                    chans_to_create += 1
-
-        for ch in uncategorized_data:
-            if ch["name"] not in existing_channels:
-                chans_to_create += 1
-
-        total = roles_to_create + cats_to_create + chans_to_create
         step = 0
-
-        await self._update_job(job_id, step=step, total_steps=total)
+        await self._update_job(job_id, step=0, total_steps=total)
         await self._maybe_edit_progress_embed(job_id, running_status="Starte Restore …", force=True)
 
         # =====================================================
-        # 1️⃣ ROLLEN ERSTELLEN
+        # 1️⃣ ROLLEN (Create + Repair)
         # =====================================================
         for r in roles_data:
-            if r["name"] not in existing_roles:
-                try:
+            role = discord.utils.get(guild.roles, name=r["name"])
+
+            try:
+                if not role:
                     role = await guild.create_role(
                         name=r["name"],
                         permissions=discord.Permissions(r["permissions"]),
@@ -927,188 +919,197 @@ class BackupCog(commands.Cog):
                         reason="Astra Backup Restore"
                     )
                     created_ids["roles"].append(role.id)
-                except discord.Forbidden:
-                    pass
-                finally:
-                    step += 1
-                    await self._update_job(job_id, step=step)
-                    await self._maybe_edit_progress_embed(job_id, running_status="Erstelle Rollen …")
-                    await gentle_sleep()
+                else:
+                    await role.edit(
+                        permissions=discord.Permissions(r["permissions"]),
+                        colour=discord.Colour(r["color"]),
+                        hoist=r["hoist"],
+                        mentionable=r["mentionable"],
+                        reason="Astra Backup Repair"
+                    )
+            except discord.Forbidden:
+                pass
 
-        # Refresh nach Rollen
-        existing_categories = {c.name: c for c in guild.categories}
-        existing_channels = {c.name: c for c in guild.channels}
+            step += 1
+            await self._update_job(job_id, step=step)
+            await self._maybe_edit_progress_embed(job_id, running_status="Synchronisiere Rollen …")
+            await gentle_sleep()
 
         # =====================================================
-        # 2️⃣ KATEGORIEN + CHANNELS ERSTELLEN
+        # 2️⃣ KATEGORIEN (Create + Repair)
         # =====================================================
+        category_objects = {}
+
         for cat in categories_data:
+            cat_obj = discord.utils.get(guild.categories, name=cat["name"])
 
-            cat_name = cat["name"]
-
-            if cat_name not in existing_categories:
-                try:
-                    new_cat = await guild.create_category(
-                        cat_name,
+            try:
+                if not cat_obj:
+                    cat_obj = await guild.create_category(
+                        cat["name"],
                         overwrites=self._build_overwrites(guild, cat.get("overwrites", [])),
                         reason="Astra Backup Restore"
                     )
-                    created_ids["channels"].append(new_cat.id)
-                    existing_categories[cat_name] = new_cat
-                except discord.Forbidden:
-                    continue
-                finally:
-                    step += 1
-                    await self._update_job(job_id, step=step)
-                    await self._maybe_edit_progress_embed(job_id, running_status="Erstelle Kategorien …")
-                    await gentle_sleep()
+                    created_ids["channels"].append(cat_obj.id)
+                else:
+                    await cat_obj.edit(
+                        overwrites=self._build_overwrites(guild, cat.get("overwrites", [])),
+                        reason="Astra Backup Repair"
+                    )
 
-            parent_category = existing_categories.get(cat_name)
+                category_objects[cat["name"]] = cat_obj
+
+            except discord.Forbidden:
+                pass
+
+            step += 1
+            await self._update_job(job_id, step=step)
+            await self._maybe_edit_progress_embed(job_id, running_status="Synchronisiere Kategorien …")
+            await gentle_sleep()
+
+        # =====================================================
+        # 3️⃣ CHANNELS INNERHALB KATEGORIEN (Create + Repair)
+        # =====================================================
+        for cat in categories_data:
+
+            parent = category_objects.get(cat["name"])
+            if not parent:
+                continue
 
             for ch in cat.get("channels", []):
 
-                if ch["name"] in existing_channels:
-                    continue
-
+                ch_obj = discord.utils.get(guild.channels, name=ch["name"])
                 overwrites = self._build_overwrites(guild, ch.get("overwrites", []))
                 ctype = discord.ChannelType(ch["type"])
 
                 try:
+                    if not ch_obj:
+
+                        if ctype in (discord.ChannelType.text, discord.ChannelType.news):
+                            ch_obj = await guild.create_text_channel(
+                                name=ch["name"],
+                                topic=ch.get("topic"),
+                                nsfw=ch.get("nsfw", False),
+                                category=parent,
+                                overwrites=overwrites,
+                                reason="Astra Backup Restore"
+                            )
+
+                        elif ctype is discord.ChannelType.voice:
+                            ch_obj = await guild.create_voice_channel(
+                                name=ch["name"],
+                                category=parent,
+                                overwrites=overwrites,
+                                reason="Astra Backup Restore"
+                            )
+
+                        else:
+                            continue
+
+                        created_ids["channels"].append(ch_obj.id)
+
+                    else:
+                        await ch_obj.edit(
+                            category=parent,
+                            topic=ch.get("topic") if hasattr(ch_obj, "topic") else None,
+                            nsfw=ch.get("nsfw", False) if hasattr(ch_obj, "nsfw") else None,
+                            overwrites=overwrites,
+                            reason="Astra Backup Repair"
+                        )
+
+                except discord.Forbidden:
+                    pass
+
+                step += 1
+                await self._update_job(job_id, step=step)
+                await self._maybe_edit_progress_embed(job_id, running_status="Synchronisiere Channels …")
+                await gentle_sleep()
+
+        # =====================================================
+        # 4️⃣ UNCATEGORIZED CHANNELS (Repair included)
+        # =====================================================
+        for ch in uncategorized_data:
+
+            ch_obj = discord.utils.get(guild.channels, name=ch["name"])
+            overwrites = self._build_overwrites(guild, ch.get("overwrites", []))
+            ctype = discord.ChannelType(ch["type"])
+
+            try:
+                if not ch_obj:
+
                     if ctype in (discord.ChannelType.text, discord.ChannelType.news):
-                        new_ch = await guild.create_text_channel(
+                        ch_obj = await guild.create_text_channel(
                             name=ch["name"],
                             topic=ch.get("topic"),
                             nsfw=ch.get("nsfw", False),
-                            category=parent_category,
                             overwrites=overwrites,
                             reason="Astra Backup Restore"
                         )
 
                     elif ctype is discord.ChannelType.voice:
-                        new_ch = await guild.create_voice_channel(
+                        ch_obj = await guild.create_voice_channel(
                             name=ch["name"],
-                            category=parent_category,
-                            overwrites=overwrites,
-                            reason="Astra Backup Restore"
-                        )
-
-                    elif ctype is discord.ChannelType.stage_voice and hasattr(guild, "create_stage_channel"):
-                        new_ch = await guild.create_stage_channel(
-                            name=ch["name"],
-                            category=parent_category,
-                            overwrites=overwrites,
-                            reason="Astra Backup Restore"
-                        )
-
-                    elif ctype is discord.ChannelType.forum and hasattr(guild, "create_forum"):
-                        new_ch = await guild.create_forum(
-                            name=ch["name"],
-                            category=parent_category,
                             overwrites=overwrites,
                             reason="Astra Backup Restore"
                         )
                     else:
                         continue
 
-                    created_ids["channels"].append(new_ch.id)
+                    created_ids["channels"].append(ch_obj.id)
 
-                except discord.Forbidden:
-                    pass
-                finally:
-                    step += 1
-                    await self._update_job(job_id, step=step)
-                    await self._maybe_edit_progress_embed(job_id, running_status="Erstelle Channels …")
-                    await gentle_sleep()
-
-        # =====================================================
-        # 3️⃣ UNCATEGORIZED CHANNELS
-        # =====================================================
-        for ch in uncategorized_data:
-
-            if ch["name"] in existing_channels:
-                continue
-
-            overwrites = self._build_overwrites(guild, ch.get("overwrites", []))
-            ctype = discord.ChannelType(ch["type"])
-
-            try:
-                if ctype in (discord.ChannelType.text, discord.ChannelType.news):
-                    new_ch = await guild.create_text_channel(
-                        name=ch["name"],
-                        topic=ch.get("topic"),
-                        nsfw=ch.get("nsfw", False),
-                        overwrites=overwrites,
-                        reason="Astra Backup Restore"
-                    )
-
-                elif ctype is discord.ChannelType.voice:
-                    new_ch = await guild.create_voice_channel(
-                        name=ch["name"],
-                        overwrites=overwrites,
-                        reason="Astra Backup Restore"
-                    )
                 else:
-                    continue
-
-                created_ids["channels"].append(new_ch.id)
+                    await ch_obj.edit(
+                        category=None,
+                        topic=ch.get("topic") if hasattr(ch_obj, "topic") else None,
+                        nsfw=ch.get("nsfw", False) if hasattr(ch_obj, "nsfw") else None,
+                        overwrites=overwrites,
+                        reason="Astra Backup Repair"
+                    )
 
             except discord.Forbidden:
                 pass
-            finally:
-                step += 1
-                await self._update_job(job_id, step=step)
-                await self._maybe_edit_progress_embed(job_id, running_status="Erstelle Channels …")
-                await gentle_sleep()
+
+            step += 1
+            await self._update_job(job_id, step=step)
+            await self._maybe_edit_progress_embed(job_id, running_status="Synchronisiere Uncategorized …")
+            await gentle_sleep()
 
         # =====================================================
-        # 🔥 POSITION RESTORE (NEU)
+        # 🔥 POSITION RESTORE
         # =====================================================
         await self._maybe_edit_progress_embed(job_id, running_status="Stelle Reihenfolge wieder her …", force=True)
 
-        # Rollen sortieren
-        sorted_roles = sorted(
-            [(discord.utils.get(guild.roles, name=r["name"]), r.get("position", 0)) for r in roles_data],
-            key=lambda x: x[1]
-        )
-
-        for index, (role, _) in enumerate(sorted_roles):
+        # Rollen
+        for idx, r in enumerate(sorted(roles_data, key=lambda x: x.get("position", 0))):
+            role = discord.utils.get(guild.roles, name=r["name"])
             if role:
                 try:
-                    await role.edit(position=index)
+                    await role.edit(position=idx)
                 except Exception:
                     pass
                 await gentle_sleep()
 
-        # Kategorien sortieren
-        sorted_cats = sorted(
-            [(discord.utils.get(guild.categories, name=c["name"]), c.get("position", 0)) for c in categories_data],
-            key=lambda x: x[1]
-        )
-
-        for index, (cat_obj, _) in enumerate(sorted_cats):
+        # Kategorien
+        for idx, cat in enumerate(sorted(categories_data, key=lambda x: x.get("position", 0))):
+            cat_obj = discord.utils.get(guild.categories, name=cat["name"])
             if cat_obj:
                 try:
-                    await cat_obj.edit(position=index)
+                    await cat_obj.edit(position=idx)
                 except Exception:
                     pass
                 await gentle_sleep()
 
-        # Channels innerhalb Kategorien sortieren
+        # Channels innerhalb Kategorien
         for cat in categories_data:
             parent = discord.utils.get(guild.categories, name=cat["name"])
             if not parent:
                 continue
 
-            sorted_channels = sorted(
-                [(discord.utils.get(parent.channels, name=ch["name"]), ch.get("position", 0))
-                 for ch in cat.get("channels", [])],
-                key=lambda x: x[1]
-            )
-
-            for index, (ch_obj, _) in enumerate(sorted_channels):
+            for idx, ch in enumerate(sorted(cat.get("channels", []), key=lambda x: x.get("position", 0))):
+                ch_obj = discord.utils.get(parent.channels, name=ch["name"])
                 if ch_obj:
                     try:
-                        await ch_obj.edit(position=index)
+                        await ch_obj.edit(position=idx)
                     except Exception:
                         pass
                     await gentle_sleep()
