@@ -333,38 +333,64 @@ class modlog(commands.Cog):
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
+
+                # 🔹 Prüfen ob Emojiquiz aktiv ist
                 await cursor.execute(
-                    "SELECT word FROM blacklist_words WHERE serverID = (%s)",
+                    "SELECT channelID FROM emojiquiz WHERE guildID = %s",
+                    (message.guild.id,)
+                )
+                quiz_data = await cursor.fetchone()
+
+                # Wenn Emojiquiz aktiv ist UND Nachricht im Quiz-Channel gelöscht wurde → nichts loggen
+                if quiz_data and int(quiz_data[0]) == int(message.channel.id):
+                    return
+
+                # 🔹 Blacklist prüfen (nur wenn Text existiert)
+                await cursor.execute(
+                    "SELECT word FROM blacklist_words WHERE serverID = %s",
                     (message.guild.id,)
                 )
                 result2 = await cursor.fetchall()
-                if not result2:
-                    pass
-                else:
+
+                if message.content:
                     for eintrag2 in result2:
                         if eintrag2[0].lower() in message.content.lower():
                             return
 
+                # 🔹 Modlog Channel holen
                 await cursor.execute(
-                    "SELECT channelID FROM modlog WHERE serverID = (%s)",
+                    "SELECT channelID FROM modlog WHERE serverID = %s",
                     (message.guild.id,)
                 )
                 result = await cursor.fetchone()
                 if result is None:
                     return
 
-                channel2 = result
                 guild = message.guild
-                channel = guild.get_channel(int(channel2[0]))
+                channel = guild.get_channel(int(result[0]))
+                if not channel:
+                    return
 
+                # 🔹 Embed erstellen
                 embed = discord.Embed(
                     title="🗑️ Nachricht gelöscht",
                     description=f"Nachricht gelöscht von {message.author.mention}",
                     colour=discord.Colour.red(),
                     timestamp=discord.utils.utcnow()
                 )
-                embed.add_field(name="Inhalt", value=message.content, inline=True)
-                embed.add_field(name="Kanal", value=message.channel.mention, inline=True)
+
+                embed.add_field(
+                    name="Inhalt",
+                    value=message.content if message.content else "Keine Textnachricht",
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="Kanal",
+                    value=message.channel.mention,
+                    inline=True
+                )
+
                 await channel.send(embed=embed)
 
     @app_commands.command(
