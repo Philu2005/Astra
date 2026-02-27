@@ -272,7 +272,7 @@ class emojiquiz(commands.Cog):
                             correct = True
 
                     if correct:
-                        await msg.add_reaction('✅')
+                        await msg.add_reaction('<:Astra_accept:1141303821176422460>')
                         await cur.execute("DELETE FROM emojiquiz_lsg WHERE guildID = %s", (msg.guild.id,))
 
                         # Belohnung auszahlen
@@ -346,7 +346,7 @@ class emojiquiz(commands.Cog):
 
                     else:
                         try:
-                            await msg.add_reaction('❌')
+                            await msg.add_reaction('<:Astra_x:1141303954555289600>')
                         except Exception:
                             pass
 
