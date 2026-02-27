@@ -1439,7 +1439,7 @@ class Warn(commands.Cog):
                     if lowerword in lowercontent:
 
                         embed = discord.Embed(
-                            title="Bitte unterlasse die Schimpfwörter",
+                            title="Bitte unterlasse die Schimpfwörter!",
                             description=f"{msg.author.mention} nutze ein Wort: ``{word}`` welches hier nicht erlaubt ist!",
                             colour=discord.Colour.red(),
                             timestamp=discord.utils.utcnow()
