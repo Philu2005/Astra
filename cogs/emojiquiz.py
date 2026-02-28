@@ -380,8 +380,8 @@ class emojiquiz(commands.Cog):
                                 title="Emojiquiz",
                                 description="Solltest du Probleme beim Lösen haben, kannst du die Buttons dieser Nachricht benutzen.",
                                 colour=discord.Colour.blue())
-                            emojiquiz_embed.add_field(name="❓ Gesuchter Begriff", value=question, inline=True)
-                            emojiquiz_embed.add_field(name="❗️ Tipp", value=f"||{hint}||", inline=True)
+                            emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210> Gesuchter Begriff", value=question, inline=True)
+                            emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224> Tipp", value=f"||{hint}||", inline=True)
                             emojiquiz_embed.set_footer(
                                 text=f"Das letzte Quiz wurde von {interaction.user.name} erraten!",
                                 icon_url=interaction.user.avatar)
