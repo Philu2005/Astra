@@ -322,8 +322,8 @@ class emojiquiz(commands.Cog):
                                 colour=discord.Colour.blue()
                             )
 
-                            emojiquiz_embed.add_field(name="❓ Gesuchter Begriff", value=question, inline=True)
-                            emojiquiz_embed.add_field(name="❗️ Tipp", value=f"||{hint}||", inline=True)
+                            emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210> Gesuchter Begriff", value=question, inline=True)
+                            emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224> Tipp", value=f"||{hint}||", inline=True)
                             emojiquiz_embed.set_footer(
                                 text=f"Das letzte Quiz wurde von {msg.author.name} erraten!",
                                 icon_url=msg.author.avatar.url
