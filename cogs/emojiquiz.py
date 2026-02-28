@@ -46,7 +46,7 @@ class buttons_emj(discord.ui.View):
         self.bot = bot
         self.economy = economy
 
-    @discord.ui.button(label='Skip', style=discord.ButtonStyle.grey, custom_id='persistent_view:skip', emoji="⏩")
+    @discord.ui.button(label='Skip', style=discord.ButtonStyle.grey, custom_id='persistent_view:skip', emoji="<:Astra_arrow:1141303823600717885>")
     async def skip(self, interaction: discord.Interaction, button: discord.Button):
         import asyncio
         try:
@@ -135,8 +135,8 @@ class buttons_emj(discord.ui.View):
                             title="Emojiquiz",
                             description="Solltest du Probleme beim Lösen haben, kannst du die Buttons dieser Nachricht benutzen.",
                             colour=discord.Colour.blue())
-                        emojiquiz_embed.add_field(name="❓ Gesuchter Begriff", value=question, inline=True)
-                        emojiquiz_embed.add_field(name="❗️ Tipp", value=f"||{hint}||", inline=True)
+                        emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210>  Gesuchter Begriff", value=question, inline=True)
+                        emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224>  Tipp", value=f"||{hint}||", inline=True)
                         emojiquiz_embed.set_footer(
                             text=f"The last Quiz was skipped by {interaction.user.name}",
                             icon_url=interaction.user.avatar)
@@ -153,7 +153,7 @@ class buttons_emj(discord.ui.View):
             print(f"Die Interaktion von {interaction.user} ist abgelaufen oder bereits beantwortet.")
 
 
-    @discord.ui.button(label='Initial letter', style=discord.ButtonStyle.grey, custom_id='persistent_view:tip', emoji="💡")
+    @discord.ui.button(label='Initial letter', style=discord.ButtonStyle.grey, custom_id='persistent_view:tip', emoji="<:Astra_light_on:1141303864134467675>")
     async def tip(self, interaction: discord.Interaction, button: discord.Button):
         async with interaction.client.pool.acquire() as conn:
             async with conn.cursor() as cur:
@@ -322,8 +322,8 @@ class emojiquiz(commands.Cog):
                                 colour=discord.Colour.blue()
                             )
 
-                            emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210> Gesuchter Begriff", value=question, inline=True)
-                            emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224> Tipp", value=f"||{hint}||", inline=True)
+                            emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210>  Gesuchter Begriff", value=question, inline=True)
+                            emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224>  Tipp", value=f"||{hint}||", inline=True)
                             emojiquiz_embed.set_footer(
                                 text=f"Das letzte Quiz wurde von {msg.author.name} erraten!",
                                 icon_url=msg.author.avatar.url
@@ -377,11 +377,11 @@ class emojiquiz(commands.Cog):
                             question, answer, hint = quiz_data
 
                             emojiquiz_embed = discord.Embed(
-                                title="Emojiquiz",
+                                title="<:Astra_support:1141303923752325210>  Emojiquiz",
                                 description="Solltest du Probleme beim Lösen haben, kannst du die Buttons dieser Nachricht benutzen.",
                                 colour=discord.Colour.blue())
-                            emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210> Gesuchter Begriff", value=question, inline=True)
-                            emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224> Tipp", value=f"||{hint}||", inline=True)
+                            emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210>  Gesuchter Begriff", value=question, inline=True)
+                            emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224>  Tipp", value=f"||{hint}||", inline=True)
                             emojiquiz_embed.set_footer(
                                 text=f"Das letzte Quiz wurde von {interaction.user.name} erraten!",
                                 icon_url=interaction.user.avatar)
