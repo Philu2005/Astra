@@ -317,7 +317,7 @@ class emojiquiz(commands.Cog):
                             question, answer, hint = quiz_data
 
                             emojiquiz_embed = discord.Embed(
-                                title="Emojiquiz",
+                                title="<:Astra_support:1141303923752325210>  Emojiquiz",
                                 description="Solltest du Probleme beim Lösen haben, kannst du die Buttons dieser Nachricht benutzen.",
                                 colour=discord.Colour.blue()
                             )
