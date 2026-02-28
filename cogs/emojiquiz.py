@@ -368,7 +368,7 @@ class emojiquiz(commands.Cog):
                     already_on = await cur.fetchone()
                     if already_on:
                         await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> Das Emojiquizz ist bereits aktiviert!")
+                            "<:Astra_x:1141303954555289600> Das Emojiquizz ist bereits aktiviert.")
                     else:
                         query = "SELECT question, answer, hint FROM emojiquiz_quizzez ORDER BY RAND() LIMIT 1;"
                         await cur.execute(query)
