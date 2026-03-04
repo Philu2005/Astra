@@ -312,7 +312,7 @@ class SlotView(ui.View):
     async def spin_once(self, interaction):
         # Balance check/Abzug nur wenn keine Freespins laufen
         user_data = await self.cog.get_user(self.user_id)
-        wallet = user_data[1]
+        wallet = user_data[0]
         if self.freespins == 0:
             if self.bet <= 0 or wallet < self.bet:
                 await interaction.followup.send(
@@ -394,7 +394,7 @@ class SlotView(ui.View):
                 await asyncio.sleep(0.3)
                 # Stop wenn User kein Geld mehr hat
                 user_data = await self.cog.get_user(self.user_id)
-                if user_data[1] < self.bet and self.freespins == 0:
+                if user_data[0] < self.bet and self.freespins == 0:
                     break
 
     @ui.button(label="🎲 Gamble", style=discord.ButtonStyle.red)
@@ -728,11 +728,19 @@ class EconomyClass(app_commands.Group):
     async def get_user(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT * FROM economy_users WHERE user_id = %s", (user_id,))
+                await cur.execute(
+                    "SELECT wallet, bank, job, hours_worked, last_work, last_beg, last_rob FROM economy_users WHERE user_id = %s",
+                    (user_id,)
+                )
                 data = await cur.fetchone()
+
                 if not data:
-                    await cur.execute("INSERT INTO economy_users (user_id) VALUES (%s)", (user_id,))
-                    return user_id, 0, 0, None, 0, None
+                    await cur.execute(
+                        "INSERT INTO economy_users (user_id, wallet, bank, job, hours_worked, last_work, last_beg, last_rob) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        (user_id, 0, 0, None, 0, None, None, None)
+                    )
+                    return 0, 0, None, 0, None, None, None
+
                 return data
 
     async def update_balance(self, user_id: int, wallet_change=0, bank_change=0):
@@ -754,9 +762,9 @@ class EconomyClass(app_commands.Group):
     async def balance(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
-        wallet, bank = user_data[1], user_data[2]
-        job_name = user_data[3]
-        hours = user_data[4]
+        wallet, bank = user_data[0], user_data[1]
+        job_name = user_data[2]
+        hours = user_data[3]
 
         embed = discord.Embed(title=f"{interaction.user}'s Kontostand", description="> Erhalte Hier Infos über deinen Kontostand und über deinen aktuellen Beruf.", color=discord.Color.blue())
         embed.add_field(name="Barvermögen", value=f"{wallet} <:Coin:1359178077011181811>", inline=True)
@@ -774,7 +782,7 @@ class EconomyClass(app_commands.Group):
             return
 
         user_data = await self.get_user(interaction.user.id)
-        if user_data[1] < betrag:
+        if user_data[0] < betrag:
             await interaction.response.send_message("<:Astra_x:1141303954555289600> Du hast nicht genug Geld in deinem Wallet.", ephemeral=True)
             return
 
@@ -790,7 +798,7 @@ class EconomyClass(app_commands.Group):
             return
 
         user_data = await self.get_user(interaction.user.id)
-        if user_data[2] < betrag:
+        if user_data[1] < betrag:
             await interaction.response.send_message("<:Astra_x:1141303954555289600> Du hast nicht genug Geld auf deinem Bankkonto.", ephemeral=True)
             return
 
@@ -802,23 +810,35 @@ class EconomyClass(app_commands.Group):
     async def beg(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
-        last_work = user_data[5]
+
+        last_beg = user_data[5]  # neue Spalte
         now = datetime.utcnow()
 
-        if last_work and now < last_work + timedelta(hours=3):
-            remaining = (last_work + timedelta(hours=3)) - now
-            mins = divmod(remaining.seconds, 60)[0]
-            await interaction.response.send_message(f"<:Astra_time:1141303932061233202> Du kannst in {mins} Minuten wieder betteln.", ephemeral=True)
+        if last_beg and now < last_beg + timedelta(hours=3):
+            remaining = (last_beg + timedelta(hours=3)) - now
+            total_seconds = int(remaining.total_seconds())
+            minutes_left = total_seconds // 60
+
+            await interaction.response.send_message(
+                f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten wieder betteln.",
+                ephemeral=True
+            )
             return
 
         amount = random.randint(5, 25)
+
         await self.update_balance(user_id, wallet_change=amount)
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("UPDATE economy_users SET last_work = %s WHERE user_id = %s", (now, user_id))
+                await cur.execute(
+                    "UPDATE economy_users SET last_beg = %s WHERE user_id = %s",
+                    (now, user_id)
+                )
 
-        await interaction.response.send_message(f"<:Astra_accept:1141303821176422460> Du hast {amount} <:Coin:1359178077011181811> von einem freundlichen Fremden erhalten!")
+        await interaction.response.send_message(
+            f"<:Astra_accept:1141303821176422460> Du hast {amount} <:Coin:1359178077011181811> von einem freundlichen Fremden erhalten!"
+        )
 
     @app_commands.command(name="slot", description="Spiele ein realistisches 3×3 Slot-Spiel.")
     @app_commands.guild_only()
@@ -826,7 +846,7 @@ class EconomyClass(app_commands.Group):
     async def slot(self, interaction: discord.Interaction, einsatz: int):
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
-        wallet = user_data[1]
+        wallet = user_data[0]
 
         if einsatz <= 0 or einsatz > wallet:
             await interaction.response.send_message("<:Astra_x:1141303954555289600> Ungültiger Einsatz.",
@@ -891,7 +911,7 @@ class EconomyClass(app_commands.Group):
             return
 
         user_data = await self.get_user(interaction.user.id)
-        wallet = user_data[1]
+        wallet = user_data[0]
 
         if wallet < betrag:
             await interaction.response.send_message(
@@ -922,37 +942,59 @@ class EconomyClass(app_commands.Group):
         target_id = ziel.id
 
         if user_id == target_id:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Du kannst dich nicht selbst ausrauben.", ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Du kannst dich nicht selbst ausrauben.",
+                ephemeral=True
+            )
             return
 
         user_data = await self.get_user(user_id)
         target_data = await self.get_user(target_id)
+
+        last_rob = user_data[6]  # neue Spalte
         now = datetime.utcnow()
 
-        if user_data[5] and now < user_data[5] + timedelta(hours=8):
-            remaining = (user_data[5] + timedelta(hours=8)) - now
-            await interaction.response.send_message(f"<:Astra_time:1141303932061233202> Du kannst in {remaining.seconds // 60} Minuten wieder rauben.",
-                                                    ephemeral=True)
+        if last_rob and now < last_rob + timedelta(hours=8):
+            remaining = (last_rob + timedelta(hours=8)) - now
+            total_seconds = int(remaining.total_seconds())
+            minutes_left = total_seconds // 60
+
+            await interaction.response.send_message(
+                f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten wieder rauben.",
+                ephemeral=True
+            )
             return
 
-        if target_data[1] < 50:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Ziel hat zu wenig Geld zum Ausrauben.", ephemeral=True)
+        if target_data[0] < 50:
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Ziel hat zu wenig Geld zum Ausrauben.",
+                ephemeral=True
+            )
             return
 
         erfolg = random.random() < 0.5
+
         if erfolg:
-            betrag = random.randint(20, min(200, target_data[1]))
+            betrag = random.randint(20, min(200, target_data[0]))
+
             await self.update_balance(user_id, wallet_change=betrag)
             await self.update_balance(target_id, wallet_change=-betrag)
-            msg = f"<:Astra_accept:1141303821176422460> Du hast erfolgreich {betrag} <:Coin:1359178077011181811>  von {ziel.mention} gestohlen!"
+
+            msg = f"<:Astra_accept:1141303821176422460> Du hast erfolgreich {betrag} <:Coin:1359178077011181811> von {ziel.mention} gestohlen!"
+
         else:
             strafe = random.randint(10, 30)
+
             await self.update_balance(user_id, wallet_change=-strafe)
-            msg = f"<:Astra_x:1141303954555289600> Du wurdest erwischt! Du zahlst eine Strafe von {strafe} <:Coin:1359178077011181811> ."
+
+            msg = f"<:Astra_x:1141303954555289600> Du wurdest erwischt! Du zahlst eine Strafe von {strafe} <:Coin:1359178077011181811>."
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("UPDATE economy_users SET last_work = %s WHERE user_id = %s", (now, user_id))
+                await cur.execute(
+                    "UPDATE economy_users SET last_rob = %s WHERE user_id = %s",
+                    (now, user_id)
+                )
 
         await interaction.response.send_message(msg)
 
@@ -967,37 +1009,61 @@ class EconomyClass(app_commands.Group):
         try:
             async with self.bot.pool.acquire() as conn:
                 async with conn.cursor() as cur:
+
                     if scope == "global":
                         await cur.execute("""
-                            SELECT user_id, wallet + bank AS gesamt 
-                            FROM economy_users 
-                            ORDER BY gesamt DESC 
-                            LIMIT 10
-                        """)
-                    elif scope == "server":
-                        await cur.execute("""
-                            SELECT user_id, wallet + bank AS gesamt 
-                            FROM economy_users 
-                            WHERE guild_id = %s 
-                            ORDER BY gesamt DESC 
-                            LIMIT 10
-                        """, (interaction.guild.id,))
+                                          SELECT user_id, wallet + bank AS gesamt
+                                          FROM economy_users
+                                          ORDER BY gesamt DESC
+                                          LIMIT 10
+                                          """)
+                        top_users = await cur.fetchall()
 
-                    top_users = await cur.fetchall()
+                    else:  # server leaderboard
+
+                        member_ids = [member.id for member in interaction.guild.members if not member.bot]
+
+                        if not member_ids:
+                            await interaction.response.send_message("Keine Benutzer gefunden.", ephemeral=True)
+                            return
+
+                        placeholders = ",".join(["%s"] * len(member_ids))
+
+                        query = f"""
+                            SELECT user_id, wallet + bank AS gesamt
+                            FROM economy_users
+                            WHERE user_id IN ({placeholders})
+                            ORDER BY gesamt DESC
+                            LIMIT 10
+                        """
+
+                        await cur.execute(query, tuple(member_ids))
+                        top_users = await cur.fetchall()
 
             if not top_users:
                 await interaction.response.send_message(
-                    "Es wurden keine Benutzer gefunden oder die Rangliste ist leer.")
+                    "Es wurden keine Benutzer gefunden oder die Rangliste ist leer."
+                )
                 return
 
             embed = discord.Embed(
-                title="<:Astra_users:1141303946602872872> Rangliste (Global)" if scope == "global" else f"<:Astra_users:1141303946602872872> Rangliste ({interaction.guild.name})",
+                title="<:Astra_users:1141303946602872872> Rangliste (Global)"
+                if scope == "global"
+                else f"<:Astra_users:1141303946602872872> Rangliste ({interaction.guild.name})",
                 color=discord.Color.blue()
             )
 
             for i, (user_id, gesamt) in enumerate(top_users, start=1):
-                user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                user = self.bot.get_user(user_id)
+
+                if user is None:
+                    try:
+                        user = await self.bot.fetch_user(user_id)
+                    except:
+                        user = None
+
                 name = user.name if user else f"Unbekannt ({user_id})"
+
                 embed.add_field(
                     name=f"{i}. {name}",
                     value=f"{gesamt} <:Coin:1359178077011181811>",
@@ -1007,15 +1073,18 @@ class EconomyClass(app_commands.Group):
             await interaction.response.send_message(embed=embed)
 
         except Exception as e:
-            await interaction.response.send_message(f"<:Astra_x:1141303954555289600> Es gab einen Fehler beim Abrufen der Rangliste: {e}", ephemeral=True)
-            print(f"Fehler beim Abrufen der Rangliste: {e}")
+            await interaction.response.send_message(
+                f"<:Astra_x:1141303954555289600> Fehler beim Abrufen der Rangliste: {e}",
+                ephemeral=True
+            )
+            print(f"Leaderboard Error: {e}")
 
     @app_commands.command(name="blackjack", description="Spiele eine Runde Blackjack.")
     @app_commands.guild_only()
     @app_commands.describe(einsatz="Der Betrag, den du setzen möchtest.")
     async def blackjack(self, interaction: discord.Interaction, einsatz: int):
         user_data = await self.get_user(interaction.user.id)
-        wallet = user_data[1]
+        wallet = user_data[0]
 
         if einsatz <= 0:
             await interaction.response.send_message(
@@ -1054,11 +1123,19 @@ class Job(app_commands.Group):
     async def get_user(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT * FROM economy_users WHERE user_id = %s", (user_id,))
+                await cur.execute(
+                    "SELECT wallet, bank, job, hours_worked, last_work, last_beg, last_rob FROM economy_users WHERE user_id = %s",
+                    (user_id,)
+                )
                 data = await cur.fetchone()
+
                 if not data:
-                    await cur.execute("INSERT INTO economy_users (user_id) VALUES (%s)", (user_id,))
-                    return user_id, 0, 0, None, 0, None
+                    await cur.execute(
+                        "INSERT INTO economy_users (user_id, wallet, bank, job, hours_worked, last_work, last_beg, last_rob) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        (user_id, 0, 0, None, 0, None, None, None)
+                    )
+                    return 0, 0, None, 0, None, None, None
+
                 return data
 
     @app_commands.command(name="work", description="Arbeite in deinem aktuellen Job.")
@@ -1066,29 +1143,41 @@ class Job(app_commands.Group):
     async def work(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
-        job_name = user_data[3]
-        hours = user_data[4]
-        last_work = user_data[5]
+
+        wallet = user_data[0]
+        bank = user_data[1]
+        job_name= user_data[2]
+        hours = user_data[3]
+        last_work = user_data[4]
 
         if not job_name:
             await interaction.response.send_message(
                 "<:Astra_x:1141303954555289600> Du hast keinen Job. Nutze `/job apply`, um einen Job zu wählen.",
-                ephemeral=True)
+                ephemeral=True
+            )
             return
 
-        if last_work:
-            now = datetime.utcnow()
-            if now < last_work + timedelta(hours=8):
-                verbleibend = (last_work + timedelta(hours=8)) - now
-                stunden, minuten = divmod(verbleibend.seconds, 3600)[0], divmod(verbleibend.seconds % 3600, 60)[0]
-                await interaction.response.send_message(
-                    f"<:Astra_time:1141303932061233202> Du musst noch {stunden}h {minuten}min warten, bevor du wieder arbeiten kannst.",
-                    ephemeral=True)
-                return
+        now = datetime.utcnow()
+
+        if last_work and now < last_work + timedelta(hours=8):
+            remaining = (last_work + timedelta(hours=8)) - now
+            total_seconds = int(remaining.total_seconds())
+            hours_left, remainder = divmod(total_seconds, 3600)
+            minutes_left, _ = divmod(remainder, 60)
+
+            await interaction.response.send_message(
+                f"<:Astra_time:1141303932061233202> Du musst noch {hours_left}h {minutes_left}min warten, bevor du wieder arbeiten kannst.",
+                ephemeral=True
+            )
+            return
 
         job = next((j for j in JOBS if j["name"] == job_name), None)
+
         if not job:
-            await interaction.response.send_message("Fehler: Dein Job wurde nicht gefunden.", ephemeral=True)
+            await interaction.response.send_message(
+                "Fehler: Dein Job wurde nicht gefunden.",
+                ephemeral=True
+            )
             return
 
         coins_per_hour = random.randint(*job["amt"])
@@ -1098,16 +1187,18 @@ class Job(app_commands.Group):
             async with conn.cursor() as cur:
                 await cur.execute(
                     "UPDATE economy_users SET wallet = wallet + %s, hours_worked = hours_worked + 1, last_work = %s WHERE user_id = %s",
-                    (earned, datetime.utcnow(), user_id))
+                    (earned, now, user_id)
+                )
 
         await interaction.response.send_message(
-            f"<:Astra_time:1141303932061233202> Du hast 1 Stunde als **{job_name}** gearbeitet und {earned} <:Coin:1359178077011181811> verdient!")
+            f"<:Astra_time:1141303932061233202> Du hast 1 Stunde als **{job_name}** gearbeitet und {earned} <:Coin:1359178077011181811> verdient!"
+        )
 
     @app_commands.command(name="list", description="Zeigt die Jobliste.")
     @app_commands.guild_only()
     async def job_list(self, interaction: discord.Interaction):
         user_data = await self.get_user(interaction.user.id)
-        user_hours = user_data[4]
+        user_hours = user_data[3]
 
         view = JobListView(JOBS, user_hours)
         embed = view.generate_job_embed()
@@ -1118,7 +1209,7 @@ class Job(app_commands.Group):
     @app_commands.describe(name="Name des Jobs, den du annehmen möchtest.")
     async def job_apply(self, interaction: discord.Interaction, name: str):
         user_data = await self.get_user(interaction.user.id)
-        user_hours = user_data[4]
+        user_hours = user_data[3]
         job = next((j for j in JOBS if j["name"].lower() == name.lower()), None)
 
         if not job:
@@ -1144,7 +1235,7 @@ class Job(app_commands.Group):
     @app_commands.guild_only()
     async def job_quit(self, interaction: discord.Interaction):
         user_data = await self.get_user(interaction.user.id)
-        if not user_data[3]:
+        if not user_data[2]:
             await interaction.response.send_message("<:Astra_x:1141303954555289600> Du hast momentan keinen Job.",
                                                     ephemeral=True)
             return
@@ -1162,15 +1253,22 @@ class Economy(commands.Cog):
         self.bot = bot
         self.pool = None
 
-
     async def get_user(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT * FROM economy_users WHERE user_id = %s", (user_id,))
+                await cur.execute(
+                    "SELECT wallet, bank, job, hours_worked, last_work, last_beg, last_rob FROM economy_users WHERE user_id = %s",
+                    (user_id,)
+                )
                 data = await cur.fetchone()
+
                 if not data:
-                    await cur.execute("INSERT INTO economy_users (user_id) VALUES (%s)", (user_id,))
-                    return user_id, 0, 0, None, 0, None
+                    await cur.execute(
+                        "INSERT INTO economy_users (user_id, wallet, bank, job, hours_worked, last_work, last_beg, last_rob) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        (user_id, 0, 0, None, 0, None, None, None)
+                    )
+                    return 0, 0, None, 0, None, None, None
+
                 return data
 
     async def update_balance(self, user_id: int, wallet_change=0, bank_change=0):

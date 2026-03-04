@@ -6,7 +6,7 @@ from discord import app_commands
 
 
 ##########
-
+# TODO(priority:low @Philu risk:low due:2026-04-15 category:AFK-System issue:veraltet): AFK-System auf den neusten stand bringen.
 
 class afk(commands.Cog):
     def __init__(self, bot):
