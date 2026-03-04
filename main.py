@@ -620,11 +620,11 @@ async def on_dbl_vote(data):
     # --- BELohnungstext für Nachricht ---
     if streak_bonus > 0:
         reward_text = (
-            f"🔥 **Deine Belohnung:** {base_amount} Coins "
-            f"+ {streak_bonus} Streak-Bonus (Streak {streak}) 💰"
+            f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {base_amount} Coins "
+            f"+ {streak_bonus} Streak-Bonus (Streak {streak} <:Coin:1359178077011181811>"
         )
     else:
-        reward_text = f"🎁 **Deine Belohnung:** {base_amount} Coins 💰"
+        reward_text = f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {base_amount} Coins <:Coin:1359178077011181811>"
 
     member = guild.get_member(user_id)
     if not member:
