@@ -827,11 +827,21 @@ class EconomyClass(app_commands.Group):
                 remaining = cooldown_end - now
                 total_seconds = int(remaining.total_seconds())
 
-                minutes_left = total_seconds // 60
-                seconds_left = total_seconds % 60
+                hours_left, remainder = divmod(total_seconds, 3600)
+                minutes_left, seconds_left = divmod(remainder, 60)
+
+                parts = []
+                if hours_left:
+                    parts.append(f"{hours_left}h")
+                if minutes_left:
+                    parts.append(f"{minutes_left}m")
+                if seconds_left or not parts:
+                    parts.append(f"{seconds_left}s")
+
+                time_string = " ".join(parts)
 
                 await interaction.response.send_message(
-                    f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten und {seconds_left} Sekunden wieder betteln.",
+                    f"<:Astra_time:1141303932061233202> Du kannst in **{time_string}** wieder betteln.",
                     ephemeral=True
                 )
                 return
@@ -969,11 +979,21 @@ class EconomyClass(app_commands.Group):
             remaining = (last_rob + timedelta(hours=8)) - now
             total_seconds = int(remaining.total_seconds())
 
-            minutes_left = total_seconds // 60
-            seconds_left = total_seconds % 60
+            hours_left, remainder = divmod(total_seconds, 3600)
+            minutes_left, seconds_left = divmod(remainder, 60)
+
+            parts = []
+            if hours_left:
+                parts.append(f"{hours_left}h")
+            if minutes_left:
+                parts.append(f"{minutes_left}m")
+            if seconds_left or not parts:
+                parts.append(f"{seconds_left}s")
+
+            time_string = " ".join(parts)
 
             await interaction.response.send_message(
-                f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten und {seconds_left} Sekunden wieder rauben.",
+                f"<:Astra_time:1141303932061233202> Du kannst in **{time_string}** wieder rauben.",
                 ephemeral=True
             )
             return
