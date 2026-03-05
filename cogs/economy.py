@@ -970,7 +970,7 @@ class EconomyClass(app_commands.Group):
             last_rob = last_rob.replace(tzinfo=timezone.utc)
 
         if last_rob:
-            cooldown_end = last_rob + timedelta(hours=8)
+            cooldown_end = last_rob + timedelta(minutes=1)
 
             if now < cooldown_end:
                 remaining = cooldown_end - now
@@ -1181,8 +1181,8 @@ class Job(app_commands.Group):
         if last_work and last_work.tzinfo is None:
             last_work = last_work.replace(tzinfo=timezone.utc)
 
-        if last_work and now < last_work + timedelta(hours=8):
-            remaining = (last_work + timedelta(hours=8)) - now
+        if last_work and now < last_work + timedelta(minutes=1):
+            remaining = (last_work + timedelta(minutes=1)) - now
             total_seconds = int(remaining.total_seconds())
 
             hours_left, remainder = divmod(total_seconds, 3600)
