@@ -1177,17 +1177,28 @@ class Job(app_commands.Group):
         if last_work and last_work.tzinfo is None:
             last_work = last_work.replace(tzinfo=timezone.utc)
 
-        if last_work:
-            cooldown_end = last_work + timedelta(hours=8)
+        if last_work and now < last_work + timedelta(hours=8):
+            remaining = (last_work + timedelta(hours=8)) - now
+            total_seconds = int(remaining.total_seconds())
 
-            if now < cooldown_end:
-                unix_timestamp = int(cooldown_end.timestamp())
+            hours_left, remainder = divmod(total_seconds, 3600)
+            minutes_left, seconds_left = divmod(remainder, 60)
 
-                await interaction.response.send_message(
-                    f"<:Astra_time:1141303932061233202> Du kannst <t:{unix_timestamp}:R> wieder arbeiten.",
-                    ephemeral=True
-                )
-                return
+            parts = []
+            if hours_left:
+                parts.append(f"{hours_left}h")
+            if minutes_left:
+                parts.append(f"{minutes_left}m")
+            if seconds_left or not parts:
+                parts.append(f"{seconds_left}s")
+
+            time_string = " ".join(parts)
+
+            await interaction.response.send_message(
+                f"<:Astra_time:1141303932061233202> Du musst noch **{time_string}** warten, bevor du wieder arbeiten kannst.",
+                ephemeral=True
+            )
+            return
 
         job = next((j for j in JOBS if j["name"] == job_name), None)
 
