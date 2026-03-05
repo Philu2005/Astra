@@ -826,10 +826,12 @@ class EconomyClass(app_commands.Group):
             if now < cooldown_end:
                 remaining = cooldown_end - now
                 total_seconds = int(remaining.total_seconds())
+
                 minutes_left = total_seconds // 60
+                seconds_left = total_seconds % 60
 
                 await interaction.response.send_message(
-                    f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten wieder betteln.",
+                    f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten und {seconds_left} Sekunden wieder betteln.",
                     ephemeral=True
                 )
                 return
@@ -960,28 +962,21 @@ class EconomyClass(app_commands.Group):
         user_data = await self.get_user(user_id)
         target_data = await self.get_user(target_id)
 
-        from datetime import datetime, timedelta, timezone
-
-        last_rob = user_data[6]
+        last_rob = user_data[6]  # neue Spalte
         now = datetime.now(timezone.utc)
 
-        # Fix für MySQL datetime ohne timezone
-        if last_rob and last_rob.tzinfo is None:
-            last_rob = last_rob.replace(tzinfo=timezone.utc)
+        if last_rob and now < last_rob + timedelta(hours=8):
+            remaining = (last_rob + timedelta(hours=8)) - now
+            total_seconds = int(remaining.total_seconds())
 
-        if last_rob:
-            cooldown_end = last_rob + timedelta(minutes=1)
+            minutes_left = total_seconds // 60
+            seconds_left = total_seconds % 60
 
-            if now < cooldown_end:
-                remaining = cooldown_end - now
-                total_seconds = int(remaining.total_seconds())
-                minutes_left = total_seconds // 60
-
-                await interaction.response.send_message(
-                    f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten wieder rauben.",
-                    ephemeral=True
-                )
-                return
+            await interaction.response.send_message(
+                f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten und {seconds_left} Sekunden wieder rauben.",
+                ephemeral=True
+            )
+            return
 
         if target_data[0] < 50:
             await interaction.response.send_message(
@@ -1181,15 +1176,15 @@ class Job(app_commands.Group):
         if last_work and last_work.tzinfo is None:
             last_work = last_work.replace(tzinfo=timezone.utc)
 
-        if last_work and now < last_work + timedelta(minutes=1):
-            remaining = (last_work + timedelta(minutes=1)) - now
+        if last_work and now < last_work + timedelta(hours=8):
+            remaining = (last_work + timedelta(hours=8)) - now
             total_seconds = int(remaining.total_seconds())
 
             hours_left, remainder = divmod(total_seconds, 3600)
-            minutes_left, _ = divmod(remainder, 60)
+            minutes_left, seconds_left = divmod(remainder, 60)
 
             await interaction.response.send_message(
-                f"<:Astra_time:1141303932061233202> Du musst noch {hours_left}h {minutes_left}min warten, bevor du wieder arbeiten kannst.",
+                f"<:Astra_time:1141303932061233202> Du musst noch {hours_left}h {minutes_left}min {seconds_left}s warten, bevor du wieder arbeiten kannst.",
                 ephemeral=True
             )
             return
