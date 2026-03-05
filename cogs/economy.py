@@ -7,7 +7,7 @@ import aiomysql
 import asyncio
 from typing import Literal
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from discord import ui
 
 # ---------- Slot-Config (balanciert & lohnend) ----------
@@ -812,18 +812,27 @@ class EconomyClass(app_commands.Group):
         user_data = await self.get_user(user_id)
 
         last_beg = user_data[5]  # neue Spalte
-        now = datetime.utcnow()
+        from datetime import datetime, timedelta, timezone
 
-        if last_beg and now < last_beg + timedelta(hours=3):
-            remaining = (last_beg + timedelta(hours=3)) - now
-            total_seconds = int(remaining.total_seconds())
-            minutes_left = total_seconds // 60
+        now = datetime.now(timezone.utc)
 
-            await interaction.response.send_message(
-                f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten wieder betteln.",
-                ephemeral=True
-            )
-            return
+        # Fix für MySQL datetime ohne timezone
+        if last_beg and last_beg.tzinfo is None:
+            last_beg = last_beg.replace(tzinfo=timezone.utc)
+
+        if last_beg:
+            cooldown_end = last_beg + timedelta(hours=3)
+
+            if now < cooldown_end:
+                remaining = cooldown_end - now
+                total_seconds = int(remaining.total_seconds())
+                minutes_left = total_seconds // 60
+
+                await interaction.response.send_message(
+                    f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten wieder betteln.",
+                    ephemeral=True
+                )
+                return
 
         amount = random.randint(5, 25)
 
@@ -951,19 +960,28 @@ class EconomyClass(app_commands.Group):
         user_data = await self.get_user(user_id)
         target_data = await self.get_user(target_id)
 
-        last_rob = user_data[6]  # neue Spalte
-        now = datetime.utcnow()
+        from datetime import datetime, timedelta, timezone
 
-        if last_rob and now < last_rob + timedelta(hours=8):
-            remaining = (last_rob + timedelta(hours=8)) - now
-            total_seconds = int(remaining.total_seconds())
-            minutes_left = total_seconds // 60
+        last_rob = user_data[6]
+        now = datetime.now(timezone.utc)
 
-            await interaction.response.send_message(
-                f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten wieder rauben.",
-                ephemeral=True
-            )
-            return
+        # Fix für MySQL datetime ohne timezone
+        if last_rob and last_rob.tzinfo is None:
+            last_rob = last_rob.replace(tzinfo=timezone.utc)
+
+        if last_rob:
+            cooldown_end = last_rob + timedelta(hours=8)
+
+            if now < cooldown_end:
+                remaining = cooldown_end - now
+                total_seconds = int(remaining.total_seconds())
+                minutes_left = total_seconds // 60
+
+                await interaction.response.send_message(
+                    f"<:Astra_time:1141303932061233202> Du kannst in {minutes_left} Minuten wieder rauben.",
+                    ephemeral=True
+                )
+                return
 
         if target_data[0] < 50:
             await interaction.response.send_message(
@@ -1157,11 +1175,16 @@ class Job(app_commands.Group):
             )
             return
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+
+        # MySQL gibt oft naive datetime zurück → fixen
+        if last_work and last_work.tzinfo is None:
+            last_work = last_work.replace(tzinfo=timezone.utc)
 
         if last_work and now < last_work + timedelta(hours=8):
             remaining = (last_work + timedelta(hours=8)) - now
             total_seconds = int(remaining.total_seconds())
+
             hours_left, remainder = divmod(total_seconds, 3600)
             minutes_left, _ = divmod(remainder, 60)
 
