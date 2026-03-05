@@ -1173,21 +1173,21 @@ class Job(app_commands.Group):
         now = datetime.now(timezone.utc)
 
         # MySQL gibt oft naive datetime zurück → fixen
+        # MySQL gibt oft naive datetime zurück → fixen
         if last_work and last_work.tzinfo is None:
             last_work = last_work.replace(tzinfo=timezone.utc)
 
-        if last_work and now < last_work + timedelta(hours=8):
-            remaining = (last_work + timedelta(hours=8)) - now
-            total_seconds = int(remaining.total_seconds())
+        if last_work:
+            cooldown_end = last_work + timedelta(hours=8)
 
-            hours_left, remainder = divmod(total_seconds, 3600)
-            minutes_left, seconds_left = divmod(remainder, 60)
+            if now < cooldown_end:
+                unix_timestamp = int(cooldown_end.timestamp())
 
-            await interaction.response.send_message(
-                f"<:Astra_time:1141303932061233202> Du musst noch {hours_left}h {minutes_left}min {seconds_left}s warten, bevor du wieder arbeiten kannst.",
-                ephemeral=True
-            )
-            return
+                await interaction.response.send_message(
+                    f"<:Astra_time:1141303932061233202> Du kannst <t:{unix_timestamp}:R> wieder arbeiten.",
+                    ephemeral=True
+                )
+                return
 
         job = next((j for j in JOBS if j["name"] == job_name), None)
 
