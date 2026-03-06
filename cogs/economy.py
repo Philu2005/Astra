@@ -1174,6 +1174,7 @@ class Job(app_commands.Group):
     @app_commands.command(name="work", description="Arbeite in deinem aktuellen Job.")
     @app_commands.guild_only()
     async def work(self, interaction: discord.Interaction):
+
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
 
@@ -1203,6 +1204,9 @@ class Job(app_commands.Group):
 
             hours_left, remainder = divmod(total_seconds, 3600)
             minutes_left, seconds_left = divmod(remainder, 60)
+            print("NOW:", now)
+            print("LAST_WORK:", last_work)
+            print("DIFF:", now - last_work if last_work else None)
 
             parts = []
             if hours_left:
