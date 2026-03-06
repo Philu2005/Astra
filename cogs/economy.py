@@ -1183,6 +1183,7 @@ class Job(app_commands.Group):
         job_name= user_data[2]
         hours = user_data[3]
         last_work = user_data[4]
+        print("RAW last_work from DB:", last_work)
 
         if not job_name:
             await interaction.response.send_message(
