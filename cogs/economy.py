@@ -9,7 +9,14 @@ from typing import Literal
 import random
 from datetime import datetime, timezone, timedelta
 from discord import ui
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 # ---------- Slot-Config (balanciert & lohnend) ----------
 WILD = "⭐"
 SCAT = "🔔"
@@ -1183,7 +1190,7 @@ class Job(app_commands.Group):
         job_name= user_data[2]
         hours = user_data[3]
         last_work = user_data[4]
-        print("RAW last_work from DB:", last_work)
+        logging.info("RAW last_work from DB:", last_work)
 
         if not job_name:
             await interaction.response.send_message(
@@ -1205,9 +1212,9 @@ class Job(app_commands.Group):
 
             hours_left, remainder = divmod(total_seconds, 3600)
             minutes_left, seconds_left = divmod(remainder, 60)
-            print("NOW:", now)
-            print("LAST_WORK:", last_work)
-            print("DIFF:", now - last_work if last_work else None)
+            logging.info("NOW:", now)
+            logging.info("LAST_WORK:", last_work)
+            logging.info("DIFF:", now - last_work if last_work else None)
 
             parts = []
             if hours_left:
