@@ -823,7 +823,7 @@ class EconomyClass(app_commands.Group):
 
         now = datetime.now(timezone.utc)
 
-        # Fix für MySQL datetime ohne timezone
+        # MySQL DATETIME ist oft naive → zu UTC machen
         if last_beg and last_beg.tzinfo is None:
             last_beg = last_beg.replace(tzinfo=timezone.utc)
 
@@ -981,6 +981,10 @@ class EconomyClass(app_commands.Group):
 
         last_rob = user_data[6]  # neue Spalte
         now = datetime.now(timezone.utc)
+
+        # MySQL DATETIME ist oft naive → zu UTC machen
+        if last_rob and last_rob.tzinfo is None:
+            last_rob = last_rob.replace(tzinfo=timezone.utc)
 
         if last_rob and now < last_rob + timedelta(hours=8):
             remaining = (last_rob + timedelta(hours=8)) - now
@@ -1201,8 +1205,7 @@ class Job(app_commands.Group):
 
         now = datetime.now(timezone.utc)
 
-        # MySQL gibt oft naive datetime zurück → fixen
-        # MySQL gibt oft naive datetime zurück → fixen
+        # MySQL DATETIME ist oft naive → zu UTC machen
         if last_work and last_work.tzinfo is None:
             last_work = last_work.replace(tzinfo=timezone.utc)
 
@@ -1212,6 +1215,7 @@ class Job(app_commands.Group):
 
             hours_left, remainder = divmod(total_seconds, 3600)
             minutes_left, seconds_left = divmod(remainder, 60)
+
             logging.info(f"NOW: {now}")
             logging.info(f"LAST_WORK: {last_work}")
             logging.info(f"DIFF: {now - last_work if last_work else None}")
