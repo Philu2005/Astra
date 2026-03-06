@@ -621,7 +621,7 @@ async def on_dbl_vote(data):
     if streak_bonus > 0:
         reward_text = (
             f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {base_amount} Coins "
-            f"+ {streak_bonus} Streak-Bonus (Streak {streak} <:Coin:1359178077011181811>"
+            f"+ {streak_bonus} Streak-Bonus (Streak {streak}) <:Coin:1359178077011181811>"
         )
     else:
         reward_text = f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {base_amount} Coins <:Coin:1359178077011181811>"
