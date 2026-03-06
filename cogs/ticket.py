@@ -292,6 +292,7 @@ class SetupWizardView(ui.LayoutView):
         self.role = None
         self.panel_title = None
         self.panel_desc = None
+        self.log_channel = None
 
         # 🔥 Alles deaktiviert beim Start
         self.cached_config = {
@@ -349,6 +350,7 @@ class SetupWizardView(ui.LayoutView):
                 f"<:Astra_punkt:1141303896745201696> **Panel-Kanal** festlegen\n"
                 f"<:Astra_punkt:1141303896745201696> **Ticket-Kategorie** definieren\n"
                 f"<:Astra_punkt:1141303896745201696> **Support-Rolle** bestimmen\n"
+                f"<:Astra_punkt:1141303896745201696> **Ticketlog-Kanal:** festlegen(optional)\n"
                 f"<:Astra_punkt:1141303896745201696> Embed-Inhalt anpassen\n"
                 f"<:Astra_punkt:1141303896745201696> Optionale Automationen aktivieren"
             ))
@@ -394,6 +396,16 @@ class SetupWizardView(ui.LayoutView):
                 f"<:Astra_punkt:1141303896745201696> Diese Rolle erhält Zugriff auf Tickets\n"
                 f"<:Astra_punkt:1141303896745201696> Ohne Rolle kann kein Support arbeiten\n"
                 f"<:Astra_x:1141303954555289600> Pflichtfeld"
+            ))
+
+            help_container.add_item(discord.ui.Separator())
+
+            help_container.add_item(discord.ui.TextDisplay(
+                "### Log-Kanal (optional)\n"
+                f"<:Astra_punkt:1141303896745201696> Hier werden Ticket Aktionen geloggt\n"
+                f"<:Astra_punkt:1141303896745201696> z.B. Ticket erstellt / geschlossen\n"
+                f"<:Astra_punkt:1141303896745201696> Sehr hilfreich für Moderation\n"
+                f"<:Astra_accept:1141303821176422460> Optional"
             ))
 
             help_container.add_item(discord.ui.Separator())
@@ -483,6 +495,7 @@ class SetupWizardView(ui.LayoutView):
                 f"<:Astra_punkt:1141303896745201696> Panel-Kanal\n"
                 f"<:Astra_punkt:1141303896745201696> Ticket-Kategorie\n"
                 f"<:Astra_punkt:1141303896745201696> Support-Rolle\n"
+                f"<:Astra_punkt:1141303896745201696> Ticketlog-Kanal\n"
                 f"<:Astra_punkt:1141303896745201696> Titel\n"
                 f"<:Astra_punkt:1141303896745201696> Beschreibung"
             ))
@@ -679,7 +692,8 @@ class SetupWizardView(ui.LayoutView):
             "## Aktuelle Konfiguration\n"
             f"<:Astra_punkt:1141303896745201696> **Kanal:** {fmt(self.target_channel)}\n"
             f"<:Astra_punkt:1141303896745201696> **Kategorie:** {fmt(self.category)}\n"
-            f"<:Astra_punkt:1141303896745201696> **Support-Rolle:** {fmt(self.role)}\n\n"
+            f"<:Astra_punkt:1141303896745201696> **Support-Rolle:** {fmt(self.role)}\n"
+            f"<:Astra_punkt:1141303896745201696> **Log-Kanal:** {fmt(self.log_channel)}\n\n"
             f"<:Astra_punkt:1141303896745201696> **Titel:** {self.panel_title or '`Nicht gesetzt`'}\n"
             f"<:Astra_punkt:1141303896745201696> **Beschreibung:** {self.panel_desc or '`Nicht gesetzt`'}"
         ))
@@ -752,6 +766,25 @@ class SetupWizardView(ui.LayoutView):
 
             role.callback = role_cb
             container.add_item(discord.ui.ActionRow(role))
+
+            # =========================
+            # LOG CHANNEL (OPTIONAL)
+            # =========================
+
+            log = discord.ui.ChannelSelect(
+                placeholder="📜 Log-Kanal wählen (optional)",
+                channel_types=[discord.ChannelType.text],
+                min_values=0,
+                max_values=1
+            )
+
+            async def log_cb(interaction):
+                self.log_channel = log.values[0] if log.values else None
+                self._build()
+                await interaction.response.edit_message(view=self)
+
+            log.callback = log_cb
+            container.add_item(discord.ui.ActionRow(log))
 
             text_btn = discord.ui.Button(
                 label="Titel & Beschreibung bearbeiten",
