@@ -445,7 +445,7 @@ async def on_dbl_vote(data):
 
             guild = bot.get_guild(1141116981697859736)
             if not guild:
-                logging.error("Guild nicht gefunden!")
+                logging.error("Guild nicht gefunden.")
                 return
 
             voterole = guild.get_role(1141116981756575875)
