@@ -29,7 +29,7 @@ Wichtige Funktionen:
 
 ```bash
 # Repository klonen
-git clone https://github.com/USERNAME/astra.git
+git clone https://github.com/Philu2005/astra.git
 cd astra
 
 # Abhängigkeiten installieren
