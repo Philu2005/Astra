@@ -442,6 +442,16 @@ class astra(commands.Cog):
         except:
             db_ping = None
 
+        # API Ping (deine Flask API)
+        api_start = time.perf_counter()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("http://127.0.0.1:5000/status") as r:
+                    await r.json()
+            api_ping = round((time.perf_counter() - api_start) * 1000, 2)
+        except:
+            api_ping = None
+
         def status(ms):
             if ms is None:
                 return "⚫"
@@ -474,6 +484,12 @@ class astra(commands.Cog):
         embed.add_field(
             name="🗄 Datenbank",
             value=f"{status(db_ping)} `{db_ping if db_ping else 'Fehler'} ms`",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🧩 Astra API",
+            value=f"{status(api_ping)} `{api_ping if api_ping else 'Fehler'} ms`",
             inline=True
         )
 
