@@ -420,16 +420,13 @@ class astra(commands.Cog):
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def ping(self, interaction: discord.Interaction):
-        """Zeigt den aktuellen Bot-Ping."""
 
         start = time.perf_counter()
-
         await interaction.response.defer()
 
         raw_response = (time.perf_counter() - start) * 1000
         gateway_ping = self.bot.latency * 1000
 
-        # Discord Gateway Delay abziehen
         response_ping = round(max(raw_response - gateway_ping, 0), 2)
         gateway_ping = round(gateway_ping, 2)
 
@@ -443,19 +440,25 @@ class astra(commands.Cog):
         except:
             db_ping = None
 
+        # API Ping
         api_start = time.perf_counter()
-
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get("http://127.0.0.1:5000/status", timeout=5) as r:
-                    if r.status == 200:
-                        await r.text()
-
+                async with session.get("http://127.0.0.1:5000/status") as r:
+                    await r.json()
             api_ping = round((time.perf_counter() - api_start) * 1000, 2)
-
-        except Exception as e:
-            print("API Fehler:", e)
+        except:
             api_ping = None
+
+        # ---------- helpers ----------
+
+        services = ["Gateway", "Processing", "Database", "Astra API"]
+        pings = [gateway_ping, response_ping, db_ping, api_ping]
+
+        def fmt(ms):
+            if ms is None:
+                return "Fehler"
+            return f"{ms:.2f} ms"
 
         def status(ms):
             if ms is None:
@@ -468,34 +471,59 @@ class astra(commands.Cog):
                 return "🟠"
             return "🔴"
 
+        SERVICE_W = 12
+        LATENCY_W = 14
+        STATE_W = 5
+
+        # Header zuerst bauen (das ist die Referenzbreite)
+        header = f"| {'Service':^{SERVICE_W}} | {'Latency':^{LATENCY_W}} | {'State':^{STATE_W}} |"
+
+        table_width = len(header)
+
+        # Linien exakt gleich breit
+        line = "+" + "-" * (table_width - 2) + "+"
+        top_line = line
+
+        title = f"| {'Astra Network Monitor':^{table_width - 4}} |"
+
+        rows = []
+
+        for s, p in zip(services, pings):
+            rows.append(
+                f"| {s:^{SERVICE_W}} | {fmt(p):^{LATENCY_W}} | {status(p):^{STATE_W - 1}} |"
+            )
+
+        values = [v for v in pings if v is not None]
+
+        if values and max(values) > 800:
+            overall = "Critical"
+        elif values and max(values) > 400:
+            overall = "Degraded"
+        elif values and max(values) > 150:
+            overall = "Minor latency"
+        else:
+            overall = "Operational"
+
+        rows.append(
+            f"| {'Overall':^{SERVICE_W}} | {overall:^{LATENCY_W}} | {status(max(values) if values else None):^{STATE_W - 1}} |"
+        )
+
+        panel = "\n".join([
+            top_line,
+            title,
+            line,
+            header,
+            line,
+            *rows,
+            line
+        ])
+
+        panel = f"```\n\n{panel}\n```"
+
         embed = discord.Embed(
-            title="🏓 Astra Status",
-            description="**Systemlatenz**",
+            title="🏓 Astra Ping",
+            description=panel,
             colour=discord.Colour.blue()
-        )
-
-        embed.add_field(
-            name="🌐 Gateway",
-            value=f"{status(gateway_ping)} `{gateway_ping} ms`",
-            inline=True
-        )
-
-        embed.add_field(
-            name="⚡ Verarbeitung",
-            value=f"{status(response_ping)} `{response_ping} ms`",
-            inline=True
-        )
-
-        embed.add_field(
-            name="🗄 Datenbank",
-            value=f"{status(db_ping)} `{db_ping if db_ping else 'Fehler'} ms`",
-            inline=True
-        )
-
-        embed.add_field(
-            name="🧩 Astra API",
-            value=f"{status(api_ping)} `{api_ping if api_ping else 'Fehler'} ms`",
-            inline=True
         )
 
         embed.set_footer(
@@ -503,7 +531,7 @@ class astra(commands.Cog):
             icon_url=self.bot.user.display_avatar.url
         )
 
-        await interaction.edit_original_response(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="uptime")
     @app_commands.guild_only()
