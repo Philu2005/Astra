@@ -1,3 +1,4 @@
+import aiohttp
 import discord
 import psutil
 from discord import app_commands
@@ -442,14 +443,18 @@ class astra(commands.Cog):
         except:
             db_ping = None
 
-        # API Ping (deine Flask API)
         api_start = time.perf_counter()
+
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get("http://127.0.0.1:5000/status") as r:
-                    await r.json()
+                async with session.get("http://127.0.0.1:5000/status", timeout=5) as r:
+                    if r.status == 200:
+                        await r.text()
+
             api_ping = round((time.perf_counter() - api_start) * 1000, 2)
-        except:
+
+        except Exception as e:
+            print("API Fehler:", e)
             api_ping = None
 
         def status(ms):
