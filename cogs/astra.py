@@ -419,13 +419,70 @@ class astra(commands.Cog):
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def ping(self, interaction: discord.Interaction):
-        """Zeigt den Ping von Astra."""
-        t_1 = time.perf_counter()
-        await interaction.response.send_message(f"```Websocket: {round(self.bot.latency * 1000, 2)} ms```")
-        msg = await interaction.original_message()
-        t_2 = time.perf_counter()
-        time_delta = round((t_2 - t_1) * 1000, 2)
-        await msg.edit(content=f"```Websocket: {round(self.bot.latency * 1000, 2)} ms\nAntwort: {time_delta} ms```")
+        """Zeigt den aktuellen Bot-Ping."""
+
+        start = time.perf_counter()
+
+        await interaction.response.defer()
+
+        raw_response = (time.perf_counter() - start) * 1000
+        gateway_ping = self.bot.latency * 1000
+
+        # Discord Gateway Delay abziehen
+        response_ping = round(max(raw_response - gateway_ping, 0), 2)
+        gateway_ping = round(gateway_ping, 2)
+
+        # DB Ping
+        db_start = time.perf_counter()
+        try:
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT 1")
+            db_ping = round((time.perf_counter() - db_start) * 1000, 2)
+        except:
+            db_ping = None
+
+        def status(ms):
+            if ms is None:
+                return "⚫"
+            if ms < 150:
+                return "🟢"
+            if ms < 400:
+                return "🟡"
+            if ms < 800:
+                return "🟠"
+            return "🔴"
+
+        embed = discord.Embed(
+            title="🏓 Astra Status",
+            description="**Systemlatenz**",
+            colour=discord.Colour.blue()
+        )
+
+        embed.add_field(
+            name="🌐 Gateway",
+            value=f"{status(gateway_ping)} `{gateway_ping} ms`",
+            inline=True
+        )
+
+        embed.add_field(
+            name="⚡ Verarbeitung",
+            value=f"{status(response_ping)} `{response_ping} ms`",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🗄 Datenbank",
+            value=f"{status(db_ping)} `{db_ping if db_ping else 'Fehler'} ms`",
+            inline=True
+        )
+
+        embed.set_footer(
+            text=f"{self.bot.user.name} • Performance Monitor",
+            icon_url=self.bot.user.display_avatar.url
+        )
+
+        await interaction.edit_original_response(embed=embed)
 
     @app_commands.command(name="uptime")
     @app_commands.guild_only()
