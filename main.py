@@ -144,7 +144,6 @@ class Astra(commands.Bot):
             "cogs.guessthenumber",
             "cogs.counting",
             "cogs.tags",
-            "cogs.globalchat",
             "cogs.ticket",
             "cogs.levels",
             "cogs.snake"
