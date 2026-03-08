@@ -1,4 +1,3 @@
-import aiohttp
 import discord
 import psutil
 from discord import app_commands
@@ -19,6 +18,8 @@ from PIL import Image
 import asyncio
 import tempfile
 from discord import ui
+from wcwidth import wcswidth
+import aiohttp
 
 async def get_best_join_channel(guild: discord.Guild) -> discord.TextChannel | None:
     me = guild.me
@@ -187,6 +188,7 @@ class astra(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.uptime = datetime.utcnow()
+        self.session = aiohttp.ClientSession()
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
@@ -436,18 +438,21 @@ class astra(commands.Cog):
             async with self.bot.pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("SELECT 1")
+
             db_ping = round((time.perf_counter() - db_start) * 1000, 2)
-        except:
+
+        except Exception:
             db_ping = None
 
         # API Ping
         api_start = time.perf_counter()
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("http://127.0.0.1:5000/status") as r:
-                    await r.json()
+            async with self.session.get("http://127.0.0.1:5000/status") as r:
+                await r.json()
+
             api_ping = round((time.perf_counter() - api_start) * 1000, 2)
-        except:
+
+        except Exception:
             api_ping = None
 
         # ---------- helpers ----------
@@ -532,7 +537,6 @@ class astra(commands.Cog):
         )
 
         await interaction.followup.send(embed=embed)
-
     @app_commands.command(name="uptime")
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
@@ -547,6 +551,9 @@ class astra(commands.Cog):
         embed.set_author(name=f"Online seit: {days}d {hours}h {minutes}m {seconds}s",
                          icon_url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed)
+
+    async def cog_unload(self):
+        await self.session.close()
 
 
 async def setup(bot: commands.Bot):
