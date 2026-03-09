@@ -309,7 +309,7 @@ class SlotView(ui.View):
         super().__init__(timeout=120)
         self.cog = cog
         self.user_id = interaction.user.id
-        self.bet = min(MAX_BET, max(10, int(self.bet * 0.5)))
+        self.bet = min(MAX_BET, max(10, bet))
         self.freespins = 0
         self.last_win = 0
         self.msg = None
