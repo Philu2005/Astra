@@ -17,6 +17,11 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+MAX_BET = 10000
+MAX_WIN_MULTIPLIER = 50
+
 # ---------- Slot-Config (balanciert & lohnend) ----------
 WILD = "⭐"
 SCAT = "🔔"
@@ -61,19 +66,19 @@ PAYTABLE = {
 
 # Wild-Boost für gemischte Linien (Base + 1–2 Wilds)
 WILD_LINE_MULT = {
-    0: 1,  # ohne ⭐
-    1: 2,  # 1 Wild ≈ x2
-    2: 4,  # 2 Wilds ≈ x4
+    0: 1,
+    1: 1.5,
+    2: 2.5,
 }
-PURE_WILDS_MULTI = 40  # 3×⭐ auf einer Linie
+PURE_WILDS_MULTI = 20
 
 # Scatter zahlt + Freespins
-SCATTER_PAYS = {3: 3, 4: 6, 5: 12}  # => payout = bet * factor
+SCATTER_PAYS = {3: 2, 4: 4, 5: 8}  # => payout = bet * factor
 FREESPINS_FOR_3_SCAT = 6            # spürbarer Bonus
 
 # Nudges etwas konservativer, damit „Rettungen“ selten bleiben
-NUDGE_SCATTER_CHANCE = 0.30
-NUDGE_LINE_CHANCE    = 0.14
+NUDGE_SCATTER_CHANCE = 0.20
+NUDGE_LINE_CHANCE    = 0.10
 
 SPIN_FRAMES = 5
 FRAME_DELAY = 0.35
@@ -304,7 +309,7 @@ class SlotView(ui.View):
         super().__init__(timeout=120)
         self.cog = cog
         self.user_id = interaction.user.id
-        self.bet = max(10, bet)
+        self.bet = min(MAX_BET, max(10, int(self.bet * 0.5)))
         self.freespins = 0
         self.last_win = 0
         self.msg = None
@@ -350,6 +355,11 @@ class SlotView(ui.View):
 
         # --- Ergebnis ---
         payout, winlines, freespins_got, breakdown = evaluate(final, self.bet)
+
+        # Max Win Cap
+        max_win = self.bet * MAX_WIN_MULTIPLIER
+        payout = min(payout, max_win)
+
         if freespins_got:
             self.freespins += freespins_got
 
@@ -431,7 +441,7 @@ class SlotView(ui.View):
     @ui.button(label="➕", style=discord.ButtonStyle.secondary)
     async def bet_plus(self, interaction: discord.Interaction, button: ui.Button):
         if not await self.ensure_owner(interaction): return
-        self.bet = min(1_000_000, int(self.bet * 1.5) or self.bet+10)
+        self.bet = min(MAX_BET, int(self.bet * 1.5) or self.bet + 10)
         await interaction.response.send_message(f"Einsatz: **{self.bet}**", ephemeral=True)
 
 JOBS = [{"name": "Küchenhilfe", "req": 0,
@@ -876,9 +886,25 @@ class EconomyClass(app_commands.Group):
         user_data = await self.get_user(user_id)
         wallet = user_data[0]
 
-        if einsatz <= 0 or einsatz > wallet:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Ungültiger Einsatz.",
-                                                    ephemeral=True)
+        if einsatz <= 0:
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Ungültiger Einsatz.",
+                ephemeral=True
+            )
+            return
+
+        if einsatz > MAX_BET:
+            await interaction.response.send_message(
+                f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
+                ephemeral=True
+            )
+            return
+
+        if einsatz > wallet:
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Du hast nicht genug Coins.",
+                ephemeral=True
+            )
             return
 
         view = SlotView(self, interaction, einsatz)
@@ -940,6 +966,13 @@ class EconomyClass(app_commands.Group):
 
         user_data = await self.get_user(interaction.user.id)
         wallet = user_data[0]
+
+        if betrag > MAX_BET:
+            await interaction.response.send_message(
+                f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
+                ephemeral=True
+            )
+            return
 
         if wallet < betrag:
             await interaction.response.send_message(
@@ -1129,6 +1162,13 @@ class EconomyClass(app_commands.Group):
     async def blackjack(self, interaction: discord.Interaction, einsatz: int):
         user_data = await self.get_user(interaction.user.id)
         wallet = user_data[0]
+
+        if einsatz > MAX_BET:
+            await interaction.response.send_message(
+                f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
+                ephemeral=True
+            )
+            return
 
         if einsatz <= 0:
             await interaction.response.send_message(
