@@ -580,11 +580,6 @@ async def on_dbl_vote(data):
                 (user_id, total_amount)
             )
 
-            await cur.execute(
-                "UPDATE economy_users SET last_work = %s WHERE user_id = %s",
-                (now_utc, user_id)
-            )
-
             # --- Gesamtvotes für aktuellen Monat ---
             await cur.execute(
                 "SELECT COALESCE(SUM(count), 0) FROM topgg WHERE last_reset = %s",
