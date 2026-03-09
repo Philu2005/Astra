@@ -463,6 +463,8 @@ async def on_dbl_vote(data):
                 SELECT count, last_reset, last_vote_epoch, streak, best_streak
                 FROM topgg
                 WHERE userID = %s
+                    FOR
+                UPDATE
                 """,
                 (user_id,)
             )
@@ -471,7 +473,7 @@ async def on_dbl_vote(data):
             # --- DUPLICATE-SCHUTZ ---
             if row:
                 _, _, last_vote_epoch, _, _ = row
-                if last_vote_epoch and now_ts - int(last_vote_epoch) < 60:
+                if last_vote_epoch and now_ts - int(last_vote_epoch) < 600:
                     logging.warning(f"[Vote] Duplicate Vote ignoriert ({user_id})")
                     return
 
@@ -516,11 +518,19 @@ async def on_dbl_vote(data):
 
                 member_votes = count + vote_increase
 
-                # --- STREAK-LOGIK ---
-                diff = now_ts - int(last_vote_epoch)
+                # --- DAILY STREAK LOGIK ---
+                if last_vote_epoch is not None:
+                    last_vote_date = datetime.fromtimestamp(int(last_vote_epoch), timezone.utc).date()
+                    today = now_utc.date()
 
-                if 12 * 3600 <= diff <= 24 * 3600:
-                    streak += 1
+                    days_diff = (today - last_vote_date).days
+
+                    if days_diff == 0:
+                        pass
+                    elif days_diff == 1:
+                        streak += 1
+                    else:
+                        streak = 1
                 else:
                     streak = 1
 
@@ -553,23 +563,13 @@ async def on_dbl_vote(data):
                 )
 
             # =============================
-            # ECONOMY-REWARD + STREAK-BONUS
+            # ECONOMY-REWARD (MIT MULTIPLIER)
             # =============================
             base_amount = random.randint(5, 25)
-            streak_bonus = 0
 
-            if streak == 3:
-                streak_bonus = 10
-            elif streak == 5:
-                streak_bonus = 25
-            elif streak == 7:
-                streak_bonus = 50
-            elif streak == 14:
-                streak_bonus = 100
-            elif streak == 30:
-                streak_bonus = 250
+            multiplier = min(1 + streak * 0.05, 2.0)
 
-            total_amount = base_amount + streak_bonus
+            total_amount = round(base_amount * multiplier)
 
             await cur.execute(
                 """
@@ -617,13 +617,11 @@ async def on_dbl_vote(data):
     )
 
     # --- BELohnungstext für Nachricht ---
-    if streak_bonus > 0:
-        reward_text = (
-            f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {base_amount} Coins "
-            f"+ {streak_bonus} Streak-Bonus (Streak {streak}) <:Coin:1359178077011181811>"
-        )
-    else:
-        reward_text = f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {base_amount} Coins <:Coin:1359178077011181811>"
+    reward_text = (
+        f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {total_amount} Coins "
+        f"(Base {base_amount} × {multiplier:.2f} Streak Multiplier | Streak {streak}) "
+        f"<:Coin:1359178077011181811>"
+    )
 
     member = guild.get_member(user_id)
     if not member:
