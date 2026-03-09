@@ -356,6 +356,9 @@ class SlotView(ui.View):
         # --- Ergebnis ---
         payout, winlines, freespins_got, breakdown = evaluate(final, self.bet)
 
+        # Runden
+        payout = int(payout)
+
         # Max Win Cap
         max_win = self.bet * MAX_WIN_MULTIPLIER
         payout = min(payout, max_win)
