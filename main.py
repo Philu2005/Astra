@@ -567,7 +567,7 @@ async def on_dbl_vote(data):
             # =============================
             base_amount = random.randint(5, 25)
 
-            multiplier = min(1 + streak * 0.05, 2.0)
+            multiplier = min(1 + (streak - 1) * 0.05, 2.0)
 
             total_amount = round(base_amount * multiplier)
 
