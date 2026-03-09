@@ -387,7 +387,7 @@ class SlotView(ui.View):
                 parts.append(f"• {name} {sym or ''} {'→ **+%s**' % val if val > 0 else ''}")
             details = "\n".join(parts)
 
-        end = discord.Embed(colour=discord.Colour.blue(), title="🎰 Slots – Ergebnis")
+        end = discord.Embed(colour=discord.Colour.blue(), title="🎰 Slots – Ergebnis ")
         end.add_field(name="Walzen", value=board_text, inline=False)
         end.add_field(name="Ergebnis", value=res, inline=False)
         end.add_field(name="Details", value=details, inline=False)
