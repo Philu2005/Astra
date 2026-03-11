@@ -739,7 +739,7 @@ class JobListView(discord.ui.View):
                 next_job = job
 
         progress_bar = ""
-        progress_text = ""
+        percent = 0
 
         if next_job:
             progress = self.user_hours / next_job["req"]
@@ -750,52 +750,63 @@ class JobListView(discord.ui.View):
 
             percent = int(progress * 100)
 
-            progress_text = (
-                f"`{progress_bar}` **{percent}%**\n"
-                f"`{self.user_hours}/{next_job['req']}` Arbeitsstunden"
-            )
-
         embed = discord.Embed(
             title="<:Astra_file1:1141303837181886494> Job Übersicht",
-            description=f"<:Astra_time:1141303932061233202> **Deine Arbeitsstunden:** `{self.user_hours}`",
             color=discord.Color.blue()
         )
 
-        # Aktueller Job
+        text = ""
+
+        # Kategorie 1
+        text += (
+            "📁 **Job Übersicht**\n"
+            f"<:Astra_time:1141303932061233202> **Arbeitsstunden**\n"
+            f"`{self.user_hours}` Stunden"
+            "\n\n\n"
+        )
+
+        # Kategorie 2
         if current_job:
             pay_min, pay_max = current_job["amt"]
 
-            embed.add_field(
-                name="💼 **Aktueller Job**",
-                value=(
-                    f"**{current_job['name']}**\n\n"
-                    f"<:Astra_gw_closed:1141303848695238686> **Verdienst:** `{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde\n"
-                    f"<:Astra_time:1141303932061233202> **Freigeschaltet ab:** `{current_job['req']}` Stunden\n\n"
-                    f"{current_job['desc']}"
-                ),
-                inline=False
+            text += (
+                "💼 **Aktueller Job**\n"
+                f"**{current_job['name']}**\n\n"
+
+                "💰 **Verdienst**\n"
+                f"`{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde\n\n"
+
+                "<:Astra_time:1141303932061233202> **Freigeschaltet ab**\n"
+                f"`{current_job['req']}` Stunden\n\n"
+
+                "📄 **Beschreibung**\n"
+                f"{current_job['desc']}\n\n"
+
+                "<:Astra_level:1141825043278598154> **Fortschritt**\n"
+                f"`{progress_bar}` **{percent}%**\n"
+                f"`{self.user_hours}/{next_job['req']}` Stunden"
+                "\n\n\n"
             )
 
-        # Fortschritt
+        # Kategorie 3
         if next_job:
-            embed.add_field(
-                name="<:Astra_level:1141825043278598154> **Fortschritt zum nächsten Job**",
-                value=progress_text,
-                inline=False
-            )
-
             pay_min, pay_max = next_job["amt"]
 
-            embed.add_field(
-                name="<:Astra_boost:1141303827107164270> **Nächster Job**",
-                value=(
-                    f"**{next_job['name']}**\n\n"
-                    f"<:Astra_gw_closed:1141303848695238686> **Verdienst:** `{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde\n"
-                    f"<:Astra_time:1141303932061233202> **Benötigt:** `{next_job['req']}` Stunden\n\n"
-                    f"{next_job['desc']}"
-                ),
-                inline=False
+            text += (
+                "<:Astra_boost:1141303827107164270> **Nächster Job**\n"
+                f"**{next_job['name']}**\n\n"
+
+                "💰 **Verdienst**\n"
+                f"`{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde\n\n"
+
+                "<:Astra_time:1141303932061233202> **Benötigt**\n"
+                f"`{next_job['req']}` Stunden\n\n"
+
+                "📄 **Beschreibung**\n"
+                f"{next_job['desc']}"
             )
+
+        embed.description = text
 
         return embed
 
