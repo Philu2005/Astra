@@ -739,12 +739,17 @@ class JobListView(discord.ui.View):
                 next_job = job
 
         progress_bar = ""
+        progress_text = ""
 
         if next_job:
-            progress = min(self.user_hours / next_job["req"], 1)
-            filled = int(progress * 10)
+            progress = self.user_hours / next_job["req"]
+            progress = max(0, min(progress, 1))  # clamp zwischen 0 und 1
 
+            filled = round(progress * 10)
             progress_bar = "█" * filled + "░" * (10 - filled)
+
+            percent = int(progress * 100)
+            progress_text = f"`{progress_bar}` **{percent}%** (`{self.user_hours}/{next_job['req']}`)"
 
         embed = discord.Embed(
             title="<:Astra_file1:1141303837181886494> Job Übersicht",
@@ -767,7 +772,7 @@ class JobListView(discord.ui.View):
         if next_job:
             embed.add_field(
                 name="<:Astra_level:1141825043278598154> Fortschritt zum nächsten Job",
-                value=f"`{progress_bar}` `{self.user_hours}/{next_job['req']}`",
+                value=progress_text,
                 inline=False
             )
 
