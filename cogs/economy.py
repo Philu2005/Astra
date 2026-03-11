@@ -732,7 +732,6 @@ class JobListView(discord.ui.View):
         current_job = None
         next_job = None
 
-        # aktuellen und nächsten Job bestimmen
         for job in self.jobs:
             if self.user_hours >= job["req"]:
                 current_job = job
@@ -746,8 +745,8 @@ class JobListView(discord.ui.View):
             progress = self.user_hours / next_job["req"]
             progress = max(0, min(progress, 1))
 
-            filled = round(progress * 20)
-            progress_bar = "█" * filled + "░" * (20 - filled)
+            filled = round(progress * 12)
+            progress_bar = "█" * filled + "░" * (12 - filled)
 
             percent = int(progress * 100)
 
@@ -764,10 +763,14 @@ class JobListView(discord.ui.View):
 
         # Aktueller Job
         if current_job:
+            pay_min, pay_max = current_job["amt"]
+
             embed.add_field(
-                name="<:Astra_gw_closed:1141303848695238686> Aktueller Job",
+                name="💼 **Aktueller Job**",
                 value=(
                     f"**{current_job['name']}**\n\n"
+                    f"<:Astra_gw_closed:1141303848695238686> **Verdienst:** `{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde\n"
+                    f"<:Astra_time:1141303932061233202> **Freigeschaltet ab:** `{current_job['req']}` Stunden\n\n"
                     f"{current_job['desc']}"
                 ),
                 inline=False
@@ -775,28 +778,22 @@ class JobListView(discord.ui.View):
 
         # Fortschritt
         if next_job:
-
             embed.add_field(
-                name="<:Astra_level:1141825043278598154> Fortschritt zum nächsten Job",
-                value=(
-                    f"{progress_text}\n"
-                ),
+                name="<:Astra_level:1141825043278598154> **Fortschritt zum nächsten Job**",
+                value=progress_text,
                 inline=False
             )
 
+            pay_min, pay_max = next_job["amt"]
+
             embed.add_field(
-                name="<:Astra_boost:1141303827107164270> Nächster Job",
+                name="<:Astra_boost:1141303827107164270> **Nächster Job**",
                 value=(
                     f"**{next_job['name']}**\n\n"
+                    f"<:Astra_gw_closed:1141303848695238686> **Verdienst:** `{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde\n"
+                    f"<:Astra_time:1141303932061233202> **Benötigt:** `{next_job['req']}` Stunden\n\n"
                     f"{next_job['desc']}"
                 ),
-                inline=False
-            )
-
-        else:
-            embed.add_field(
-                name="<:Astra_boost:1141303827107164270> Maximaler Job erreicht",
-                value="\nDu hast bereits den höchsten verfügbaren Job freigeschaltet. 🎉",
                 inline=False
             )
 
