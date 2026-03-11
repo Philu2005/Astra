@@ -728,44 +728,59 @@ class JobListView(discord.ui.View):
         self.items_per_page = 5
 
     def generate_job_embed(self):
-        total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
+
+        current_job = None
+        next_job = None
+
+        for job in self.jobs:
+            if self.user_hours >= job["req"]:
+                current_job = job
+            elif not next_job:
+                next_job = job
+
+        progress_bar = ""
+
+        if next_job:
+            progress = self.user_hours / next_job["req"]
+            filled = int(progress * 10)
+
+            progress_bar = "█" * filled + "░" * (10 - filled)
 
         embed = discord.Embed(
-            title="<:Astra_file1:1141303837181886494> Jobliste",
-            description=f"<:Astra_time:1141303932061233202> **Deine Arbeitsstunden:** `{self.user_hours}`",
+            title="💼 Job Übersicht",
             color=discord.Color.blue()
         )
 
-        start_idx = self.page * self.items_per_page
-        end_idx = start_idx + self.items_per_page
-        jobs_to_display = self.jobs[start_idx:end_idx]
+        if current_job:
+            pay_min, pay_max = current_job["amt"]
 
-        job_text = ""
-
-        for i, job in enumerate(jobs_to_display, start=start_idx + 1):
-            locked = self.user_hours < job["req"]
-
-            status = (
-                "<:Astra_locked:1141824745243942912> **Gesperrt**"
-                if locked else
-                "<:Astra_unlock:1141824750851731486> **Verfügbar**"
-            )
-
-            job_text += (
-                f"**{i}. {job['name']}**\n"
-                f"{status}\n"
-                f"{job['desc']}\n\n"
+            embed.add_field(
+                name="💰 Aktueller Job",
+                value=(
+                    f"**{current_job['name']}**\n"
+                    f"<:Astra_gw_closed:1141303848695238686> {pay_min}-{pay_max} <:Coin:1359178077011181811> / Stunde"
+                ),
+                inline=False
             )
 
         embed.add_field(
-            name="📋 Verfügbare Jobs",
-            value=job_text,
+            name="⏱ Arbeitsstunden",
+            value=f"`{self.user_hours}` Stunden",
             inline=False
         )
 
-        embed.set_footer(
-            text=f"Seite {self.page + 1}/{total_pages} • {len(self.jobs)} Jobs"
-        )
+        if next_job:
+            embed.add_field(
+                name="📈 Fortschritt zum nächsten Job",
+                value=f"`{progress_bar}`",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🚀 Nächster Job",
+                value=f"**{next_job['name']}**\nBenötigt `{next_job['req']}` Stunden",
+                inline=False
+            )
 
         return embed
 
