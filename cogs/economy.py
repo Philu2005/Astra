@@ -448,118 +448,151 @@ class SlotView(ui.View):
         self.bet = min(MAX_BET, int(self.bet * 1.5) or self.bet + 10)
         await interaction.response.send_message(f"Einsatz: **{self.bet}**", ephemeral=True)
 
-JOBS = [{"name": "Küchenhilfe", "req": 0,
-         "desc": "\nVerdiene zwischen 20 und 30 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **0** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [20, 30]},
-        {"name": "Kassierer", "req": 5,
-         "desc": "\nVerdiene zwischen 30 und 40 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **5** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [30, 40]},
-        {"name": "Kebap-Mann", "req": 10,
-         "desc": "\nVerdiene zwischen 40 und 50 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **10** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [40, 50]},
-        {"name": "Elektroniker", "req": 15,
-         "desc": "\nVerdiene zwischen 50 und 60 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **15** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [50, 60]},
-        {"name": "Betreuer", "req": 20,
-         "desc": "\nVerdiene zwischen 60 und 70 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **20** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [60, 70]},
-        {"name": "Bäcker", "req": 25,
-         "desc": "\nVerdiene zwischen 70 und 80 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **25** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [70, 80]},
-        {"name": "Bauarbeiter", "req": 30,
-         "desc": "\nVerdiene zwischen 80 und 90 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **30** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [80, 90]},
-        {"name": "Gärtner", "req": 35,
-         "desc": "\nVerdiene zwischen 90 und 100 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **35** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [90, 100]},
-        {"name": "Lehrer", "req": 40,
-         "desc": "\nVerdiene zwischen 100 und 110 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **40** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [100, 110]},
-        {"name": "Koch", "req": 45,
-         "desc": "\nVerdiene zwischen 110 und 120 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **45** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [110, 120]},
-        {"name": "Sanitäter", "req": 50,
-         "desc": "\nVerdiene zwischen 120 und 130 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **50** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [120, 130]},
-        {"name": "TV-Moderator", "req": 60,
-         "desc": "\nVerdiene zwischen 130 und 140 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **60** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [130, 140]},
-        {"name": "Schauspieler", "req": 70,
-         "desc": "\nVerdiene zwischen 140 und 150 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **70** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [140, 150]},
-        {"name": "Ingenieur", "req": 80,
-         "desc": "\nVerdiene zwischen 140 und 150 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **80** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [150, 160]},
-        {"name": "Streamer", "req": 90,
-         "desc": "\nVerdiene zwischen 160 und 170 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **90** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [160, 170]},
-        {"name": "Athlet", "req": 100,
-         "desc": "\nVerdiene zwischen 170 und 180 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **100** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [170, 180]},
-        {"name": "Polizist", "req": 120,
-         "desc": "\nVerdiene zwischen 180 und 190 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **120** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [180, 190]},
-        {"name": "Programmierer", "req": 140,
-         "desc": "\nVerdiene zwischen 190 und 200 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **140** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [190, 200]},
-        {"name": "Chirurg", "req": 160,
-         "desc": "\nVerdiene zwischen 170 und 180 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **160** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [220, 240]},
-        {"name": "Chefarzt", "req": 180,
-         "desc": "\nVerdiene zwischen 240 und 250 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **180** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [240, 250]},
-        {"name": "Rechtsanwalt", "req": 200,
-         "desc": "\nVerdiene zwischen 250 und 260 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **200** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [250, 260]},
-        {"name": "Unternehmensleiter", "req": 250,
-         "desc": "\nVerdiene zwischen 260 und 270 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **250** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [260, 270]},
-        {"name": "Richter", "req": 300,
-         "desc": "\nVerdiene zwischen 270 und 280 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **300** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [270, 300]},
-        {"name": "Astronaut", "req": 350,
-         "desc": "\nVerdiene zwischen 300 und 310 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **400** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [300, 330]},
-        {"name": "Pilot", "req": 400,
-         "desc": "\nVerdiene zwischen 300 und 310 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **400** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [330, 400]}]
+JOBS = [
+    {"name": "Küchenhilfe", "req": 0,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 20–30 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 0 Arbeitsstunden",
+     "amt": [20, 30]},
 
-JOBS += [
+    {"name": "Kassierer", "req": 5,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 30–40 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 5 Arbeitsstunden",
+     "amt": [30, 40]},
+
+    {"name": "Kebap-Mann", "req": 10,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 40–50 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 10 Arbeitsstunden",
+     "amt": [40, 50]},
+
+    {"name": "Elektroniker", "req": 15,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 50–60 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 15 Arbeitsstunden",
+     "amt": [50, 60]},
+
+    {"name": "Betreuer", "req": 20,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 60–70 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 20 Arbeitsstunden",
+     "amt": [60, 70]},
+
+    {"name": "Bäcker", "req": 25,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 70–80 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 25 Arbeitsstunden",
+     "amt": [70, 80]},
+
+    {"name": "Bauarbeiter", "req": 30,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 80–90 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 30 Arbeitsstunden",
+     "amt": [80, 90]},
+
+    {"name": "Gärtner", "req": 35,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 90–100 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 35 Arbeitsstunden",
+     "amt": [90, 100]},
+
+    {"name": "Lehrer", "req": 40,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 100–110 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 40 Arbeitsstunden",
+     "amt": [100, 110]},
+
+    {"name": "Koch", "req": 45,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 110–120 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 45 Arbeitsstunden",
+     "amt": [110, 120]},
+
+    {"name": "Sanitäter", "req": 50,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 120–130 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 50 Arbeitsstunden",
+     "amt": [120, 130]},
+
+    {"name": "TV-Moderator", "req": 60,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 130–140 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 60 Arbeitsstunden",
+     "amt": [130, 140]},
+
+    {"name": "Schauspieler", "req": 70,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 140–150 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 70 Arbeitsstunden",
+     "amt": [140, 150]},
+
+    {"name": "Ingenieur", "req": 80,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 150–160 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 80 Arbeitsstunden",
+     "amt": [150, 160]},
+
+    {"name": "Streamer", "req": 90,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 160–170 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 90 Arbeitsstunden",
+     "amt": [160, 170]},
+
+    {"name": "Athlet", "req": 100,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 170–180 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 100 Arbeitsstunden",
+     "amt": [170, 180]},
+
+    {"name": "Polizist", "req": 120,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 180–190 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 120 Arbeitsstunden",
+     "amt": [180, 190]},
+
+    {"name": "Programmierer", "req": 140,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 190–200 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 140 Arbeitsstunden",
+     "amt": [190, 200]},
+
+    {"name": "Chirurg", "req": 160,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 220–240 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 160 Arbeitsstunden",
+     "amt": [220, 240]},
+
+    {"name": "Chefarzt", "req": 180,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 240–250 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 180 Arbeitsstunden",
+     "amt": [240, 250]},
+
+    {"name": "Rechtsanwalt", "req": 200,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 250–260 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 200 Arbeitsstunden",
+     "amt": [250, 260]},
+
+    {"name": "Unternehmensleiter", "req": 250,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 260–270 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 250 Arbeitsstunden",
+     "amt": [260, 270]},
+
+    {"name": "Richter", "req": 300,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 270–300 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 300 Arbeitsstunden",
+     "amt": [270, 300]},
+
+    {"name": "Astronaut", "req": 350,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 300–330 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 350 Arbeitsstunden",
+     "amt": [300, 330]},
+
+    {"name": "Pilot", "req": 400,
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 330–400 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 400 Arbeitsstunden",
+     "amt": [330, 400]},
+
     {"name": "Wissenschaftler", "req": 450,
-     "desc": "\nVerdiene zwischen 410 und 430 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **450** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 410–430 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 450 Arbeitsstunden",
      "amt": [410, 430]},
+
     {"name": "Professor", "req": 500,
-     "desc": "\nVerdiene zwischen 440 und 460 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **500** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 440–460 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 500 Arbeitsstunden",
      "amt": [440, 460]},
+
     {"name": "Pharmaforscher", "req": 550,
-     "desc": "\nVerdiene zwischen 470 und 490 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **550** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 470–490 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 550 Arbeitsstunden",
      "amt": [470, 490]},
+
     {"name": "Bankmanager", "req": 600,
-     "desc": "\nVerdiene zwischen 500 und 530 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **600** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 500–530 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 600 Arbeitsstunden",
      "amt": [500, 530]},
+
     {"name": "Politiker", "req": 650,
-     "desc": "\nVerdiene zwischen 530 und 560 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **650** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 530–560 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 650 Arbeitsstunden",
      "amt": [530, 560]},
+
     {"name": "Unternehmensberater", "req": 700,
-     "desc": "\nVerdiene zwischen 560 und 590 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **700** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 560–590 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 700 Arbeitsstunden",
      "amt": [560, 590]},
+
     {"name": "Chefredakteur", "req": 750,
-     "desc": "\nVerdiene zwischen 590 und 620 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **750** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 590–620 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 750 Arbeitsstunden",
      "amt": [590, 620]},
+
     {"name": "Finanzanalyst", "req": 800,
-     "desc": "\nVerdiene zwischen 620 und 650 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **800** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 620–650 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 800 Arbeitsstunden",
      "amt": [620, 650]},
+
     {"name": "Medienproduzent", "req": 850,
-     "desc": "\nVerdiene zwischen 650 und 680 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **850** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 650–680 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 850 Arbeitsstunden",
      "amt": [650, 680]},
+
     {"name": "Entwicklungsleiter", "req": 900,
-     "desc": "\nVerdiene zwischen 680 und 710 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **900** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 680–710 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 900 Arbeitsstunden",
      "amt": [680, 710]},
+
     {"name": "Regierungsberater", "req": 1000,
-     "desc": "\nVerdiene zwischen 710 und 750 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **1000** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 710–750 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 1000 Arbeitsstunden",
      "amt": [710, 750]}
 ]
-
 # ---------------------- Blackjack ----------------------
 
 # Kartenwert berechnung
@@ -695,47 +728,85 @@ class JobListView(discord.ui.View):
         self.items_per_page = 5
 
     def generate_job_embed(self):
+        total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
+
         embed = discord.Embed(
             title="<:Astra_file1:1141303837181886494> Jobliste",
+            description=f"<:Astra_time:1141303932061233202> **Deine Arbeitsstunden:** `{self.user_hours}`",
             color=discord.Color.blue()
         )
+
         start_idx = self.page * self.items_per_page
         end_idx = start_idx + self.items_per_page
         jobs_to_display = self.jobs[start_idx:end_idx]
 
-        for job in jobs_to_display:
+        for i, job in enumerate(jobs_to_display, start=start_idx + 1):
+
             locked = self.user_hours < job["req"]
-            status = "<:Astra_locked:1141824745243942912> Gesperrt" if locked else "<:Astra_unlock:1141824750851731486> Verfügbar"
+
+            status = (
+                "<:Astra_locked:1141824745243942912> **Gesperrt**"
+                if locked else
+                "<:Astra_unlock:1141824750851731486> **Verfügbar**"
+            )
+
             embed.add_field(
-                name=f"{job['name']} ({status})",
-                value=f"{job['desc']}\nBenötigte Stunden: **{job['req']}**",
+                name=f"`{i}.` <:Astra_punkt:1141303896745201696> **{job['name']}**",
+                value=f"{job['desc']}\n{status}\n────────────",
                 inline=False
             )
 
-        total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
-        embed.set_footer(text=f"Seite {self.page + 1} von {total_pages}")
+        embed.set_footer(
+            text=f"Seite {self.page + 1}/{total_pages} • {len(self.jobs)} Jobs"
+        )
+
         return embed
 
-    @discord.ui.button(label="Zurück", style=discord.ButtonStyle.primary, emoji="<:Astra_arrow_backwards:1392540551546671348>", row=0)
+
+    @discord.ui.button(
+        label="Zurück",
+        style=discord.ButtonStyle.primary,
+        emoji="<:Astra_arrow_backwards:1392540551546671348>",
+        row=0
+    )
     async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
+
         if self.page > 0:
             self.page -= 1
-            embed = self.generate_job_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            self.page = total_pages - 1  # wrap zur letzten Seite
 
-    @discord.ui.button(label="Weiter", style=discord.ButtonStyle.primary, emoji="<:Astra_arrow:1141303823600717885>", row=0)
+        embed = self.generate_job_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
+    @discord.ui.button(
+        label="Weiter",
+        style=discord.ButtonStyle.primary,
+        emoji="<:Astra_arrow:1141303823600717885>",
+        row=0
+    )
     async def next_page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if (self.page + 1) * self.items_per_page < len(self.jobs):
+
+        total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
+
+        if self.page < total_pages - 1:
             self.page += 1
-            embed = self.generate_job_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            self.page = 0  # wrap zurück zu Seite 1
+
+        embed = self.generate_job_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
 
     @discord.ui.button(label="🏠", style=discord.ButtonStyle.secondary, row=0)
     async def go_home(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.page != 0:
-            self.page = 0
-            embed = self.generate_job_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+
+        self.page = 0
+        embed = self.generate_job_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
 @app_commands.guild_only()
 class EconomyClass(app_commands.Group):
