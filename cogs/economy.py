@@ -751,8 +751,8 @@ class JobListView(discord.ui.View):
             )
 
             embed.add_field(
-                name=f"`{i}.` <:Astra_punkt:1141303896745201696> **{job['name']}**",
-                value=f"{job['desc']}\n{status}\n────────────",
+                name=f"`{i}.` ({status}) **{job['name']}**",
+                value=f"{job['desc']}",
                 inline=False
             )
 
