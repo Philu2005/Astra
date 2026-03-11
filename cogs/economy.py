@@ -746,8 +746,8 @@ class JobListView(discord.ui.View):
             progress = self.user_hours / next_job["req"]
             progress = max(0, min(progress, 1))
 
-            filled = round(progress * 10)
-            progress_bar = "█" * filled + "░" * (10 - filled)
+            filled = round(progress * 20)
+            progress_bar = "█" * filled + "░" * (20 - filled)
 
             percent = int(progress * 100)
 
@@ -762,12 +762,12 @@ class JobListView(discord.ui.View):
             color=discord.Color.blue()
         )
 
-        # aktueller Job
+        # Aktueller Job
         if current_job:
             embed.add_field(
                 name="<:Astra_gw_closed:1141303848695238686> Aktueller Job",
                 value=(
-                    f"**{current_job['name']}**\n"
+                    f"**{current_job['name']}**\n\n"
                     f"{current_job['desc']}"
                 ),
                 inline=False
@@ -778,14 +778,16 @@ class JobListView(discord.ui.View):
 
             embed.add_field(
                 name="<:Astra_level:1141825043278598154> Fortschritt zum nächsten Job",
-                value=progress_text,
+                value=(
+                    f"{progress_text}\n"
+                ),
                 inline=False
             )
 
             embed.add_field(
                 name="<:Astra_boost:1141303827107164270> Nächster Job",
                 value=(
-                    f"**{next_job['name']}**\n"
+                    f"**{next_job['name']}**\n\n"
                     f"{next_job['desc']}"
                 ),
                 inline=False
@@ -794,7 +796,7 @@ class JobListView(discord.ui.View):
         else:
             embed.add_field(
                 name="<:Astra_boost:1141303827107164270> Maximaler Job erreicht",
-                value="Du hast bereits den höchsten verfügbaren Job freigeschaltet. 🎉",
+                value="\nDu hast bereits den höchsten verfügbaren Job freigeschaltet. 🎉",
                 inline=False
             )
 
