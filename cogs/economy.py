@@ -732,7 +732,7 @@ class JobListView(discord.ui.View):
 
         embed = discord.Embed(
             title="<:Astra_file1:1141303837181886494> Jobliste",
-            description=f"<:Astra_time:1141303932061233202> **Deine Arbeitsstunden:** `{self.user_hours}`",
+            description=f"<:Astra_time:1141303932061233202> **Deine Arbeitsstunden:** `{self.user_hours}`\n",
             color=discord.Color.blue()
         )
 
@@ -751,8 +751,11 @@ class JobListView(discord.ui.View):
             )
 
             embed.add_field(
-                name=f"`{i}.` ({status}) **{job['name']}**",
-                value=f"{job['desc']}",
+                name=f"`{i}.` **{job['name']}**",
+                value=(
+                    f"{status}\n"
+                    f"{job['desc']}\n"
+                ),
                 inline=False
             )
 
