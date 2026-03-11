@@ -450,147 +450,147 @@ class SlotView(ui.View):
 
 JOBS = [
     {"name": "Küchenhilfe", "req": 0,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 20–30 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 0 Arbeitsstunden",
+     "desc": "**Verdienst:** 20–30 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 0 Arbeitsstunden\n🍽 Unterstütze die Küche bei einfachen Aufgaben, bereite Zutaten vor und halte alles sauber und organisiert.",
      "amt": [20, 30]},
 
     {"name": "Kassierer", "req": 5,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 30–40 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 5 Arbeitsstunden",
+     "desc": "**Verdienst:** 30–40 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 5 Arbeitsstunden\n💳 Bediene Kunden an der Kasse, verwalte Zahlungen und sorge für einen schnellen und freundlichen Service.",
      "amt": [30, 40]},
 
     {"name": "Kebap-Mann", "req": 10,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 40–50 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 10 Arbeitsstunden",
+     "desc": "**Verdienst:** 40–50 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 10 Arbeitsstunden\n🥙 Bereite leckere Kebabs zu und bediene hungrige Kunden mit schnellen und frisch zubereiteten Mahlzeiten.",
      "amt": [40, 50]},
 
     {"name": "Elektroniker", "req": 15,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 50–60 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 15 Arbeitsstunden",
+     "desc": "**Verdienst:** 50–60 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 15 Arbeitsstunden\n🔧 Repariere Geräte, installiere Elektronik und sorge dafür, dass technische Systeme reibungslos funktionieren.",
      "amt": [50, 60]},
 
     {"name": "Betreuer", "req": 20,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 60–70 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 20 Arbeitsstunden",
+     "desc": "**Verdienst:** 60–70 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 20 Arbeitsstunden\n🧑‍🤝‍🧑 Unterstütze Menschen im Alltag, hilf bei Aufgaben und sorge für eine angenehme Umgebung.",
      "amt": [60, 70]},
 
     {"name": "Bäcker", "req": 25,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 70–80 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 25 Arbeitsstunden",
+     "desc": "**Verdienst:** 70–80 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 25 Arbeitsstunden\n🥖 Backe frisches Brot, Brötchen und Gebäck und sorge dafür, dass Kunden täglich frische Waren bekommen.",
      "amt": [70, 80]},
 
     {"name": "Bauarbeiter", "req": 30,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 80–90 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 30 Arbeitsstunden",
+     "desc": "**Verdienst:** 80–90 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 30 Arbeitsstunden\n🏗 Arbeite auf Baustellen, errichte Gebäude und unterstütze Bauprojekte mit körperlicher Arbeit.",
      "amt": [80, 90]},
 
     {"name": "Gärtner", "req": 35,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 90–100 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 35 Arbeitsstunden",
+     "desc": "**Verdienst:** 90–100 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 35 Arbeitsstunden\n🌿 Pflege Gärten, pflanze Blumen und halte Grünflächen sauber und gepflegt.",
      "amt": [90, 100]},
 
     {"name": "Lehrer", "req": 40,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 100–110 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 40 Arbeitsstunden",
+     "desc": "**Verdienst:** 100–110 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 40 Arbeitsstunden\n📚 Unterrichte Schüler, vermittle Wissen und hilf ihnen dabei, neue Fähigkeiten zu lernen.",
      "amt": [100, 110]},
 
     {"name": "Koch", "req": 45,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 110–120 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 45 Arbeitsstunden",
+     "desc": "**Verdienst:** 110–120 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 45 Arbeitsstunden\n🍳 Bereite hochwertige Gerichte zu und leite die Küche in einem Restaurant.",
      "amt": [110, 120]},
 
     {"name": "Sanitäter", "req": 50,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 120–130 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 50 Arbeitsstunden",
+     "desc": "**Verdienst:** 120–130 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 50 Arbeitsstunden\n🚑 Leiste Erste Hilfe und unterstütze medizinische Einsätze in Notfällen.",
      "amt": [120, 130]},
 
     {"name": "TV-Moderator", "req": 60,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 130–140 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 60 Arbeitsstunden",
+     "desc": "**Verdienst:** 130–140 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 60 Arbeitsstunden\n🎤 Präsentiere Shows im Fernsehen und unterhalte ein großes Publikum.",
      "amt": [130, 140]},
 
     {"name": "Schauspieler", "req": 70,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 140–150 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 70 Arbeitsstunden",
+     "desc": "**Verdienst:** 140–150 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 70 Arbeitsstunden\n🎬 Spiele Rollen in Filmen und Serien und bringe Geschichten zum Leben.",
      "amt": [140, 150]},
 
     {"name": "Ingenieur", "req": 80,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 150–160 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 80 Arbeitsstunden",
+     "desc": "**Verdienst:** 150–160 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 80 Arbeitsstunden\n⚙ Entwickle Maschinen, Systeme und innovative technische Lösungen.",
      "amt": [150, 160]},
 
     {"name": "Streamer", "req": 90,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 160–170 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 90 Arbeitsstunden",
+     "desc": "**Verdienst:** 160–170 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 90 Arbeitsstunden\n🎮 Streame Inhalte online, unterhalte Zuschauer und baue dir eine Community auf.",
      "amt": [160, 170]},
 
     {"name": "Athlet", "req": 100,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 170–180 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 100 Arbeitsstunden",
+     "desc": "**Verdienst:** 170–180 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 100 Arbeitsstunden\n🏅 Trainiere hart und nimm an sportlichen Wettbewerben teil.",
      "amt": [170, 180]},
 
     {"name": "Polizist", "req": 120,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 180–190 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 120 Arbeitsstunden",
+     "desc": "**Verdienst:** 180–190 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 120 Arbeitsstunden\n🚓 Sorge für Sicherheit, bekämpfe Verbrechen und halte Ordnung in der Stadt.",
      "amt": [180, 190]},
 
     {"name": "Programmierer", "req": 140,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 190–200 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 140 Arbeitsstunden",
+     "desc": "**Verdienst:** 190–200 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 140 Arbeitsstunden\n💻 Entwickle Software, programmiere Systeme und erschaffe digitale Lösungen.",
      "amt": [190, 200]},
 
     {"name": "Chirurg", "req": 160,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 220–240 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 160 Arbeitsstunden",
+     "desc": "**Verdienst:** 220–240 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 160 Arbeitsstunden\n🏥 Führe komplexe Operationen durch und rette Leben im Operationssaal.",
      "amt": [220, 240]},
 
     {"name": "Chefarzt", "req": 180,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 240–250 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 180 Arbeitsstunden",
+     "desc": "**Verdienst:** 240–250 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 180 Arbeitsstunden\n🩺 Leite ein Krankenhaus-Team und triff wichtige medizinische Entscheidungen.",
      "amt": [240, 250]},
 
     {"name": "Rechtsanwalt", "req": 200,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 250–260 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 200 Arbeitsstunden",
+     "desc": "**Verdienst:** 250–260 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 200 Arbeitsstunden\n⚖ Vertrete Mandanten vor Gericht und löse komplexe juristische Fälle.",
      "amt": [250, 260]},
 
     {"name": "Unternehmensleiter", "req": 250,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 260–270 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 250 Arbeitsstunden",
+     "desc": "**Verdienst:** 260–270 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 250 Arbeitsstunden\n🏢 Führe ein Unternehmen, treffe strategische Entscheidungen und leite Teams.",
      "amt": [260, 270]},
 
     {"name": "Richter", "req": 300,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 270–300 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 300 Arbeitsstunden",
+     "desc": "**Verdienst:** 270–300 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 300 Arbeitsstunden\n👨‍⚖ Sprich Recht im Gerichtssaal und entscheide über wichtige Fälle.",
      "amt": [270, 300]},
 
     {"name": "Astronaut", "req": 350,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 300–330 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 350 Arbeitsstunden",
+     "desc": "**Verdienst:** 300–330 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 350 Arbeitsstunden\n🚀 Erforsche den Weltraum und arbeite an Missionen außerhalb der Erde.",
      "amt": [300, 330]},
 
     {"name": "Pilot", "req": 400,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 330–400 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 400 Arbeitsstunden",
+     "desc": "**Verdienst:** 330–400 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 400 Arbeitsstunden\n✈ Steuere Flugzeuge und bringe Passagiere sicher an ihr Ziel.",
      "amt": [330, 400]},
 
     {"name": "Wissenschaftler", "req": 450,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 410–430 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 450 Arbeitsstunden",
+     "desc": "**Verdienst:** 410–430 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 450 Arbeitsstunden\n🔬 Erforsche neue Technologien und entdecke bahnbrechende Erkenntnisse.",
      "amt": [410, 430]},
 
     {"name": "Professor", "req": 500,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 440–460 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 500 Arbeitsstunden",
+     "desc": "**Verdienst:** 440–460 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 500 Arbeitsstunden\n🎓 Lehre an Universitäten und bilde die nächste Generation aus.",
      "amt": [440, 460]},
 
     {"name": "Pharmaforscher", "req": 550,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 470–490 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 550 Arbeitsstunden",
+     "desc": "**Verdienst:** 470–490 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 550 Arbeitsstunden\n🧪 Entwickle neue Medikamente und arbeite an medizinischen Durchbrüchen.",
      "amt": [470, 490]},
 
     {"name": "Bankmanager", "req": 600,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 500–530 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 600 Arbeitsstunden",
+     "desc": "**Verdienst:** 500–530 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 600 Arbeitsstunden\n🏦 Verwalte große Finanzgeschäfte und leite eine Bankfiliale.",
      "amt": [500, 530]},
 
     {"name": "Politiker", "req": 650,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 530–560 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 650 Arbeitsstunden",
+     "desc": "**Verdienst:** 530–560 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 650 Arbeitsstunden\n🏛 Treffe politische Entscheidungen und gestalte die Zukunft eines Landes.",
      "amt": [530, 560]},
 
     {"name": "Unternehmensberater", "req": 700,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 560–590 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 700 Arbeitsstunden",
+     "desc": "**Verdienst:** 560–590 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 700 Arbeitsstunden\n📊 Berate Firmen strategisch und optimiere Geschäftsprozesse.",
      "amt": [560, 590]},
 
     {"name": "Chefredakteur", "req": 750,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 590–620 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 750 Arbeitsstunden",
+     "desc": "**Verdienst:** 590–620 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 750 Arbeitsstunden\n📰 Leite eine Redaktion und entscheide über wichtige Veröffentlichungen.",
      "amt": [590, 620]},
 
     {"name": "Finanzanalyst", "req": 800,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 620–650 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 800 Arbeitsstunden",
+     "desc": "**Verdienst:** 620–650 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 800 Arbeitsstunden\n📈 Analysiere Märkte und unterstütze Unternehmen bei Investitionsentscheidungen.",
      "amt": [620, 650]},
 
     {"name": "Medienproduzent", "req": 850,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 650–680 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 850 Arbeitsstunden",
+     "desc": "**Verdienst:** 650–680 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 850 Arbeitsstunden\n🎬 Produziere hochwertige Medieninhalte für TV, Film oder Streaming.",
      "amt": [650, 680]},
 
     {"name": "Entwicklungsleiter", "req": 900,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 680–710 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 900 Arbeitsstunden",
+     "desc": "**Verdienst:** 680–710 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 900 Arbeitsstunden\n🧠 Leite innovative Projekte und entwickle neue Technologien.",
      "amt": [680, 710]},
 
     {"name": "Regierungsberater", "req": 1000,
-     "desc": "<:Astra_gw_closed:1141303848695238686> **Verdienst:** 710–750 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 1000 Arbeitsstunden",
+     "desc": "**Verdienst:** 710–750 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 1000 Arbeitsstunden\n🏛 Berate Regierungen in wichtigen politischen und wirtschaftlichen Fragen.",
      "amt": [710, 750]}
 ]
 # ---------------------- Blackjack ----------------------
@@ -732,6 +732,7 @@ class JobListView(discord.ui.View):
         current_job = None
         next_job = None
 
+        # aktuellen und nächsten Job bestimmen
         for job in self.jobs:
             if self.user_hours >= job["req"]:
                 current_job = job
@@ -743,13 +744,17 @@ class JobListView(discord.ui.View):
 
         if next_job:
             progress = self.user_hours / next_job["req"]
-            progress = max(0, min(progress, 1))  # clamp zwischen 0 und 1
+            progress = max(0, min(progress, 1))
 
             filled = round(progress * 10)
             progress_bar = "█" * filled + "░" * (10 - filled)
 
             percent = int(progress * 100)
-            progress_text = f"`{progress_bar}` **{percent}%** (`{self.user_hours}/{next_job['req']}`)"
+
+            progress_text = (
+                f"`{progress_bar}` **{percent}%**\n"
+                f"`{self.user_hours}/{next_job['req']}` Arbeitsstunden"
+            )
 
         embed = discord.Embed(
             title="<:Astra_file1:1141303837181886494> Job Übersicht",
@@ -757,19 +762,20 @@ class JobListView(discord.ui.View):
             color=discord.Color.blue()
         )
 
+        # aktueller Job
         if current_job:
-            pay_min, pay_max = current_job["amt"]
-
             embed.add_field(
                 name="<:Astra_gw_closed:1141303848695238686> Aktueller Job",
                 value=(
                     f"**{current_job['name']}**\n"
-                    f"<:Astra_gw_closed:1141303848695238686> Verdienst: `{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde"
+                    f"{current_job['desc']}"
                 ),
                 inline=False
             )
 
+        # Fortschritt
         if next_job:
+
             embed.add_field(
                 name="<:Astra_level:1141825043278598154> Fortschritt zum nächsten Job",
                 value=progress_text,
@@ -780,8 +786,15 @@ class JobListView(discord.ui.View):
                 name="<:Astra_boost:1141303827107164270> Nächster Job",
                 value=(
                     f"**{next_job['name']}**\n"
-                    f"<:Astra_time:1141303932061233202> Benötigt `{next_job['req']}` Stunden"
+                    f"{next_job['desc']}"
                 ),
+                inline=False
+            )
+
+        else:
+            embed.add_field(
+                name="<:Astra_boost:1141303827107164270> Maximaler Job erreicht",
+                value="Du hast bereits den höchsten verfügbaren Job freigeschaltet. 🎉",
                 inline=False
             )
 
