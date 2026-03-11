@@ -762,14 +762,13 @@ class JobOverviewView(discord.ui.LayoutView):
         # HEADER
         # =================================================
 
-        header = discord.ui.Section(
+        container.add_item(
             discord.ui.TextDisplay(
                 "# Job Übersicht\n"
                 f"**Arbeitsstunden:** `{self.user_hours}`"
             )
         )
 
-        container.add_item(header)
         container.add_item(discord.ui.Separator())
 
         # =================================================
@@ -834,52 +833,6 @@ class JobOverviewView(discord.ui.LayoutView):
             ))
 
         self.add_item(container)
-
-
-    @discord.ui.button(
-        label="Zurück",
-        style=discord.ButtonStyle.primary,
-        emoji="<:Astra_arrow_backwards:1392540551546671348>",
-        row=0
-    )
-    async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
-
-        if self.page > 0:
-            self.page -= 1
-        else:
-            self.page = total_pages - 1  # wrap zur letzten Seite
-
-        embed = self.generate_job_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-
-
-    @discord.ui.button(
-        label="Weiter",
-        style=discord.ButtonStyle.primary,
-        emoji="<:Astra_arrow:1141303823600717885>",
-        row=0
-    )
-    async def next_page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
-
-        if self.page < total_pages - 1:
-            self.page += 1
-        else:
-            self.page = 0  # wrap zurück zu Seite 1
-
-        embed = self.generate_job_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-
-
-    @discord.ui.button(label="🏠", style=discord.ButtonStyle.secondary, row=0)
-    async def go_home(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        self.page = 0
-        embed = self.generate_job_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
 
 @app_commands.guild_only()
 class EconomyClass(app_commands.Group):
