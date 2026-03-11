@@ -448,151 +448,118 @@ class SlotView(ui.View):
         self.bet = min(MAX_BET, int(self.bet * 1.5) or self.bet + 10)
         await interaction.response.send_message(f"Einsatz: **{self.bet}**", ephemeral=True)
 
-JOBS = [
-    {"name": "Küchenhilfe", "req": 0,
-     "desc": "**Verdienst:** 20–30 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 0 Arbeitsstunden\n🍽 Unterstütze die Küche bei einfachen Aufgaben, bereite Zutaten vor und halte alles sauber und organisiert.",
-     "amt": [20, 30]},
+JOBS = [{"name": "Küchenhilfe", "req": 0,
+         "desc": "\nVerdiene zwischen 20 und 30 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **0** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [20, 30]},
+        {"name": "Kassierer", "req": 5,
+         "desc": "\nVerdiene zwischen 30 und 40 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **5** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [30, 40]},
+        {"name": "Kebap-Mann", "req": 10,
+         "desc": "\nVerdiene zwischen 40 und 50 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **10** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [40, 50]},
+        {"name": "Elektroniker", "req": 15,
+         "desc": "\nVerdiene zwischen 50 und 60 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **15** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [50, 60]},
+        {"name": "Betreuer", "req": 20,
+         "desc": "\nVerdiene zwischen 60 und 70 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **20** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [60, 70]},
+        {"name": "Bäcker", "req": 25,
+         "desc": "\nVerdiene zwischen 70 und 80 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **25** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [70, 80]},
+        {"name": "Bauarbeiter", "req": 30,
+         "desc": "\nVerdiene zwischen 80 und 90 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **30** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [80, 90]},
+        {"name": "Gärtner", "req": 35,
+         "desc": "\nVerdiene zwischen 90 und 100 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **35** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [90, 100]},
+        {"name": "Lehrer", "req": 40,
+         "desc": "\nVerdiene zwischen 100 und 110 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **40** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [100, 110]},
+        {"name": "Koch", "req": 45,
+         "desc": "\nVerdiene zwischen 110 und 120 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **45** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [110, 120]},
+        {"name": "Sanitäter", "req": 50,
+         "desc": "\nVerdiene zwischen 120 und 130 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **50** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [120, 130]},
+        {"name": "TV-Moderator", "req": 60,
+         "desc": "\nVerdiene zwischen 130 und 140 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **60** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [130, 140]},
+        {"name": "Schauspieler", "req": 70,
+         "desc": "\nVerdiene zwischen 140 und 150 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **70** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [140, 150]},
+        {"name": "Ingenieur", "req": 80,
+         "desc": "\nVerdiene zwischen 140 und 150 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **80** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [150, 160]},
+        {"name": "Streamer", "req": 90,
+         "desc": "\nVerdiene zwischen 160 und 170 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **90** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [160, 170]},
+        {"name": "Athlet", "req": 100,
+         "desc": "\nVerdiene zwischen 170 und 180 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **100** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [170, 180]},
+        {"name": "Polizist", "req": 120,
+         "desc": "\nVerdiene zwischen 180 und 190 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **120** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [180, 190]},
+        {"name": "Programmierer", "req": 140,
+         "desc": "\nVerdiene zwischen 190 und 200 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **140** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [190, 200]},
+        {"name": "Chirurg", "req": 160,
+         "desc": "\nVerdiene zwischen 170 und 180 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **160** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [220, 240]},
+        {"name": "Chefarzt", "req": 180,
+         "desc": "\nVerdiene zwischen 240 und 250 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **180** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [240, 250]},
+        {"name": "Rechtsanwalt", "req": 200,
+         "desc": "\nVerdiene zwischen 250 und 260 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **200** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [250, 260]},
+        {"name": "Unternehmensleiter", "req": 250,
+         "desc": "\nVerdiene zwischen 260 und 270 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **250** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [260, 270]},
+        {"name": "Richter", "req": 300,
+         "desc": "\nVerdiene zwischen 270 und 280 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **300** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [270, 300]},
+        {"name": "Astronaut", "req": 350,
+         "desc": "\nVerdiene zwischen 300 und 310 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **400** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [300, 330]},
+        {"name": "Pilot", "req": 400,
+         "desc": "\nVerdiene zwischen 300 und 310 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **400** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+         "amt": [330, 400]}]
 
-    {"name": "Kassierer", "req": 5,
-     "desc": "**Verdienst:** 30–40 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 5 Arbeitsstunden\n💳 Bediene Kunden an der Kasse, verwalte Zahlungen und sorge für einen schnellen und freundlichen Service.",
-     "amt": [30, 40]},
-
-    {"name": "Kebap-Mann", "req": 10,
-     "desc": "**Verdienst:** 40–50 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 10 Arbeitsstunden\n🥙 Bereite leckere Kebabs zu und bediene hungrige Kunden mit schnellen und frisch zubereiteten Mahlzeiten.",
-     "amt": [40, 50]},
-
-    {"name": "Elektroniker", "req": 15,
-     "desc": "**Verdienst:** 50–60 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 15 Arbeitsstunden\n🔧 Repariere Geräte, installiere Elektronik und sorge dafür, dass technische Systeme reibungslos funktionieren.",
-     "amt": [50, 60]},
-
-    {"name": "Betreuer", "req": 20,
-     "desc": "**Verdienst:** 60–70 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 20 Arbeitsstunden\n🧑‍🤝‍🧑 Unterstütze Menschen im Alltag, hilf bei Aufgaben und sorge für eine angenehme Umgebung.",
-     "amt": [60, 70]},
-
-    {"name": "Bäcker", "req": 25,
-     "desc": "**Verdienst:** 70–80 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 25 Arbeitsstunden\n🥖 Backe frisches Brot, Brötchen und Gebäck und sorge dafür, dass Kunden täglich frische Waren bekommen.",
-     "amt": [70, 80]},
-
-    {"name": "Bauarbeiter", "req": 30,
-     "desc": "**Verdienst:** 80–90 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 30 Arbeitsstunden\n🏗 Arbeite auf Baustellen, errichte Gebäude und unterstütze Bauprojekte mit körperlicher Arbeit.",
-     "amt": [80, 90]},
-
-    {"name": "Gärtner", "req": 35,
-     "desc": "**Verdienst:** 90–100 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 35 Arbeitsstunden\n🌿 Pflege Gärten, pflanze Blumen und halte Grünflächen sauber und gepflegt.",
-     "amt": [90, 100]},
-
-    {"name": "Lehrer", "req": 40,
-     "desc": "**Verdienst:** 100–110 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 40 Arbeitsstunden\n📚 Unterrichte Schüler, vermittle Wissen und hilf ihnen dabei, neue Fähigkeiten zu lernen.",
-     "amt": [100, 110]},
-
-    {"name": "Koch", "req": 45,
-     "desc": "**Verdienst:** 110–120 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 45 Arbeitsstunden\n🍳 Bereite hochwertige Gerichte zu und leite die Küche in einem Restaurant.",
-     "amt": [110, 120]},
-
-    {"name": "Sanitäter", "req": 50,
-     "desc": "**Verdienst:** 120–130 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 50 Arbeitsstunden\n🚑 Leiste Erste Hilfe und unterstütze medizinische Einsätze in Notfällen.",
-     "amt": [120, 130]},
-
-    {"name": "TV-Moderator", "req": 60,
-     "desc": "**Verdienst:** 130–140 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 60 Arbeitsstunden\n🎤 Präsentiere Shows im Fernsehen und unterhalte ein großes Publikum.",
-     "amt": [130, 140]},
-
-    {"name": "Schauspieler", "req": 70,
-     "desc": "**Verdienst:** 140–150 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 70 Arbeitsstunden\n🎬 Spiele Rollen in Filmen und Serien und bringe Geschichten zum Leben.",
-     "amt": [140, 150]},
-
-    {"name": "Ingenieur", "req": 80,
-     "desc": "**Verdienst:** 150–160 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 80 Arbeitsstunden\n⚙ Entwickle Maschinen, Systeme und innovative technische Lösungen.",
-     "amt": [150, 160]},
-
-    {"name": "Streamer", "req": 90,
-     "desc": "**Verdienst:** 160–170 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 90 Arbeitsstunden\n🎮 Streame Inhalte online, unterhalte Zuschauer und baue dir eine Community auf.",
-     "amt": [160, 170]},
-
-    {"name": "Athlet", "req": 100,
-     "desc": "**Verdienst:** 170–180 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 100 Arbeitsstunden\n🏅 Trainiere hart und nimm an sportlichen Wettbewerben teil.",
-     "amt": [170, 180]},
-
-    {"name": "Polizist", "req": 120,
-     "desc": "**Verdienst:** 180–190 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 120 Arbeitsstunden\n🚓 Sorge für Sicherheit, bekämpfe Verbrechen und halte Ordnung in der Stadt.",
-     "amt": [180, 190]},
-
-    {"name": "Programmierer", "req": 140,
-     "desc": "**Verdienst:** 190–200 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 140 Arbeitsstunden\n💻 Entwickle Software, programmiere Systeme und erschaffe digitale Lösungen.",
-     "amt": [190, 200]},
-
-    {"name": "Chirurg", "req": 160,
-     "desc": "**Verdienst:** 220–240 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 160 Arbeitsstunden\n🏥 Führe komplexe Operationen durch und rette Leben im Operationssaal.",
-     "amt": [220, 240]},
-
-    {"name": "Chefarzt", "req": 180,
-     "desc": "**Verdienst:** 240–250 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 180 Arbeitsstunden\n🩺 Leite ein Krankenhaus-Team und triff wichtige medizinische Entscheidungen.",
-     "amt": [240, 250]},
-
-    {"name": "Rechtsanwalt", "req": 200,
-     "desc": "**Verdienst:** 250–260 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 200 Arbeitsstunden\n⚖ Vertrete Mandanten vor Gericht und löse komplexe juristische Fälle.",
-     "amt": [250, 260]},
-
-    {"name": "Unternehmensleiter", "req": 250,
-     "desc": "**Verdienst:** 260–270 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 250 Arbeitsstunden\n🏢 Führe ein Unternehmen, treffe strategische Entscheidungen und leite Teams.",
-     "amt": [260, 270]},
-
-    {"name": "Richter", "req": 300,
-     "desc": "**Verdienst:** 270–300 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 300 Arbeitsstunden\n👨‍⚖ Sprich Recht im Gerichtssaal und entscheide über wichtige Fälle.",
-     "amt": [270, 300]},
-
-    {"name": "Astronaut", "req": 350,
-     "desc": "**Verdienst:** 300–330 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 350 Arbeitsstunden\n🚀 Erforsche den Weltraum und arbeite an Missionen außerhalb der Erde.",
-     "amt": [300, 330]},
-
-    {"name": "Pilot", "req": 400,
-     "desc": "**Verdienst:** 330–400 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 400 Arbeitsstunden\n✈ Steuere Flugzeuge und bringe Passagiere sicher an ihr Ziel.",
-     "amt": [330, 400]},
-
+JOBS += [
     {"name": "Wissenschaftler", "req": 450,
-     "desc": "**Verdienst:** 410–430 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 450 Arbeitsstunden\n🔬 Erforsche neue Technologien und entdecke bahnbrechende Erkenntnisse.",
+     "desc": "\nVerdiene zwischen 410 und 430 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **450** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [410, 430]},
-
     {"name": "Professor", "req": 500,
-     "desc": "**Verdienst:** 440–460 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 500 Arbeitsstunden\n🎓 Lehre an Universitäten und bilde die nächste Generation aus.",
+     "desc": "\nVerdiene zwischen 440 und 460 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **500** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [440, 460]},
-
     {"name": "Pharmaforscher", "req": 550,
-     "desc": "**Verdienst:** 470–490 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 550 Arbeitsstunden\n🧪 Entwickle neue Medikamente und arbeite an medizinischen Durchbrüchen.",
+     "desc": "\nVerdiene zwischen 470 und 490 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **550** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [470, 490]},
-
     {"name": "Bankmanager", "req": 600,
-     "desc": "**Verdienst:** 500–530 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 600 Arbeitsstunden\n🏦 Verwalte große Finanzgeschäfte und leite eine Bankfiliale.",
+     "desc": "\nVerdiene zwischen 500 und 530 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **600** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [500, 530]},
-
     {"name": "Politiker", "req": 650,
-     "desc": "**Verdienst:** 530–560 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 650 Arbeitsstunden\n🏛 Treffe politische Entscheidungen und gestalte die Zukunft eines Landes.",
+     "desc": "\nVerdiene zwischen 530 und 560 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **650** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [530, 560]},
-
     {"name": "Unternehmensberater", "req": 700,
-     "desc": "**Verdienst:** 560–590 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 700 Arbeitsstunden\n📊 Berate Firmen strategisch und optimiere Geschäftsprozesse.",
+     "desc": "\nVerdiene zwischen 560 und 590 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **700** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [560, 590]},
-
     {"name": "Chefredakteur", "req": 750,
-     "desc": "**Verdienst:** 590–620 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 750 Arbeitsstunden\n📰 Leite eine Redaktion und entscheide über wichtige Veröffentlichungen.",
+     "desc": "\nVerdiene zwischen 590 und 620 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **750** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [590, 620]},
-
     {"name": "Finanzanalyst", "req": 800,
-     "desc": "**Verdienst:** 620–650 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 800 Arbeitsstunden\n📈 Analysiere Märkte und unterstütze Unternehmen bei Investitionsentscheidungen.",
+     "desc": "\nVerdiene zwischen 620 und 650 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **800** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [620, 650]},
-
     {"name": "Medienproduzent", "req": 850,
-     "desc": "**Verdienst:** 650–680 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 850 Arbeitsstunden\n🎬 Produziere hochwertige Medieninhalte für TV, Film oder Streaming.",
+     "desc": "\nVerdiene zwischen 650 und 680 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **850** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [650, 680]},
-
     {"name": "Entwicklungsleiter", "req": 900,
-     "desc": "**Verdienst:** 680–710 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 900 Arbeitsstunden\n🧠 Leite innovative Projekte und entwickle neue Technologien.",
+     "desc": "\nVerdiene zwischen 680 und 710 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **900** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [680, 710]},
-
     {"name": "Regierungsberater", "req": 1000,
-     "desc": "**Verdienst:** 710–750 <:Coin:1359178077011181811> pro Stunde\n<:Astra_time:1141303932061233202> **Benötigt:** 1000 Arbeitsstunden\n🏛 Berate Regierungen in wichtigen politischen und wirtschaftlichen Fragen.",
+     "desc": "\nVerdiene zwischen 710 und 750 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **1000** Stunden gearbeitet haben, um diesen Job freizuschalten.",
      "amt": [710, 750]}
 ]
+
 # ---------------------- Blackjack ----------------------
 
 # Kartenwert berechnung
@@ -719,120 +686,56 @@ class BlackjackView(discord.ui.View):
 
 # ---------------------- Jobliste & Economy ----------------------
 
-class JobOverviewView(discord.ui.LayoutView):
-
-    def __init__(self, user_hours: int, jobs: list):
-        super().__init__(timeout=None)
-
-        self.user_hours = user_hours
+class JobListView(discord.ui.View):
+    def __init__(self, jobs, user_hours):
+        super().__init__()
         self.jobs = jobs
+        self.user_hours = user_hours
+        self.page = 0
+        self.items_per_page = 5
 
-        self._build()
-
-    def _build(self):
-
-        self.clear_items()
-
-        current_job = None
-        next_job = None
-
-        for job in self.jobs:
-            if self.user_hours >= job["req"]:
-                current_job = job
-            elif not next_job:
-                next_job = job
-
-        progress_bar = ""
-        percent = 0
-
-        if next_job:
-            progress = self.user_hours / next_job["req"]
-            progress = max(0, min(progress, 1))
-
-            filled = round(progress * 12)
-            progress_bar = "█" * filled + "░" * (12 - filled)
-
-            percent = int(progress * 100)
-
-        container = discord.ui.Container(
-            accent_color=discord.Colour.blue().value
+    def generate_job_embed(self):
+        embed = discord.Embed(
+            title="<:Astra_file1:1141303837181886494> Jobliste",
+            color=discord.Color.blue()
         )
+        start_idx = self.page * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        jobs_to_display = self.jobs[start_idx:end_idx]
 
-        # =================================================
-        # HEADER
-        # =================================================
-
-        container.add_item(
-            discord.ui.TextDisplay(
-                "# Job Übersicht\n"
-                f"**Arbeitsstunden:** `{self.user_hours}`"
+        for job in jobs_to_display:
+            locked = self.user_hours < job["req"]
+            status = "<:Astra_locked:1141824745243942912> Gesperrt" if locked else "<:Astra_unlock:1141824750851731486> Verfügbar"
+            embed.add_field(
+                name=f"{job['name']} ({status})",
+                value=f"{job['desc']}\nBenötigte Stunden: **{job['req']}**",
+                inline=False
             )
-        )
 
-        container.add_item(discord.ui.Separator())
+        total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
+        embed.set_footer(text=f"Seite {self.page + 1} von {total_pages}")
+        return embed
 
-        # =================================================
-        # AKTUELLER JOB
-        # =================================================
+    @discord.ui.button(label="Zurück", style=discord.ButtonStyle.primary, emoji="<:Astra_arrow_backwards:1392540551546671348>", row=0)
+    async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page > 0:
+            self.page -= 1
+            embed = self.generate_job_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
 
-        if current_job:
+    @discord.ui.button(label="Weiter", style=discord.ButtonStyle.primary, emoji="<:Astra_arrow:1141303823600717885>", row=0)
+    async def next_page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if (self.page + 1) * self.items_per_page < len(self.jobs):
+            self.page += 1
+            embed = self.generate_job_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
 
-            pay_min, pay_max = current_job["amt"]
-
-            container.add_item(discord.ui.TextDisplay(
-                "## 💼 Aktueller Job\n"
-                f"**{current_job['name']}**"
-            ))
-
-            container.add_item(discord.ui.TextDisplay(
-                "### 💰 Verdienst\n"
-                f"`{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde"
-            ))
-
-            container.add_item(discord.ui.TextDisplay(
-                "### 📄 Beschreibung\n"
-                f"{current_job['desc']}"
-            ))
-
-            if next_job:
-
-                container.add_item(discord.ui.TextDisplay(
-                    "### 📊 Fortschritt\n"
-                    f"`{progress_bar}` **{percent}%**\n"
-                    f"`{self.user_hours}/{next_job['req']}` Stunden"
-                ))
-
-            container.add_item(discord.ui.Separator())
-
-        # =================================================
-        # NÄCHSTER JOB
-        # =================================================
-
-        if next_job:
-
-            pay_min, pay_max = next_job["amt"]
-
-            container.add_item(discord.ui.TextDisplay(
-                "## 🚀 Nächster Job\n"
-                f"**{next_job['name']}**"
-            ))
-
-            container.add_item(discord.ui.TextDisplay(
-                "### 💰 Verdienst\n"
-                f"`{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde"
-            ))
-
-            container.add_item(discord.ui.TextDisplay(
-                "### ⏱ Benötigt\n"
-                f"`{next_job['req']}` Stunden"
-            ))
-
-            container.add_item(discord.ui.TextDisplay(
-                "### 📄 Beschreibung\n"
-                f"{next_job['desc']}"
-            ))
-
-        self.add_item(container)
+    @discord.ui.button(label="🏠", style=discord.ButtonStyle.secondary, row=0)
+    async def go_home(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page != 0:
+            self.page = 0
+            embed = self.generate_job_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
 
 @app_commands.guild_only()
 class EconomyClass(app_commands.Group):
@@ -1304,7 +1207,6 @@ class Job(app_commands.Group):
             name="job",
             description="Alles rund um deinen Job"
         )
-        self.jobs = JOBS
 
     async def get_user(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
@@ -1404,26 +1306,12 @@ class Job(app_commands.Group):
     @app_commands.command(name="list", description="Zeigt die Jobliste.")
     @app_commands.guild_only()
     async def job_list(self, interaction: discord.Interaction):
-
         user_data = await self.get_user(interaction.user.id)
-
-        if not user_data:
-            return await interaction.response.send_message(
-                "Du hast noch keine Jobdaten.",
-                ephemeral=True
-            )
-
         user_hours = user_data[3]
 
-        view = JobOverviewView(
-            user_hours=user_hours,
-            jobs=self.jobs
-        )
-
-        await interaction.response.send_message(
-            view=view,
-            ephemeral=True
-        )
+        view = JobListView(JOBS, user_hours)
+        embed = view.generate_job_embed()
+        await interaction.response.send_message(embed=embed, view=view)
 
     @app_commands.command(name="apply", description="Bewirb dich auf einen verfügbaren Job.")
     @app_commands.guild_only()
