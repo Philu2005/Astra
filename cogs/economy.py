@@ -741,13 +741,14 @@ class JobListView(discord.ui.View):
         progress_bar = ""
 
         if next_job:
-            progress = self.user_hours / next_job["req"]
+            progress = min(self.user_hours / next_job["req"], 1)
             filled = int(progress * 10)
 
             progress_bar = "█" * filled + "░" * (10 - filled)
 
         embed = discord.Embed(
-            title="💼 Job Übersicht",
+            title="<:Astra_file1:1141303837181886494> Job Übersicht",
+            description=f"<:Astra_time:1141303932061233202> **Deine Arbeitsstunden:** `{self.user_hours}`",
             color=discord.Color.blue()
         )
 
@@ -755,30 +756,27 @@ class JobListView(discord.ui.View):
             pay_min, pay_max = current_job["amt"]
 
             embed.add_field(
-                name="💰 Aktueller Job",
+                name="<:Astra_gw_closed:1141303848695238686> Aktueller Job",
                 value=(
                     f"**{current_job['name']}**\n"
-                    f"<:Astra_gw_closed:1141303848695238686> {pay_min}-{pay_max} <:Coin:1359178077011181811> / Stunde"
+                    f"<:Astra_gw_closed:1141303848695238686> Verdienst: `{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde"
                 ),
                 inline=False
             )
 
-        embed.add_field(
-            name="⏱ Arbeitsstunden",
-            value=f"`{self.user_hours}` Stunden",
-            inline=False
-        )
-
         if next_job:
             embed.add_field(
-                name="📈 Fortschritt zum nächsten Job",
-                value=f"`{progress_bar}`",
+                name="<:Astra_level:1141825043278598154> Fortschritt zum nächsten Job",
+                value=f"`{progress_bar}` `{self.user_hours}/{next_job['req']}`",
                 inline=False
             )
 
             embed.add_field(
-                name="🚀 Nächster Job",
-                value=f"**{next_job['name']}**\nBenötigt `{next_job['req']}` Stunden",
+                name="<:Astra_boost:1141303827107164270> Nächster Job",
+                value=(
+                    f"**{next_job['name']}**\n"
+                    f"<:Astra_time:1141303932061233202> Benötigt `{next_job['req']}` Stunden"
+                ),
                 inline=False
             )
 
