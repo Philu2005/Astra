@@ -719,15 +719,19 @@ class BlackjackView(discord.ui.View):
 
 # ---------------------- Jobliste & Economy ----------------------
 
-class JobListView(discord.ui.View):
-    def __init__(self, jobs, user_hours):
-        super().__init__()
-        self.jobs = jobs
-        self.user_hours = user_hours
-        self.page = 0
-        self.items_per_page = 5
+class JobOverviewView(discord.ui.LayoutView):
 
-    def generate_job_embed(self):
+    def __init__(self, user_hours: int, jobs: list):
+        super().__init__(timeout=None)
+
+        self.user_hours = user_hours
+        self.jobs = jobs
+
+        self._build()
+
+    def _build(self):
+
+        self.clear_items()
 
         current_job = None
         next_job = None
@@ -750,65 +754,86 @@ class JobListView(discord.ui.View):
 
             percent = int(progress * 100)
 
-        embed = discord.Embed(
-            title="<:Astra_file1:1141303837181886494> Job Übersicht",
-            color=discord.Color.blue()
+        container = discord.ui.Container(
+            accent_color=discord.Colour.blue().value
         )
 
-        text = ""
+        # =================================================
+        # HEADER
+        # =================================================
 
-        # Kategorie 1
-        text += (
-            "📁 **Job Übersicht**\n"
-            f"<:Astra_time:1141303932061233202> **Arbeitsstunden**\n"
-            f"`{self.user_hours}` Stunden"
-            "\n\n\n"
+        header = discord.ui.Section(
+            discord.ui.TextDisplay(
+                "# Job Übersicht\n"
+                f"**Arbeitsstunden:** `{self.user_hours}`"
+            )
         )
 
-        # Kategorie 2
+        container.add_item(header)
+        container.add_item(discord.ui.Separator())
+
+        # =================================================
+        # AKTUELLER JOB
+        # =================================================
+
         if current_job:
+
             pay_min, pay_max = current_job["amt"]
 
-            text += (
-                "💼 **Aktueller Job**\n"
-                f"**{current_job['name']}**\n\n"
+            container.add_item(discord.ui.TextDisplay(
+                "## 💼 Aktueller Job\n"
+                f"**{current_job['name']}**"
+            ))
 
-                "💰 **Verdienst**\n"
-                f"`{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde\n\n"
+            container.add_item(discord.ui.TextDisplay(
+                "### 💰 Verdienst\n"
+                f"`{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde"
+            ))
 
-                "<:Astra_time:1141303932061233202> **Freigeschaltet ab**\n"
-                f"`{current_job['req']}` Stunden\n\n"
+            container.add_item(discord.ui.TextDisplay(
+                "### 📄 Beschreibung\n"
+                f"{current_job['desc']}"
+            ))
 
-                "📄 **Beschreibung**\n"
-                f"{current_job['desc']}\n\n"
+            if next_job:
 
-                "<:Astra_level:1141825043278598154> **Fortschritt**\n"
-                f"`{progress_bar}` **{percent}%**\n"
-                f"`{self.user_hours}/{next_job['req']}` Stunden"
-                "\n\n\n"
-            )
+                container.add_item(discord.ui.TextDisplay(
+                    "### 📊 Fortschritt\n"
+                    f"`{progress_bar}` **{percent}%**\n"
+                    f"`{self.user_hours}/{next_job['req']}` Stunden"
+                ))
 
-        # Kategorie 3
+            container.add_item(discord.ui.Separator())
+
+        # =================================================
+        # NÄCHSTER JOB
+        # =================================================
+
         if next_job:
+
             pay_min, pay_max = next_job["amt"]
 
-            text += (
-                "<:Astra_boost:1141303827107164270> **Nächster Job**\n"
-                f"**{next_job['name']}**\n\n"
+            container.add_item(discord.ui.TextDisplay(
+                "## 🚀 Nächster Job\n"
+                f"**{next_job['name']}**"
+            ))
 
-                "💰 **Verdienst**\n"
-                f"`{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde\n\n"
+            container.add_item(discord.ui.TextDisplay(
+                "### 💰 Verdienst\n"
+                f"`{pay_min}-{pay_max}` <:Coin:1359178077011181811> / Stunde"
+            ))
 
-                "<:Astra_time:1141303932061233202> **Benötigt**\n"
-                f"`{next_job['req']}` Stunden\n\n"
+            container.add_item(discord.ui.TextDisplay(
+                "### ⏱ Benötigt\n"
+                f"`{next_job['req']}` Stunden"
+            ))
 
-                "📄 **Beschreibung**\n"
+            container.add_item(discord.ui.TextDisplay(
+                "### 📄 Beschreibung\n"
                 f"{next_job['desc']}"
-            )
+            ))
 
-        embed.description = text
-
-        return embed
+        self.add_item(container)
 
 
     @discord.ui.button(
@@ -1326,6 +1351,7 @@ class Job(app_commands.Group):
             name="job",
             description="Alles rund um deinen Job"
         )
+        self.jobs = JOBS
 
     async def get_user(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
@@ -1425,12 +1451,26 @@ class Job(app_commands.Group):
     @app_commands.command(name="list", description="Zeigt die Jobliste.")
     @app_commands.guild_only()
     async def job_list(self, interaction: discord.Interaction):
+
         user_data = await self.get_user(interaction.user.id)
+
+        if not user_data:
+            return await interaction.response.send_message(
+                "Du hast noch keine Jobdaten.",
+                ephemeral=True
+            )
+
         user_hours = user_data[3]
 
-        view = JobListView(JOBS, user_hours)
-        embed = view.generate_job_embed()
-        await interaction.response.send_message(embed=embed, view=view)
+        view = JobOverviewView(
+            user_hours=user_hours,
+            jobs=self.jobs
+        )
+
+        await interaction.response.send_message(
+            view=view,
+            ephemeral=True
+        )
 
     @app_commands.command(name="apply", description="Bewirb dich auf einen verfügbaren Job.")
     @app_commands.guild_only()
