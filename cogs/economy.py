@@ -732,7 +732,7 @@ class JobListView(discord.ui.View):
 
         embed = discord.Embed(
             title="<:Astra_file1:1141303837181886494> Jobliste",
-            description=f"<:Astra_time:1141303932061233202> **Deine Arbeitsstunden:** `{self.user_hours}`\n",
+            description=f"<:Astra_time:1141303932061233202> **Deine Arbeitsstunden:** `{self.user_hours}`",
             color=discord.Color.blue()
         )
 
@@ -740,8 +740,9 @@ class JobListView(discord.ui.View):
         end_idx = start_idx + self.items_per_page
         jobs_to_display = self.jobs[start_idx:end_idx]
 
-        for i, job in enumerate(jobs_to_display, start=start_idx + 1):
+        job_text = ""
 
+        for i, job in enumerate(jobs_to_display, start=start_idx + 1):
             locked = self.user_hours < job["req"]
 
             status = (
@@ -750,14 +751,17 @@ class JobListView(discord.ui.View):
                 "<:Astra_unlock:1141824750851731486> **Verfügbar**"
             )
 
-            embed.add_field(
-                name=f"`{i}.` **{job['name']}**",
-                value=(
-                    f"{status}\n"
-                    f"{job['desc']}\n"
-                ),
-                inline=False
+            job_text += (
+                f"**{i}. {job['name']}**\n"
+                f"{status}\n"
+                f"{job['desc']}\n\n"
             )
+
+        embed.add_field(
+            name="📋 Verfügbare Jobs",
+            value=job_text,
+            inline=False
+        )
 
         embed.set_footer(
             text=f"Seite {self.page + 1}/{total_pages} • {len(self.jobs)} Jobs"
