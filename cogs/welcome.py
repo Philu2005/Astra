@@ -9,6 +9,10 @@ import aiohttp
 import io
 import re
 
+
+# TODO(@Philu priority:medium due:2026-05-15 category:Welcome-System issue:veraltet risk:medium): Welcome-System auf neuesten Stand bringen
+
+
 WELCOME_BANNER_PATH = "cogs/assets/Welcomecards/Willkommens_banner_fullsize.jpg"
 FONT_PATH = "cogs/fonts/Poppins-SemiBold.ttf"
 
