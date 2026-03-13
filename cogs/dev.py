@@ -694,6 +694,7 @@ class DevTools(commands.Cog):
     @commands.command(name="cmdlog")
     @commands.is_owner()
     async def cmdlog(self, ctx: commands.Context, period: str = "today"):
+        logging.info("TEST")
         period = period.lower()
 
         if period in ("week", "woche", "7"):
