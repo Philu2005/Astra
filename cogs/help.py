@@ -255,7 +255,7 @@ class HelpCog(commands.Cog):
                 description=part,
                 colour=discord.Colour.blue()
             )
-            embed.set_footer(text=f"Astra Development ©2025 • Seite {i + 1}")
+            embed.set_footer(text=f"Astra Development ©2026 • Seite {i + 1}")
             await channel.send(embed=embed)
 
 
