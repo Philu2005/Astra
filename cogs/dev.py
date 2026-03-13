@@ -193,7 +193,7 @@ class CommandStatsView(discord.ui.View):
         self.index = 0
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.owner_id:
+        if not await interaction.client.is_owner(interaction.user):
             await interaction.response.send_message(
                 "Nur der Bot-Owner darf hier interagieren.",
                 ephemeral=True
@@ -529,7 +529,7 @@ class ConfirmLeaveView(discord.ui.View):
         self.value: Optional[bool] = None
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.owner_id:
+        if not await interaction.client.is_owner(interaction.user):
             await interaction.response.send_message("Nur der Bot-Owner darf das.", ephemeral=True)
             return False
         return True
