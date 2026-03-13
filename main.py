@@ -152,7 +152,6 @@ class Astra(commands.Bot):
     async def setup_hook(self):
         try:
             self.loop.create_task(rotating_presence(self))
-            self.owner_id = 789555434201677824
             self.topggpy = topgg.DBLClient(self, dbl_token)
             bot.topgg_webhook = topgg.WebhookManager(bot).dbl_webhook("/dblwebhook", dbl_password)
             await bot.topgg_webhook.run(int(dbl_port))

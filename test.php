@@ -22,23 +22,11 @@ exit;
 $action = $_POST["action"] ?? $_GET["action"] ?? null;
 
 
-/* =========================
-   LOAD LOGS
-========================= */
+if($action === "clear_logs"){
 
-if($action === "logs"){
+$pdo->query("TRUNCATE TABLE bot_logs");
 
-$service = "astrabot.service";
-
-$cmd = "journalctl -u $service -n 50 --no-pager";
-
-$output = shell_exec($cmd);
-
-$lines = explode("\n",$output);
-
-header("Content-Type: application/json");
-echo json_encode($lines);
-
+echo "ok";
 exit;
 
 }
@@ -63,7 +51,7 @@ exit;
 
 if($action === "bot_info"){
 
-$status = trim(shell_exec("systemctl is-active astrabot.service"));
+$status = trim(shell_exec("/bin/systemctl is-active astrabot.service"));
 
 $pid = trim(shell_exec("systemctl show -p MainPID --value astrabot.service"));
 
@@ -800,8 +788,20 @@ background:#f59e0b;
 
 /* Logs */
 
-#logs{
+.console-wrapper{
+position:relative;
 height:260px;
+}
+
+/* LOG BOX */
+
+#logs{
+position:absolute;
+top:0;
+left:0;
+right:0;
+bottom:0;
+
 overflow:auto;
 
 background:linear-gradient(
@@ -813,6 +813,7 @@ background:linear-gradient(
 border:1px solid rgba(255,255,255,0.06);
 border-radius:12px;
 
+/* FIX */
 padding:14px;
 
 font-family:
@@ -841,6 +842,59 @@ border-radius:6px;
 #logs::-webkit-scrollbar-thumb:hover{
 background:#3b4550;
 }
+
+/* BUTTON POSITION */
+
+.console-controls{
+position:absolute;
+top:12px;
+right:14px;
+z-index:20;
+}
+
+/* GLASS BUTTON */
+
+.console-controls button{
+
+background:rgba(34,197,94,0.15);
+
+backdrop-filter:blur(10px);
+-webkit-backdrop-filter:blur(10px);
+
+border:1px solid rgba(34,197,94,0.5);
+
+color:#86efac;
+
+padding:5px 12px;
+border-radius:10px;
+
+font-size:11px;
+font-weight:600;
+
+cursor:pointer;
+
+box-shadow:
+0 4px 10px rgba(0,0,0,0.35),
+0 0 10px rgba(34,197,94,0.2),
+inset 0 1px 0 rgba(255,255,255,0.25);
+
+transition:all .18s ease;
+}
+
+.console-controls button:hover{
+
+background:rgba(34,197,94,0.25);
+
+transform:translateY(-1px);
+
+box-shadow:
+0 0 14px rgba(34,197,94,0.5),
+0 6px 14px rgba(0,0,0,0.45),
+inset 0 1px 0 rgba(255,255,255,0.35);
+
+color:white;
+}
+
 
 .cpu{
 color:#22c55e;
@@ -1142,9 +1196,18 @@ width:100%;
 
 <h3>Live Logs</h3>
 
+<div class="console-wrapper">
+
+<div class="console-controls">
+<button onclick="clearLogs()">🧹 Clear</button>
+</div>
+
 <div id="logs"></div>
 
 </div>
+
+</div>
+
 
 </div>
 
@@ -1366,6 +1429,10 @@ width:100%;
 let tasks=[]
 let deleteIndex=null
 let editingId = null
+let logOffset = 0
+let logCount = 0
+let logCursor = localStorage.getItem("logCursor") || ""
+let logSource = null
 
 async function loadTasks(){
 
@@ -1649,25 +1716,51 @@ setInterval(loadBotStatus,5000)
 function startLogStream(){
 
 const logBox = document.getElementById("logs")
+let savedLogs = localStorage.getItem("savedLogs")
 
-const source = new EventSource("logs.php")
+if(savedLogs){
+logBox.insertAdjacentHTML("beforeend", savedLogs)
+logBox.scrollTop = logBox.scrollHeight
+}
 
-source.onmessage = function(event){
+if(logSource){
+logSource.close()
+}
 
-let line = event.data
+let url = "logs.php"
 
-let color="#c9d1d9"
+if(logCursor){
+url += "?cursor=" + encodeURIComponent(logCursor)
+}
 
-if(line.includes("ERROR")) color="#ef4444"
-if(line.includes("WARN")) color="#f59e0b"
-if(line.includes("INFO")) color="#22c55e"
+logSource = new EventSource(url)
+
+logSource.onmessage = function(event){
+
+let data = JSON.parse(event.data)
+
+let line = data.msg
+let cursor = data.cursor
+
+if(cursor){
+logCursor = cursor
+localStorage.setItem("logCursor", cursor)
+}
+
+let color = "#c9d1d9"
+
+if(line.includes("ERROR")) color = "#ef4444"
+if(line.includes("WARN")) color = "#f59e0b"
+if(line.includes("INFO")) color = "#22c55e"
 
 let div=document.createElement("div")
-
 div.style.color=color
 div.textContent=line
 
 logBox.appendChild(div)
+
+/* HIER HINZUFÜGEN */
+localStorage.setItem("savedLogs", logBox.innerHTML)
 
 if(logBox.children.length > 300){
 logBox.removeChild(logBox.firstChild)
@@ -1677,20 +1770,36 @@ logBox.scrollTop = logBox.scrollHeight
 
 }
 
+logSource.onerror = function(){
+logSource.close()
+setTimeout(startLogStream,2000)
+}
+
 }
 
 
-async function restartBot(){
+async function clearLogs(){
 
-if(!confirm("Bot wirklich neu starten?")) return
+const logBox = document.getElementById("logs")
+
+logBox.innerHTML=""
 
 await fetch("index.php",{
 method:"POST",
 headers:{"Content-Type":"application/x-www-form-urlencoded"},
-body:"action=restart_bot"
+body:"action=clear_logs"
 })
 
-alert("Bot wurde neugestartet")
+localStorage.removeItem("savedLogs")
+localStorage.removeItem("logCursor")
+
+logCursor=""
+
+if(logSource){
+logSource.close()
+}
+
+startLogStream()
 
 }
 
@@ -1698,11 +1807,11 @@ async function loadBotStatus(){
 
 try{
 
-let res = await fetch("index.php",{
-method:"POST",
-headers:{"Content-Type":"application/x-www-form-urlencoded"},
-body:"action=bot_info"
-})
+let res = await fetch("index.php?action=bot_info&t=" + Date.now())
+
+if(!res.ok){
+throw new Error("API error")
+}
 
 let data = await res.json()
 
@@ -1746,6 +1855,7 @@ actions.innerHTML=`
 
 }catch(e){
 
+console.error(e)
 document.getElementById("botState").innerText="Unknown"
 
 }
@@ -1760,6 +1870,12 @@ headers:{"Content-Type":"application/x-www-form-urlencoded"},
 body:"action=start_bot"
 })
 
+/* Logs neu starten */
+logCursor = ""
+localStorage.removeItem("logCursor")
+
+startLogStream()
+
 loadBotStatus()
 
 }
@@ -1768,12 +1884,31 @@ async function stopBot(){
 
 if(!confirm("Bot wirklich stoppen?")) return
 
+/* SSE sofort killen */
+if(logSource){
+logSource.close()
+logSource = null
+}
+
+/* Cursor reset */
+logCursor = ""
+
+/* local storage löschen */
+localStorage.removeItem("savedLogs")
+localStorage.removeItem("logCursor")
+
+/* Konsole sofort leeren */
+const logBox = document.getElementById("logs")
+logBox.innerHTML=""
+
+/* Bot stoppen */
 await fetch("index.php",{
 method:"POST",
 headers:{"Content-Type":"application/x-www-form-urlencoded"},
 body:"action=stop_bot"
 })
 
+/* Bot Status neu laden */
 loadBotStatus()
 
 }
@@ -1812,8 +1947,27 @@ document.getElementById("botConfirmModal").style.display="none"
 
 async function executeBotAction(){
 
+const logBox = document.getElementById("logs")
+
 if(botAction === "stop"){
 
+/* SSE killen */
+if(logSource){
+logSource.close()
+logSource = null
+}
+
+/* Cursor reset */
+logCursor = ""
+
+/* localStorage löschen */
+localStorage.removeItem("savedLogs")
+localStorage.removeItem("logCursor")
+
+/* Konsole leeren */
+logBox.innerHTML=""
+
+/* Bot stoppen */
 await fetch("index.php",{
 method:"POST",
 headers:{"Content-Type":"application/x-www-form-urlencoded"},
@@ -1824,11 +1978,26 @@ body:"action=stop_bot"
 
 if(botAction === "restart"){
 
+/* Logs auch resetten */
+if(logSource){
+logSource.close()
+logSource = null
+}
+
+logCursor = ""
+localStorage.removeItem("savedLogs")
+localStorage.removeItem("logCursor")
+
+logBox.innerHTML=""
+
+/* Restart */
 await fetch("index.php",{
 method:"POST",
 headers:{"Content-Type":"application/x-www-form-urlencoded"},
 body:"action=restart_bot"
 })
+
+startLogStream()
 
 }
 
