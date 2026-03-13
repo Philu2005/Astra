@@ -860,26 +860,19 @@ class DevTools(commands.Cog):
         await ctx.send(f"```py\n{self.format_output(output)}```")
 
     @commands.command()
-    async def owners(self, ctx):
+    async def ownercheckall(self, ctx):
         app = await self.bot.application_info()
 
-        # Wenn Bot einer Team-Application gehört
         if app.team:
-            owners = [
-                m for m in app.team.members
-                if m.role in (discord.TeamMemberRole.admin, discord.TeamMemberRole.developer)
-            ]
+            owners = []
+            for member in app.team.members:
+                if await self.bot.is_owner(member):
+                    owners.append(f"{member} ({member.id})")
 
-            text = "\n".join(
-                f"{m.name}#{m.discriminator} ({m.id}) – {m.role.name}"
-                for m in owners
-            )
-
-            await ctx.send(f"**Team Owners:**\n{text}")
+            await ctx.send("Owner laut is_owner():\n" + "\n".join(owners))
 
         else:
-            owner = app.owner
-            await ctx.send(f"**Application Owner:** {owner} ({owner.id})")
+            await ctx.send(f"Owner: {app.owner} ({app.owner.id})")
 
     # --- Shell ---
     @commands.command(name="shell")
