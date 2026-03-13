@@ -53,7 +53,7 @@ def is_team_admin():
             return False
 
         for member in app.team.members:
-            if member.id == ctx.author.id and member.role == "admin":
+            if member.id == ctx.author.id and member.role in ("admin", "owner"):
                 return True
 
         return False
