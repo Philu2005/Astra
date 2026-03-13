@@ -45,20 +45,6 @@ async def run_sql_file(pool, path: str):
                 except Exception as e:
                     logging.error(f"[DB] Fehler in Statement:\n{stmt}\n{e}")
 
-def is_team_admin():
-    async def predicate(ctx):
-        app = await ctx.bot.application_info()
-
-        if app.team is None:
-            return False
-
-        for member in app.team.members:
-            if member.id == ctx.author.id and member.role in ("admin", "owner"):
-                return True
-
-        return False
-
-    return commands.check(predicate)
 
 def resolve_extension(name: str) -> str:
     """
@@ -79,7 +65,7 @@ class CommandLogView(discord.ui.View):
         self.page = 0
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.ctx.author.id:
+        if not await interaction.client.is_owner(interaction.user):
             await interaction.response.send_message(
                 "Nur der Bot-Owner darf hier klicken.",
                 ephemeral=True
@@ -245,12 +231,6 @@ class CommandTracking(commands.Cog):
         self.bot = bot
         self.owner_id = owner_id
         self.start_time = time.time()
-
-    # -----------------------------------------------------
-    # OWNER CHECK
-    # -----------------------------------------------------
-    def cog_check(self, ctx: commands.Context) -> bool:
-        return ctx.author.id == self.owner_id
 
     # -----------------------------------------------------
     # GLOBAL TRACKER (HIER PASSIERT DAS TRACKING)
@@ -706,16 +686,13 @@ class DevTools(commands.Cog):
         self.commands_run = 0
         self.pool = None  # Pool-Objekt hier zentral gespeichert
 
-    def cog_check(self, ctx):
-        return ctx.author.id == self.owner_id
-
     def format_output(self, output):
         if len(output) > 1900:
             return output[:1900] + "\n... (Ausgabe gekürzt)"
         return output
 
     @commands.command(name="cmdlog")
-    @is_team_admin()
+    @commands.is_owner()
     async def cmdlog(self, ctx: commands.Context, period: str = "today"):
         period = period.lower()
 
@@ -754,7 +731,7 @@ class DevTools(commands.Cog):
         await ctx.send(embed=embed, view=view)
 
     @commands.command(name="commandstats", aliases=["cmdstats"])
-    @is_team_admin()
+    @commands.is_owner()
     async def commandstats(self, ctx: commands.Context):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
@@ -833,7 +810,7 @@ class DevTools(commands.Cog):
 
     # --- Serverliste (NEU) ---
     @commands.hybrid_command(name="serverlist", aliases=["servers"])
-    @is_team_admin()
+    @commands.is_owner()
     async def serverlist(self, ctx: commands.Context):
         """Zeigt alle Server mit Dropdown, Paging und Leave-Button (nur Owner)."""
         if not self.bot.guilds:
@@ -859,7 +836,7 @@ class DevTools(commands.Cog):
 
     # --- Eval ---
     @commands.command(name="eval")
-    @is_team_admin()
+    @commands.is_owner()
     async def eval_code(self, ctx, *, code: str):
         """Führt Python-Code aus."""
         self.commands_run += 1
@@ -883,7 +860,7 @@ class DevTools(commands.Cog):
 
     # --- Shell ---
     @commands.command(name="shell")
-    @is_team_admin()
+    @commands.is_owner()
     async def shell_command(self, ctx, *, command: str):
         """Führt Shell-Befehl aus."""
         self.commands_run += 1
@@ -898,7 +875,7 @@ class DevTools(commands.Cog):
             await ctx.send(f"Exception: {e}")
 
     @commands.group(name="cog", aliases=["ext"], invoke_without_command=True)
-    @is_team_admin()
+    @commands.is_owner()
     async def ext_group(self, ctx: commands.Context):
         await ctx.send(
             "**🧩 Cog-Verwaltung**\n"
@@ -909,7 +886,7 @@ class DevTools(commands.Cog):
         )
 
     @ext_group.command(name="load")
-    @is_team_admin()
+    @commands.is_owner()
     async def ext_load(self, ctx: commands.Context, name: str):
         ext = resolve_extension(name)
         try:
@@ -921,7 +898,7 @@ class DevTools(commands.Cog):
             await ctx.send(f"❌ Fehler:\n```py\n{e}```")
 
     @ext_group.command(name="unload")
-    @is_team_admin()
+    @commands.is_owner()
     async def ext_unload(self, ctx: commands.Context, name: str):
         ext = resolve_extension(name)
         try:
@@ -933,7 +910,7 @@ class DevTools(commands.Cog):
             await ctx.send(f"❌ Fehler:\n```py\n{e}```")
 
     @ext_group.command(name="reload")
-    @is_team_admin()
+    @commands.is_owner()
     async def ext_reload(self, ctx: commands.Context, name: str):
         ext = resolve_extension(name)
 
@@ -953,7 +930,7 @@ class DevTools(commands.Cog):
         asyncio.create_task(do_reload())
 
     @ext_group.command(name="list")
-    @is_team_admin()
+    @commands.is_owner()
     async def ext_list(self, ctx: commands.Context):
         if not self.bot.extensions:
             await ctx.send("Keine Cogs geladen.")
@@ -966,7 +943,7 @@ class DevTools(commands.Cog):
 
     # --- Sourcecode anzeigen (passt für persistente View) ---
     @commands.command(name="source")
-    @is_team_admin()
+    @commands.is_owner()
     async def source(self, ctx, *, command_name: str = None):
         """Zeigt den Quellcode eines Slash-Commands (auch Subcommands wie /levelsystem rank) oder des gesamten Cogs."""
         if command_name is None:
@@ -1000,7 +977,7 @@ class DevTools(commands.Cog):
 
     # --- Memory ---
     @commands.command(name="memory")
-    @is_team_admin()
+    @commands.is_owner()
     async def memory(self, ctx):
         """Zeigt Speicherverbrauch des Bots."""
         self.commands_run += 1
@@ -1013,7 +990,7 @@ class DevTools(commands.Cog):
 
     # --- Stats ---
     @commands.command(name="stats")
-    @is_team_admin()
+    @commands.is_owner()
     async def stats(self, ctx):
         """Zeigt ein paar Bot-Statistiken."""
         self.commands_run += 1
@@ -1028,7 +1005,7 @@ class DevTools(commands.Cog):
 
     # --- Restart ---
     @commands.command(name="restart")
-    @is_team_admin()
+    @commands.is_owner()
     async def restart(self, ctx):
         """Startet den Bot-Service neu via systemctl."""
         await ctx.send("🔁 Astra wird neugestartet...")
@@ -1037,7 +1014,7 @@ class DevTools(commands.Cog):
 
     # --- Logs ---
     @commands.command(name="logs")
-    @is_team_admin()
+    @commands.is_owner()
     async def logs(self, ctx, live: bool = False):
         """
         Zeigt Logs an.
@@ -1084,7 +1061,7 @@ class DevTools(commands.Cog):
 
     # --- Update ---
     @commands.command(name="update")
-    @is_team_admin()
+    @commands.is_owner()
     async def update(self, ctx):
         """Führt git pull im /root/Astra Verzeichnis aus."""
         await ctx.send("Ziehe Updates vom Git-Repo in /root/Astra...")
@@ -1104,7 +1081,7 @@ class DevTools(commands.Cog):
 
     # --- Sysinfo ---
     @commands.command(name="sysinfo")
-    @is_team_admin()
+    @commands.is_owner()
     async def sysinfo(self, ctx):
         """Zeigt CPU- und RAM-Auslastung des Servers."""
         cpu = psutil.cpu_percent(interval=1)

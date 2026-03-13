@@ -108,7 +108,7 @@ def convert(time):
 class Astra(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="astra!", help_command=None, case_insensitive=True,
-                         intents=discord.Intents.all(), owner_ids={789555434201677824, 558307374566211585, 714361420409733171})
+                         intents=discord.Intents.all())
 
         pool: aiomysql.Pool
         self.topggpy = None
