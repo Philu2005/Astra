@@ -186,9 +186,8 @@ def extract_command_path(interaction: discord.Interaction) -> tuple[str, Optiona
 # =========================================================
 
 class CommandStatsView(discord.ui.View):
-    def __init__(self, owner_id: int, pages: List[discord.Embed]):
+    def __init__(self, pages: List[discord.Embed]):
         super().__init__(timeout=180)
-        self.owner_id = owner_id
         self.pages = pages
         self.index = 0
 
@@ -227,9 +226,8 @@ class CommandStatsView(discord.ui.View):
 # =========================================================
 
 class CommandTracking(commands.Cog):
-    def __init__(self, bot: commands.Bot, owner_id: int):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.owner_id = owner_id
         self.start_time = time.time()
 
     # -----------------------------------------------------
@@ -371,15 +369,17 @@ def chunk_code_lines(source, chunk_size=1900):
 # UI: CodeScroller (persistenzsicher via allowed_user_id)
 # ==========
 class CodeScroller(discord.ui.View):
-    def __init__(self, allowed_user_id: int, code_chunks: List[str]):
+    def __init__(self, code_chunks: List[str]):
         super().__init__(timeout=None)
-        self.allowed_user_id = allowed_user_id
         self.code_chunks = code_chunks
         self.current = 0
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.allowed_user_id:
-            await interaction.response.send_message("Nur der Owner darf hier blättern!", ephemeral=True)
+        if not await interaction.client.is_owner(interaction.user):
+            await interaction.response.send_message(
+                "Nur Bot Owner dürfen das.",
+                ephemeral=True
+            )
             return False
         return True
 
@@ -522,10 +522,9 @@ class GuildSelect(discord.ui.Select):
 
 
 class ConfirmLeaveView(discord.ui.View):
-    def __init__(self, guild: discord.Guild, owner_id: int):
+    def __init__(self, guild: discord.Guild):
         super().__init__(timeout=30)
         self.guild = guild
-        self.owner_id = owner_id
         self.value: Optional[bool] = None
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -630,7 +629,7 @@ class ServerListView(discord.ui.View):
             await interaction.response.send_message("Konnte den Server nicht finden.", ephemeral=True)
             return
 
-        confirm_view = ConfirmLeaveView(guild, owner_id=interaction.user.id)
+        confirm_view = ConfirmLeaveView(guild)
         confirm_embed = discord.Embed(
             title="Server verlassen?",
             description=f"Soll der Bot **{guild.name}** (ID `{guild.id}`) wirklich verlassen?",
@@ -679,9 +678,8 @@ class ServerListView(discord.ui.View):
 # DEVTOOLS COG (mit integriertem serverlist)
 # ==========
 class DevTools(commands.Cog):
-    def __init__(self, bot, owner_id):
+    def __init__(self, bot):
         self.bot = bot
-        self.owner_id = owner_id
         self.start_time = time.time()
         self.commands_run = 0
         self.pool = None  # Pool-Objekt hier zentral gespeichert
@@ -806,7 +804,7 @@ class DevTools(commands.Cog):
             )
             pages.append(embed)
 
-        view = CommandStatsView(self.owner_id, pages)
+        view = CommandStatsView(pages)
         await ctx.send(embed=pages[0], view=view)
 
     # --- Serverliste (NEU) ---
@@ -969,7 +967,7 @@ class DevTools(commands.Cog):
                 if len(code_chunks) == 1:
                     await ctx.send(f"```python\n{code_chunks[0]}```")
                 else:
-                    view = CodeScroller(ctx.author.id, code_chunks)
+                    view = CodeScroller(code_chunks)
                     await ctx.send(f"```python\n{code_chunks[0]}```\nSeite 1/{len(code_chunks)}", view=view)
             except Exception as e:
                 await ctx.send(f"Fehler: {e}")
@@ -986,7 +984,7 @@ class DevTools(commands.Cog):
             if len(code_chunks) == 1:
                 await ctx.send(f"```python\n{code_chunks[0]}```")
             else:
-                view = CodeScroller(ctx.author.id, code_chunks)
+                view = CodeScroller(code_chunks)
                 await ctx.send(f"```python\n{code_chunks[0]}```\nSeite 1/{len(code_chunks)}", view=view)
         except Exception as e:
             await ctx.send(f"Fehler beim Abrufen des Quellcodes: {e}")
@@ -1016,7 +1014,7 @@ class DevTools(commands.Cog):
         embed.add_field(name="Server (Guilds)", value=str(len(self.bot.guilds)))
         embed.add_field(name="Benutzer", value=str(len(self.bot.users)))
         embed.add_field(name="Commands ausgeführt", value=str(self.commands_run))
-        embed.set_footer(text=f"Deine ID: {self.owner_id}")
+        embed.set_footer(text=f"Deine ID: {ctx.author.id}")
         await ctx.send(embed=embed)
 
     # --- Restart ---
@@ -1092,8 +1090,10 @@ class DevTools(commands.Cog):
         output = proc.stdout + proc.stderr
         if len(output) > 1900:
             output = output[:1900] + "\n... (gekürzt)"
+
         await ctx.send(f"```bash\n{output}```")
-        await run_sql_file(self.pool, SCHEMA_PATH)
+
+        await run_sql_file(self.bot.pool, SCHEMA_PATH)
 
     # --- Sysinfo ---
     @commands.command(name="sysinfo")
@@ -1110,14 +1110,9 @@ class DevTools(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    owner_id = 789555434201677824
 
     # Persistente Views
-    bot.add_view(CodeScroller(allowed_user_id=owner_id, code_chunks=["Dummy"]))
+    bot.add_view(CodeScroller(code_chunks=["Dummy"]))
 
-    # ✅ TRACKING-Cog (DAS FEHLTE)
-    await bot.add_cog(CommandTracking(bot, owner_id))
-
-    # ✅ DEVTOOLS-Cog
-    await bot.add_cog(DevTools(bot, owner_id))
-
+    await bot.add_cog(CommandTracking(bot))
+    await bot.add_cog(DevTools(bot))
