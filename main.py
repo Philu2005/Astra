@@ -518,6 +518,9 @@ async def on_dbl_vote(data):
                 member_votes = count + vote_increase
 
                 # --- DAILY STREAK LOGIK ---
+                # --- DAILY STREAK LOGIK ---
+                streak_increased_today = False
+
                 if last_vote_epoch is not None:
                     last_vote_date = datetime.fromtimestamp(int(last_vote_epoch), timezone.utc).date()
                     today = now_utc.date()
@@ -528,10 +531,13 @@ async def on_dbl_vote(data):
                         pass
                     elif days_diff == 1:
                         streak += 1
+                        streak_increased_today = True
                     else:
                         streak = 1
+                        streak_increased_today = True
                 else:
                     streak = 1
+                    streak_increased_today = True
 
                 if streak > best_streak:
                     best_streak = streak
@@ -564,9 +570,12 @@ async def on_dbl_vote(data):
             # =============================
             # ECONOMY-REWARD (MIT MULTIPLIER)
             # =============================
-            base_amount = random.randint(5, 25)
+            base_amount = random.randint(15, 25)
 
-            multiplier = min(1 + (streak - 1) * 0.05, 2.0)
+            if streak_increased_today:
+                multiplier = min(1 + (streak - 1) * 0.05, 2.5)
+            else:
+                multiplier = 1
 
             total_amount = round(base_amount * multiplier)
 
@@ -611,11 +620,18 @@ async def on_dbl_vote(data):
     )
 
     # --- BELohnungstext für Nachricht ---
-    reward_text = (
-        f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {total_amount} Coins "
-        f"(Base {base_amount} × {multiplier:.2f} Streak Multiplier | Streak {streak}) "
-        f"<:Coin:1359178077011181811>"
-    )
+    streak_bonus = total_amount - base_amount
+
+    if streak_bonus > 0:
+        reward_text = (
+            f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {base_amount} Coins + {streak_bonus} Streak-Bonus "
+            f"(Streak {streak}) <:Coin:1359178077011181811>"
+        )
+    else:
+        reward_text = (
+            f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {total_amount} Coins "
+            f"(Streak {streak}) <:Coin:1359178077011181811>"
+        )
 
     member = guild.get_member(user_id)
     if not member:
