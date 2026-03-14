@@ -153,7 +153,7 @@ class Astra(commands.Bot):
         try:
             self.loop.create_task(rotating_presence(self))
             self.topggpy = topgg.DBLClient(self, dbl_token)
-            bot.topgg_webhook = topgg.WebhookManager(bot).dbl_webhook("/dblwebhook", dbl_password)
+            bot.topgg_webhook = topgg.WebhookManager(bot).dbl_webhook("/webhook/7d9f1c0a-topgg-astrabot", dbl_password)
             await bot.topgg_webhook.run(int(dbl_port))
             await self.connect_db()
             await self.init_tables()
