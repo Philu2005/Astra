@@ -572,6 +572,94 @@ CARD_VALUES = {
     'J': 10, 'Q': 10, 'K': 10, 'A': 11
 }
 
+CARD_EMOJIS = {
+
+# ♦ Diamonds
+"2D": "<:2D:1483232654831915058>",
+"3D": "<:3D:1483232641405816985>",
+"4D": "<:4D:1483232645700911164>",
+"5D": "<:5D:1483232649089650854>",
+"6D": "<:6D:1483232642622034180>",
+"7D": "<:7D:1483232647684554915>",
+"8D": "<:8D:1483232652017406004>",
+"9D": "<:9D:1483232639967170751>",
+"10D": "<:10D:1483232643901558956>",
+"JD": "<:JD:1483232650482159720>",
+"QD": "<:QD:1483232627451498628>",
+"KD": "<:KD:1483232630794227864>",
+"AD": "<:AD:1483232653489602833>",
+
+# ♣ Clubs
+"2C": "<:2C:1483232629300920611>",
+"3C": "<:3C:1483232634002739332>",
+"4C": "<:4C:1483232636519579739>",
+"5C": "<:5C:1483232626407112724>",
+"6C": "<:6C:1483232631939141662>",
+"7C": "<:7C:1483232635265355836>",
+"8C": "<:8C:1483232611018080415>",
+"9C": "<:9C:1483232615413842073>",
+"10C": "<:10C:1483232620593545336>",
+"JC": "<:JC:1483232613731795006>",
+"QC": "<:QC:1483232618974679251>",
+"KC": "<:KC:1483232625001758810>",
+"AC": "<:AC:1483232638377525400>",
+
+# ♥ Hearts
+"2H": "<:2H:1483232609352941732>",
+"3H": "<:3H:1483232602440601631>",
+"4H": "<:4H:1483232596367376467>",
+"5H": "<:5H:1483232607117508629>",
+"6H": "<:6H:1483232603992625312>",
+"7H": "<:7H:1483232599101931634>",
+"8H": "<:8H:1483232605611626586>",
+"9H": "<:9H:1483232601060675694>",
+"10H": "<:10H:1483232597919404062>",
+"JH": "<:JH:1483232623328231517>",
+"QH": "<:QH:1483232617292890222>",
+"KH": "<:KH:1483232612301668372>",
+"AH": "<:AH:1483232584338112692>",
+
+# ♠ Spades
+"2S": "<:2S:1483232577811648543>",
+"3S": "<:3S:1483232574993076345>",
+"4S": "<:4S:1483232580441604270>",
+"5S": "<:5S:1483232576314413197>",
+"6S": "<:6S:1483232573714071733>",
+"7S": "<:7S:1483232589350440981>",
+"8S": "<:8S:1483232581909741720>",
+"9S": "<:9S:1483232590898135193>",
+"10S": "<:10S:1483232588066721923>",
+"JS": "<:JS:1483232585462186015>",
+"QS": "<:QS:1483232593800597574>",
+"KS": "<:KS:1483232586808561917>",
+"AS": "<:AS:1483232579279782118>",
+
+}
+
+def card_to_code(card: str):
+    suit_map = {
+        "♠": "S",
+        "♥": "H",
+        "♦": "D",
+        "♣": "C"
+    }
+
+    rank = card[:-1]
+    suit = suit_map[card[-1]]
+
+    return f"{rank}{suit}"
+
+
+def render_cards(cards):
+    emojis = []
+
+    for card in cards:
+        code = card_to_code(card)
+        emoji = CARD_EMOJIS.get(code, card)
+        emojis.append(emoji)
+
+    return " ".join(emojis)
+
 def calculate_hand_value(hand):
     value = 0
     aces = 0
@@ -619,14 +707,18 @@ class BlackjackView(discord.ui.View):
         player_value = calculate_hand_value(self.player_hand)
         dealer_value = calculate_hand_value(self.dealer_hand)
 
-        player_cards = " ".join(self.player_hand)
-        dealer_cards_display = self.dealer_hand[0] + " ❓" if not self.stand_called else " ".join(self.dealer_hand)
+        player_cards = render_cards(self.player_hand)
+
+        if not self.stand_called:
+            dealer_cards_display = f"{render_cards([self.dealer_hand[0]])} ❓"
+        else:
+            dealer_cards_display = render_cards(self.dealer_hand)
         dealer_value_display = "?" if not self.stand_called else str(dealer_value)
 
         embed = discord.Embed(title="Blackjack", color=discord.Color.blue())
 
-        embed.add_field(name="<:Astra_user:1141303940365959241> Deine Karten:", value=f"```{player_cards}```Wert: **{player_value}**", inline=False)
-        embed.add_field(name="<:Astra_dev:1141303833407017001> Karten des Dealers:", value=f"```{dealer_cards_display}```Wert: **{dealer_value_display}**", inline=False)
+        embed.add_field(name="<:Astra_user:1141303940365959241> Deine Karten:", value=f"{player_cards}\nWert: **{player_value}**", inline=False)
+        embed.add_field(name="<:Astra_dev:1141303833407017001> Karten des Dealers:", value=f"{dealer_cards_display}\nWert: **{dealer_value_display}**", inline=False)
 
         game_over = False
         result_text = ""
