@@ -10,6 +10,8 @@ import random
 from datetime import datetime, timezone, timedelta
 from discord import ui
 import logging
+from PIL import Image
+import os
 
 
 # TODO(@Philu priority:high due:2026-04-15 category:Economy-System issue:refactor risk:medium): Economy-System refactoren und in mehrere Cogs aufteilen (Economy, Gambling, Jobs, Admin), um Struktur, Wartbarkeit und Erweiterbarkeit des Codes zu verbessern.
@@ -572,93 +574,37 @@ CARD_VALUES = {
     'J': 10, 'Q': 10, 'K': 10, 'A': 11
 }
 
-CARD_EMOJIS = {
+CARD_FOLDER = "cards"
 
-# Clubs ♣
-"2C": "<:2C:1483245363711312025>",
-"3C": "<:3C:1483245370346569978>",
-"4C": "<:4C:1483245375275012098>",
-"5C": "<:5C:1483245380891050135>",
-"6C": "<:6C:1483245387270852671>",
-"7C": "<:7C:1483245393344200787>",
-"8C": "<:8C:1483245398926557184>",
-"9C": "<:9C:1483245406568579123>",
-"10C": "<:10C:1483245412298002473>",
-"JC": "<:JC:1483245426248253501>",
-"QC": "<:QC:1483245441226248242>",
-"KC": "<:KC:1483245432330129622>",
-"AC": "<:AC:1483245419088838747>",
+def render_hand_image(cards, filename):
+    suit_map = {"♠": "S", "♥": "H", "♦": "D", "♣": "C"}
 
-# Diamonds ♦
-"2D": "<:2D:1483245365288370309>",
-"3D": "<:3D:1483245371479293982>",
-"4D": "<:4D:1483245377103597688>",
-"5D": "<:5D:1483245382170316872>",
-"6D": "<:6D:1483245388453380228>",
-"7D": "<:7D:1483245394505895956>",
-"8D": "<:8D:1483245400797479013>",
-"9D": "<:9D:1483245408405684295>",
-"10D": "<:10D:1483245414877499454>",
-"JD": "<:JD:1483245427531972729>",
-"QD": "<:QD:1483245442904096868>",
-"KD": "<:KD:1483245433491816598>",
-"AD": "<:AD:1483245420263243976>",
-
-# Hearts ♥
-"2H": "<:2H:1483245367431659763>",
-"3H": "<:3H:1483245372598911147>",
-"4H": "<:4H:1483245378194247731>",
-"5H": "<:5H:1483245383898501212>",
-"6H": "<:6H:1483245390433091785>",
-"7H": "<:7H:1483245396183613530>",
-"8H": "<:8H:1483245403364130986>",
-"9H": "<:9H:1483245409471172849>",
-"10H": "<:10H:1483245416412610765>",
-"JH": "<:JH:1483245429213888655>",
-"QH": "<:QH:1483245444720099349>",
-"KH": "<:KH:1483245435035582635>",
-"AH": "<:AH:1483245421559283732>",
-
-# Spades ♠
-"2S": "<:2S:1483245369017241681>",
-"3S": "<:3S:1483245374272573591>",
-"4S": "<:4S:1483245379561455686>",
-"5S": "<:5S:1483245385651851376>",
-"6S": "<:6S:1483245392077389926>",
-"7S": "<:7S:1483245397546897471>",
-"8S": "<:8S:1483245405159559360>",
-"9S": "<:9S:1483245410863550644>",
-"10S": "<:10S:1483245417763442929>",
-"JS": "<:JS:1483245430950330490>",
-"QS": "<:QS:1483245446125060126>",
-"KS": "<:KS:1483245438889889863>",
-"AS": "<:AS:1483245424075870351>",
-
-}
-
-def card_to_code(card: str):
-    suit_map = {
-        "♠": "S",
-        "♥": "H",
-        "♦": "D",
-        "♣": "C"
-    }
-
-    rank = card[:-1]
-    suit = suit_map[card[-1]]
-
-    return f"{rank}{suit}"
-
-
-def render_cards(cards):
-    emojis = []
+    images = []
 
     for card in cards:
-        code = card_to_code(card)
-        emoji = CARD_EMOJIS.get(code, card)
-        emojis.append(emoji)
+        rank = card[:-1]
+        suit = suit_map[card[-1]]
 
-    return " ".join(emojis)
+        path = os.path.join(CARD_FOLDER, f"{rank}{suit}.jpg")
+
+        img = Image.open(path).convert("RGB")
+        img = img.resize((180, 260))
+
+        images.append(img)
+
+    width = sum(img.width for img in images)
+    height = max(img.height for img in images)
+
+    canvas = Image.new("RGB", (width, height), (0, 0, 0))
+
+    x = 0
+    for img in images:
+        canvas.paste(img, (x, 0))
+        x += img.width
+
+    canvas.save(filename, "JPEG")
+
+    return filename
 
 def calculate_hand_value(hand):
     value = 0
@@ -707,53 +653,88 @@ class BlackjackView(discord.ui.View):
         player_value = calculate_hand_value(self.player_hand)
         dealer_value = calculate_hand_value(self.dealer_hand)
 
-        player_cards = render_cards(self.player_hand)
-
-        if not self.stand_called:
-            dealer_cards_display = f"{render_cards([self.dealer_hand[0]])} ❓"
-        else:
-            dealer_cards_display = render_cards(self.dealer_hand)
         dealer_value_display = "?" if not self.stand_called else str(dealer_value)
 
-        embed = discord.Embed(title="Blackjack", color=discord.Color.blue())
+        # Karten rendern
+        player_img = render_hand_image(self.player_hand, "player.jpg")
 
-        embed.add_field(name="<:Astra_user:1141303940365959241> Deine Karten:", value=f"{player_cards}\nWert: **{player_value}**", inline=False)
-        embed.add_field(name="<:Astra_dev:1141303833407017001> Karten des Dealers:", value=f"{dealer_cards_display}\nWert: **{dealer_value_display}**", inline=False)
+        if not self.stand_called:
+            dealer_img = render_hand_image([self.dealer_hand[0]], "dealer.jpg")
+        else:
+            dealer_img = render_hand_image(self.dealer_hand, "dealer.jpg")
+
+        embed = discord.Embed(
+            title="🃏 Blackjack",
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="<:Astra_user:1141303940365959241> Deine Karten",
+            value=f"Wert: **{player_value}**",
+            inline=False
+        )
+
+        embed.add_field(
+            name="<:Astra_dev:1141303833407017001> Dealer",
+            value=f"Wert: **{dealer_value_display}**",
+            inline=False
+        )
+
+        embed.set_image(url="attachment://player.jpg")
 
         game_over = False
         result_text = ""
 
         if player_value > 21:
             game_over = True
-            result_text = "<:Astra_x:1141303954555289600> Du hast den Wert von 21 überschritten. Du hast verloren."
+            result_text = "<:Astra_x:1141303954555289600> Du hast überzogen. Du hast verloren."
+
         elif dealer_value > 21:
             game_over = True
-            result_text = "<:Astra_gw1:1141303852889550928> Der Dealer hat überzogen. Du hast gewonnen!"
+            result_text = "<:Astra_gw1:1141303852889550928> Dealer überzieht. Du gewinnst!"
+
         elif self.stand_called and dealer_value >= 17:
             game_over = True
+
             if player_value > dealer_value:
                 result_text = "<:Astra_gw1:1141303852889550928> Du hast gewonnen!"
+
             elif player_value < dealer_value:
-                result_text = "<:Astra_x:1141303954555289600> Der Dealer hat gewonnen."
+                result_text = "<:Astra_x:1141303954555289600> Dealer gewinnt."
+
             else:
                 result_text = "<:Astra_x:1141303954555289600> Unentschieden."
 
         if game_over:
-            embed.add_field(name="<:Astra_wichtig:1141303951862534224> Ergebnis", value=result_text, inline=False)
+            embed.add_field(
+                name="<:Astra_wichtig:1141303951862534224> Ergebnis",
+                value=result_text,
+                inline=False
+            )
+
             for child in self.children:
                 child.disabled = True
+
             if not self.result_shown:
                 self.result_shown = True
+
                 if player_value <= 21 and (player_value > dealer_value or dealer_value > 21):
                     await self.economy.update_balance(self.user_id, wallet_change=self.bet * 2)
+
                 elif player_value == dealer_value:
                     await self.economy.update_balance(self.user_id, wallet_change=self.bet)
 
+        player_file = discord.File("player.jpg", filename="player.jpg")
+        dealer_file = discord.File("dealer.jpg", filename="dealer.jpg")
+
         if self.message is None:
             self.message = await self.interaction.original_response()
-            await self.message.edit(embed=embed, view=self)
-        else:
-            await self.message.edit(embed=embed, view=self)
+
+        await self.message.edit(
+            embed=embed,
+            view=self,
+            attachments=[player_file, dealer_file]
+        )
 
     @discord.ui.button(label="Hit", style=discord.ButtonStyle.green)
     async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
