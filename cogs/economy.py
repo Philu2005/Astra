@@ -577,35 +577,50 @@ CARD_VALUES = {
 BASE_DIR = os.path.dirname(__file__)
 CARD_FOLDER = os.path.join(BASE_DIR, "assets/cards")
 
-def render_hand_image(cards, filename):
+def render_blackjack_table(player_cards, dealer_cards, hide_dealer=True):
     suit_map = {"♠": "S", "♥": "H", "♦": "D", "♣": "C"}
 
-    images = []
+    table = Image.open("assets/blackjack_table.png").convert("RGBA")
 
-    for card in cards:
+    def load_card(card):
         rank = card[:-1]
         suit = suit_map[card[-1]]
 
         path = os.path.join(CARD_FOLDER, f"{rank}{suit}.jpg")
+        img = Image.open(path).convert("RGBA")
+        return img.resize((200, 280), Image.Resampling.LANCZOS)
 
-        img = Image.open(path).convert("RGB")
-        img = img.resize((180, 260))
+    dealer_imgs = []
+    for i, card in enumerate(dealer_cards):
+        if hide_dealer and i == 1:
+            back = Image.open(os.path.join(CARD_FOLDER, "back.jpg")).convert("RGBA")
+            dealer_imgs.append(back.resize((200, 280)))
+        else:
+            dealer_imgs.append(load_card(card))
 
-        images.append(img)
+    player_imgs = [load_card(c) for c in player_cards]
 
-    width = sum(img.width for img in images)
-    height = max(img.height for img in images)
+    canvas = table.copy()
 
-    canvas = Image.new("RGB", (width, height), (0, 0, 0))
+    # Dealer Position
+    x = 400
+    y = 140
 
-    x = 0
-    for img in images:
-        canvas.paste(img, (x, 0))
-        x += img.width
+    for img in dealer_imgs:
+        canvas.paste(img, (x, y), img)
+        x += 60
 
-    canvas.save(filename, "JPEG")
+    # Player Position
+    x = 400
+    y = 430
 
-    return filename
+    for img in player_imgs:
+        canvas.paste(img, (x, y), img)
+        x += 60
+
+    canvas.save("blackjack_table_render.jpg")
+
+    return "blackjack_table_render.jpg"
 
 def calculate_hand_value(hand):
     value = 0
@@ -656,13 +671,12 @@ class BlackjackView(discord.ui.View):
 
         dealer_value_display = "?" if not self.stand_called else str(dealer_value)
 
-        # Karten rendern
-        player_img = render_hand_image(self.player_hand, "player.jpg")
-
-        if not self.stand_called:
-            dealer_img = render_hand_image([self.dealer_hand[0]], "dealer.jpg")
-        else:
-            dealer_img = render_hand_image(self.dealer_hand, "dealer.jpg")
+        # Tisch rendern
+        table_img = render_blackjack_table(
+            self.player_hand,
+            self.dealer_hand,
+            hide_dealer=not self.stand_called
+        )
 
         embed = discord.Embed(
             title="🃏 Blackjack",
@@ -670,18 +684,18 @@ class BlackjackView(discord.ui.View):
         )
 
         embed.add_field(
-            name="<:Astra_user:1141303940365959241> Deine Karten",
+            name="<:Astra_user:1141303940365959241> Deine Hand",
             value=f"Wert: **{player_value}**",
-            inline=False
+            inline=True
         )
 
         embed.add_field(
             name="<:Astra_dev:1141303833407017001> Dealer",
             value=f"Wert: **{dealer_value_display}**",
-            inline=False
+            inline=True
         )
 
-        embed.set_image(url="attachment://player.jpg")
+        embed.set_image(url="attachment://blackjack_table.jpg")
 
         game_over = False
         result_text = ""
@@ -725,8 +739,7 @@ class BlackjackView(discord.ui.View):
                 elif player_value == dealer_value:
                     await self.economy.update_balance(self.user_id, wallet_change=self.bet)
 
-        player_file = discord.File("player.jpg", filename="player.jpg")
-        dealer_file = discord.File("dealer.jpg", filename="dealer.jpg")
+        table_file = discord.File("blackjack_table.jpg", filename="blackjack_table.jpg")
 
         if self.message is None:
             self.message = await self.interaction.original_response()
@@ -734,7 +747,7 @@ class BlackjackView(discord.ui.View):
         await self.message.edit(
             embed=embed,
             view=self,
-            attachments=[player_file, dealer_file]
+            attachments=[table_file]
         )
 
     @discord.ui.button(label="Hit", style=discord.ButtonStyle.green)
