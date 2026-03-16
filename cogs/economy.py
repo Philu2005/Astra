@@ -574,7 +574,7 @@ CARD_VALUES = {
     'J': 10, 'Q': 10, 'K': 10, 'A': 11
 }
 
-CARD_FOLDER = "cards"
+CARD_FOLDER = "assets/cards"
 
 def render_hand_image(cards, filename):
     suit_map = {"♠": "S", "♥": "H", "♦": "D", "♣": "C"}
