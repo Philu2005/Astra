@@ -632,8 +632,17 @@ class BlackjackView(discord.ui.View):
 
         embed = discord.Embed(title="Blackjack", color=discord.Color.blue())
 
-        embed.add_field(name="<:Astra_user:1141303940365959241> Deine Karten:", value=f"{player_cards}\nWert: **{player_value}**", inline=False)
-        embed.add_field(name="<:Astra_dev:1141303833407017001> Karten des Dealers:", value=f"{dealer_cards_display}\nWert: **{dealer_value_display}**", inline=False)
+        embed.add_field(
+            name="<:Astra_user:1141303940365959241> Deine Karten:",
+            value=f"```{player_cards}```\nWert: **{player_value}**",
+            inline=False
+        )
+
+        embed.add_field(
+            name="<:Astra_dev:1141303833407017001> Karten des Dealers:",
+            value=f"```{dealer_cards_display}```\nWert: **{dealer_value_display}**",
+            inline=False
+        )
 
         game_over = False
         result_text = ""
