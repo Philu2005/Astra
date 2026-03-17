@@ -618,7 +618,7 @@ def render_blackjack_table(player_cards, dealer_cards, hide_dealer=True):
         canvas.paste(img, (x, y), img)
         x += 60
 
-    canvas.save("blackjack_table_render.jpg")
+    canvas.convert("RGB").save("blackjack_table_render.jpg", "JPEG")
 
     return "blackjack_table_render.jpg"
 
