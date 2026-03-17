@@ -618,9 +618,11 @@ def render_blackjack_table(player_cards, dealer_cards, hide_dealer=True):
         canvas.paste(img, (x, y), img)
         x += 60
 
-    canvas.convert("RGB").save("blackjack_table_render.jpg", "JPEG")
+    output_path = os.path.join(CARD_FOLDER, "blackjack_table_render.jpg")
 
-    return "blackjack_table_render.jpg"
+    canvas.convert("RGB").save(output_path, "JPEG")
+
+    return output_path
 
 def calculate_hand_value(hand):
     value = 0
