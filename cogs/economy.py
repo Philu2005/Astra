@@ -593,8 +593,8 @@ def render_blackjack_table(player_cards, dealer_cards, hide_dealer=True):
     dealer_imgs = []
     for i, card in enumerate(dealer_cards):
         if hide_dealer and i == 1:
-            back = Image.open(os.path.join(CARD_FOLDER, "back.jpg")).convert("RGBA")
-            dealer_imgs.append(back.resize((200, 280)))
+            back = Image.new("RGBA", (200, 280), (20, 120, 20))
+            dealer_imgs.append(back)
         else:
             dealer_imgs.append(load_card(card))
 
