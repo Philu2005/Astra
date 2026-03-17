@@ -10,8 +10,6 @@ import random
 from datetime import datetime, timezone, timedelta
 from discord import ui
 import logging
-from PIL import Image
-import os
 
 
 # TODO(@Philu priority:high due:2026-04-15 category:Economy-System issue:refactor risk:medium): Economy-System refactoren und in mehrere Cogs aufteilen (Economy, Gambling, Jobs, Admin), um Struktur, Wartbarkeit und Erweiterbarkeit des Codes zu verbessern.
@@ -574,55 +572,8 @@ CARD_VALUES = {
     'J': 10, 'Q': 10, 'K': 10, 'A': 11
 }
 
-BASE_DIR = os.path.dirname(__file__)
-CARD_FOLDER = os.path.join(BASE_DIR, "assets/cards")
-
-def render_blackjack_table(player_cards, dealer_cards, hide_dealer=True):
-    suit_map = {"♠": "S", "♥": "H", "♦": "D", "♣": "C"}
-
-    table = Image.open("cogs/assets/cards/blackjack_table.png").convert("RGBA")
-
-    def load_card(card):
-        rank = card[:-1]
-        suit = suit_map[card[-1]]
-
-        path = os.path.join(CARD_FOLDER, f"{rank}{suit}.jpg")
-        img = Image.open(path).convert("RGBA")
-        return img.resize((200, 280), Image.Resampling.LANCZOS)
-
-    dealer_imgs = []
-    for i, card in enumerate(dealer_cards):
-        if hide_dealer and i == 1:
-            back = Image.new("RGBA", (200, 280), (20, 120, 20))
-            dealer_imgs.append(back)
-        else:
-            dealer_imgs.append(load_card(card))
-
-    player_imgs = [load_card(c) for c in player_cards]
-
-    canvas = table.copy()
-
-    # Dealer Position
-    x = 400
-    y = 140
-
-    for img in dealer_imgs:
-        canvas.paste(img, (x, y), img)
-        x += 60
-
-    # Player Position
-    x = 400
-    y = 430
-
-    for img in player_imgs:
-        canvas.paste(img, (x, y), img)
-        x += 60
-
-    output_path = os.path.join(CARD_FOLDER, "blackjack_table_render.jpg")
-
-    canvas.convert("RGB").save(output_path, "JPEG")
-
-    return output_path
+def render_cards(cards):
+    return " ".join(cards)
 
 def calculate_hand_value(hand):
     value = 0
@@ -671,86 +622,53 @@ class BlackjackView(discord.ui.View):
         player_value = calculate_hand_value(self.player_hand)
         dealer_value = calculate_hand_value(self.dealer_hand)
 
+        player_cards = render_cards(self.player_hand)
+
+        if not self.stand_called:
+            dealer_cards_display = f"{render_cards([self.dealer_hand[0]])} ❓"
+        else:
+            dealer_cards_display = render_cards(self.dealer_hand)
         dealer_value_display = "?" if not self.stand_called else str(dealer_value)
 
-        # Tisch rendern
-        table_img = render_blackjack_table(
-            self.player_hand,
-            self.dealer_hand,
-            hide_dealer=not self.stand_called
-        )
+        embed = discord.Embed(title="Blackjack", color=discord.Color.blue())
 
-        embed = discord.Embed(
-            title="🃏 Blackjack",
-            color=discord.Color.blue()
-        )
-
-        embed.add_field(
-            name="<:Astra_user:1141303940365959241> Deine Hand",
-            value=f"Wert: **{player_value}**",
-            inline=True
-        )
-
-        embed.add_field(
-            name="<:Astra_dev:1141303833407017001> Dealer",
-            value=f"Wert: **{dealer_value_display}**",
-            inline=True
-        )
-
-        embed.set_image(url="attachment://blackjack_table.jpg")
+        embed.add_field(name="<:Astra_user:1141303940365959241> Deine Karten:", value=f"{player_cards}\nWert: **{player_value}**", inline=False)
+        embed.add_field(name="<:Astra_dev:1141303833407017001> Karten des Dealers:", value=f"{dealer_cards_display}\nWert: **{dealer_value_display}**", inline=False)
 
         game_over = False
         result_text = ""
 
         if player_value > 21:
             game_over = True
-            result_text = "<:Astra_x:1141303954555289600> Du hast überzogen. Du hast verloren."
-
+            result_text = "<:Astra_x:1141303954555289600> Du hast den Wert von 21 überschritten. Du hast verloren."
         elif dealer_value > 21:
             game_over = True
-            result_text = "<:Astra_gw1:1141303852889550928> Dealer überzieht. Du gewinnst!"
-
+            result_text = "<:Astra_gw1:1141303852889550928> Der Dealer hat überzogen. Du hast gewonnen!"
         elif self.stand_called and dealer_value >= 17:
             game_over = True
-
             if player_value > dealer_value:
                 result_text = "<:Astra_gw1:1141303852889550928> Du hast gewonnen!"
-
             elif player_value < dealer_value:
-                result_text = "<:Astra_x:1141303954555289600> Dealer gewinnt."
-
+                result_text = "<:Astra_x:1141303954555289600> Der Dealer hat gewonnen."
             else:
                 result_text = "<:Astra_x:1141303954555289600> Unentschieden."
 
         if game_over:
-            embed.add_field(
-                name="<:Astra_wichtig:1141303951862534224> Ergebnis",
-                value=result_text,
-                inline=False
-            )
-
+            embed.add_field(name="<:Astra_wichtig:1141303951862534224> Ergebnis", value=result_text, inline=False)
             for child in self.children:
                 child.disabled = True
-
             if not self.result_shown:
                 self.result_shown = True
-
                 if player_value <= 21 and (player_value > dealer_value or dealer_value > 21):
                     await self.economy.update_balance(self.user_id, wallet_change=self.bet * 2)
-
                 elif player_value == dealer_value:
                     await self.economy.update_balance(self.user_id, wallet_change=self.bet)
 
-        table_file = discord.File("blackjack_table.jpg", filename="blackjack_table.jpg")
-
         if self.message is None:
             self.message = await self.interaction.original_response()
-
-        await self.message.edit(
-            embed=embed,
-            view=self,
-            attachments=[table_file]
-        )
+            await self.message.edit(embed=embed, view=self)
+        else:
+            await self.message.edit(embed=embed, view=self)
 
     @discord.ui.button(label="Hit", style=discord.ButtonStyle.green)
     async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
