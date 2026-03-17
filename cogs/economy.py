@@ -595,10 +595,15 @@ class BlackjackView(discord.ui.View):
         self.bot = bot
         self.interaction = interaction
         self.bet = bet
+        self.original_bet = bet
         self.economy = economy
         self.user_id = interaction.user.id
 
         self.player_hand = []
+        self.split_hand = None
+        self.current_hand = 1
+        self.split_mode = False
+
         self.dealer_hand = []
         self.deck = self.create_deck()
         self.message = None
@@ -618,6 +623,13 @@ class BlackjackView(discord.ui.View):
         self.player_hand = [self.deck.pop(), self.deck.pop()]
         self.dealer_hand = [self.deck.pop(), self.deck.pop()]
 
+    def can_split(self):
+        if len(self.player_hand) != 2:
+            return False
+        r1 = self.player_hand[0][:-1]
+        r2 = self.player_hand[1][:-1]
+        return r1 == r2
+
     async def update_message(self):
         player_value = calculate_hand_value(self.player_hand)
         dealer_value = calculate_hand_value(self.dealer_hand)
@@ -628,6 +640,7 @@ class BlackjackView(discord.ui.View):
             dealer_cards_display = f"{render_cards([self.dealer_hand[0]])} ❓"
         else:
             dealer_cards_display = render_cards(self.dealer_hand)
+
         dealer_value_display = "?" if not self.stand_called else str(dealer_value)
 
         embed = discord.Embed(title="Blackjack", color=discord.Color.blue())
@@ -637,6 +650,16 @@ class BlackjackView(discord.ui.View):
             value=f"```{player_cards}```\nWert: **{player_value}**",
             inline=False
         )
+
+        if self.split_mode and self.split_hand:
+            split_cards = render_cards(self.split_hand)
+            split_value = calculate_hand_value(self.split_hand)
+
+            embed.add_field(
+                name="🂡 Zweite Hand:",
+                value=f"```{split_cards}```\nWert: **{split_value}**",
+                inline=False
+            )
 
         embed.add_field(
             name="<:Astra_dev:1141303833407017001> Karten des Dealers:",
@@ -650,58 +673,202 @@ class BlackjackView(discord.ui.View):
         if player_value > 21:
             game_over = True
             result_text = "<:Astra_x:1141303954555289600> Du hast den Wert von 21 überschritten. Du hast verloren."
+
         elif dealer_value > 21:
             game_over = True
             result_text = "<:Astra_gw1:1141303852889550928> Der Dealer hat überzogen. Du hast gewonnen!"
+
         elif self.stand_called and dealer_value >= 17:
             game_over = True
+
             if player_value > dealer_value:
                 result_text = "<:Astra_gw1:1141303852889550928> Du hast gewonnen!"
+
             elif player_value < dealer_value:
                 result_text = "<:Astra_x:1141303954555289600> Der Dealer hat gewonnen."
+
             else:
                 result_text = "<:Astra_x:1141303954555289600> Unentschieden."
 
         if game_over:
-            embed.add_field(name="<:Astra_wichtig:1141303951862534224> Ergebnis", value=result_text, inline=False)
+
+            embed.add_field(
+                name="<:Astra_wichtig:1141303951862534224> Ergebnis",
+                value=result_text,
+                inline=False
+            )
+
             for child in self.children:
                 child.disabled = True
+
             if not self.result_shown:
+
                 self.result_shown = True
+
                 if player_value <= 21 and (player_value > dealer_value or dealer_value > 21):
-                    await self.economy.update_balance(self.user_id, wallet_change=self.bet * 2)
+
+                    await self.economy.update_balance(
+                        self.user_id,
+                        wallet_change=self.bet * 2
+                    )
+
                 elif player_value == dealer_value:
-                    await self.economy.update_balance(self.user_id, wallet_change=self.bet)
+
+                    await self.economy.update_balance(
+                        self.user_id,
+                        wallet_change=self.bet
+                    )
 
         if self.message is None:
+
             self.message = await self.interaction.original_response()
             await self.message.edit(embed=embed, view=self)
+
         else:
+
             await self.message.edit(embed=embed, view=self)
 
     @discord.ui.button(label="Hit", style=discord.ButtonStyle.green)
     async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        if calculate_hand_value(self.player_hand) >= 21:
-            return
 
-        self.player_hand.append(self.deck.pop())
+        await interaction.response.defer()
+
+        if self.split_mode and self.current_hand == 2:
+
+            if calculate_hand_value(self.split_hand) >= 21:
+                return
+
+            self.split_hand.append(self.deck.pop())
+
+        else:
+
+            if calculate_hand_value(self.player_hand) >= 21:
+                return
+
+            self.player_hand.append(self.deck.pop())
+
         await self.update_message()
 
     @discord.ui.button(label="Stand", style=discord.ButtonStyle.red)
     async def stand(self, interaction: discord.Interaction, button: discord.ui.Button):
+
         await interaction.response.defer()
+
+        if self.split_mode and self.current_hand == 1:
+
+            self.current_hand = 2
+            await self.update_message()
+            return
+
         self.stand_called = True
 
         await self.animate_dealer_cards()
+
+        await self.update_message()
+
+    @discord.ui.button(label="Double", style=discord.ButtonStyle.blurple)
+    async def double(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.defer()
+
+        user_data = await self.economy.get_user(self.user_id)
+        wallet = user_data[0]
+
+        if wallet < self.bet:
+
+            await interaction.followup.send(
+                "Du hast nicht genug Coins für Double Down.",
+                ephemeral=True
+            )
+            return
+
+        await self.economy.update_balance(self.user_id, wallet_change=-self.bet)
+
+        self.bet *= 2
+
+        self.player_hand.append(self.deck.pop())
+
+        self.stand_called = True
+
+        await self.animate_dealer_cards()
+
+        await self.update_message()
+
+    @discord.ui.button(label="Split", style=discord.ButtonStyle.grey)
+    async def split(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.defer()
+
+        if not self.can_split():
+
+            await interaction.followup.send(
+                "Diese Karten können nicht gesplittet werden.",
+                ephemeral=True
+            )
+            return
+
+        user_data = await self.economy.get_user(self.user_id)
+        wallet = user_data[0]
+
+        if wallet < self.bet:
+
+            await interaction.followup.send(
+                "Nicht genug Coins zum Splitten.",
+                ephemeral=True
+            )
+            return
+
+        await self.economy.update_balance(self.user_id, wallet_change=-self.bet)
+
+        self.split_mode = True
+
+        self.split_hand = [self.player_hand.pop()]
+
+        self.player_hand.append(self.deck.pop())
+        self.split_hand.append(self.deck.pop())
+
         await self.update_message()
 
     async def animate_dealer_cards(self):
+
+        # Dealer deckt seine versteckte Karte auf
+        await asyncio.sleep(0.8)
+
+        embed = discord.Embed(
+            title="Blackjack",
+            description="🃏 Der Dealer deckt seine Karte auf...",
+            color=discord.Color.blue()
+        )
+
+        await self.update_message()
+
         await asyncio.sleep(1)
+
+        # Dealer zieht Karten
         while calculate_hand_value(self.dealer_hand) < 17:
-            self.dealer_hand.append(self.deck.pop())
+            draw_card = self.deck.pop()
+
+            # kleine Animation bevor Karte erscheint
+            embed = discord.Embed(
+                title="Blackjack",
+                description="🎴 Dealer zieht eine Karte...",
+                color=discord.Color.blue()
+            )
+
+            await self.message.edit(embed=embed, view=self)
+
+            await asyncio.sleep(0.7)
+
+            # Karte hinzufügen
+            self.dealer_hand.append(draw_card)
+
+            # aktualisierte Anzeige
             await self.update_message()
-            await asyncio.sleep(1.2)
+
+            await asyncio.sleep(1.1)
+
+        # finale Pause für Spannung
+        await asyncio.sleep(0.6)
 
 # ---------------------- Jobliste & Economy ----------------------
 
