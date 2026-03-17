@@ -580,7 +580,7 @@ CARD_FOLDER = os.path.join(BASE_DIR, "assets/cards")
 def render_blackjack_table(player_cards, dealer_cards, hide_dealer=True):
     suit_map = {"♠": "S", "♥": "H", "♦": "D", "♣": "C"}
 
-    table = Image.open("assets/blackjack_table.png").convert("RGBA")
+    table = Image.open("cogs/assets/cards/blackjack_table.png").convert("RGBA")
 
     def load_card(card):
         rank = card[:-1]
