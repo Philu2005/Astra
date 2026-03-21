@@ -208,9 +208,24 @@ class TempChannelView(discord.ui.View):
             )
 
         overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(connect=False, view_channel=True),
-            interaction.user: discord.PermissionOverwrite(connect=True, speak=True, view_channel=True),
-            interaction.guild.me: discord.PermissionOverwrite(connect=True, view_channel=True, manage_channels=True),
+            interaction.guild.default_role: discord.PermissionOverwrite(
+                connect=False,
+                view_channel=True,
+                use_voice_activation=True
+            ),
+            interaction.user: discord.PermissionOverwrite(
+                connect=True,
+                speak=True,
+                view_channel=True,
+                use_voice_activation=True
+            ),
+            interaction.guild.me: discord.PermissionOverwrite(
+                connect=True,
+                view_channel=True,
+                manage_channels=True,
+                speak=True,
+                use_voice_activation=True
+            ),
         }
         try:
             await vc.edit(overwrites=overwrites)
@@ -251,9 +266,25 @@ class TempChannelView(discord.ui.View):
             )
 
         overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(connect=True, view_channel=True),
-            interaction.user: discord.PermissionOverwrite(connect=True, speak=True, view_channel=True),
-            interaction.guild.me: discord.PermissionOverwrite(connect=True, view_channel=True, manage_channels=True),
+            interaction.guild.default_role: discord.PermissionOverwrite(
+                connect=True,
+                view_channel=True,
+                speak=True,
+                use_voice_activation=True
+            ),
+            interaction.user: discord.PermissionOverwrite(
+                connect=True,
+                speak=True,
+                view_channel=True,
+                use_voice_activation=True
+            ),
+            interaction.guild.me: discord.PermissionOverwrite(
+                connect=True,
+                view_channel=True,
+                manage_channels=True,
+                speak=True,
+                use_voice_activation=True
+            ),
         }
         try:
             await vc.edit(overwrites=overwrites)
@@ -294,9 +325,23 @@ class TempChannelView(discord.ui.View):
             )
 
         overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(connect=True, speak=True, view_channel=True),
-            interaction.guild.me: discord.PermissionOverwrite(connect=True, view_channel=True, manage_channels=True),
+            interaction.guild.default_role: discord.PermissionOverwrite(
+                view_channel=False,
+                use_voice_activation=True
+            ),
+            interaction.user: discord.PermissionOverwrite(
+                connect=True,
+                speak=True,
+                view_channel=True,
+                use_voice_activation=True
+            ),
+            interaction.guild.me: discord.PermissionOverwrite(
+                connect=True,
+                view_channel=True,
+                manage_channels=True,
+                speak=True,
+                use_voice_activation=True
+            ),
         }
         try:
             await vc.edit(overwrites=overwrites)
@@ -337,9 +382,25 @@ class TempChannelView(discord.ui.View):
             )
 
         overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(view_channel=True, connect=True),
-            interaction.user: discord.PermissionOverwrite(connect=True, speak=True, view_channel=True),
-            interaction.guild.me: discord.PermissionOverwrite(connect=True, view_channel=True, manage_channels=True),
+            interaction.guild.default_role: discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                speak=True,
+                use_voice_activation=True
+            ),
+            interaction.user: discord.PermissionOverwrite(
+                connect=True,
+                speak=True,
+                view_channel=True,
+                use_voice_activation=True
+            ),
+            interaction.guild.me: discord.PermissionOverwrite(
+                connect=True,
+                view_channel=True,
+                manage_channels=True,
+                speak=True,
+                use_voice_activation=True
+            ),
         }
         try:
             await vc.edit(overwrites=overwrites)
@@ -483,21 +544,55 @@ class TempChannelCog(commands.Cog):
                 # Overwrites bestimmen
                 if sichtbarkeit == "jeder":
                     ovw = {
-                        interaction.guild.default_role: discord.PermissionOverwrite(view_channel=True, connect=True),
-                        interaction.guild.me: discord.PermissionOverwrite(view_channel=True, connect=True,
-                                                                          manage_channels=True),
+                        interaction.guild.default_role: discord.PermissionOverwrite(
+                            view_channel=True,
+                            connect=True,
+                            speak=True,
+                            use_voice_activation=True
+                        ),
+                        interaction.guild.me: discord.PermissionOverwrite(
+                            view_channel=True,
+                            connect=True,
+                            speak=True,
+                            use_voice_activation=True,
+                            manage_channels=True
+                        ),
                     }
+
                 elif sichtbarkeit == "privat":
                     ovw = {
-                        interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False, connect=False),
-                        interaction.guild.me: discord.PermissionOverwrite(view_channel=True, connect=True,
-                                                                          manage_channels=True),
+                        interaction.guild.default_role: discord.PermissionOverwrite(
+                            view_channel=False,
+                            connect=False,
+                            use_voice_activation=True
+                        ),
+                        interaction.guild.me: discord.PermissionOverwrite(
+                            view_channel=True,
+                            connect=True,
+                            speak=True,
+                            use_voice_activation=True,
+                            manage_channels=True
+                        ),
                     }
+
                 else:  # "rolle"
                     if rolle is None:
-                        return await interaction.followup.send("❌ Bitte eine Rolle angeben bei `sichtbarkeit=rolle`.",
-                                                               ephemeral=True)
+                        return await interaction.followup.send(
+                            "❌ Bitte eine Rolle angeben bei `sichtbarkeit=rolle`.",
+                            ephemeral=True
+                        )
+
                     ovw = build_threshold_overwrites(interaction.guild, rolle, allow_connect=True)
+
+                    # 🔥 HIER DER WICHTIGE FIX
+                    for r in ovw:
+                        current = ovw[r]
+                        ovw[r] = discord.PermissionOverwrite(
+                            view_channel=current.view_channel,
+                            connect=current.connect,
+                            speak=current.speak,
+                            use_voice_activation=True
+                        )
 
                 # DB prüfen
                 await cur.execute("SELECT channel_id FROM tempchannels WHERE guild_id = %s", (interaction.guild.id,))
