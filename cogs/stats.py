@@ -8,7 +8,10 @@ import numpy as np
 import io
 from datetime import datetime, timedelta
 from collections import defaultdict
+import re
 
+def strip_emojis(text):
+    return re.sub(r'[^\w\s•.-]', '', text)
 
 # =========================================================
 # COG
@@ -214,7 +217,7 @@ class Analytics(commands.Cog):
         # -----------------------------------
         # TITLE (optional, wenn du willst)
         # -----------------------------------
-        ax.set_title(title, fontsize=15, weight="bold", color="#e2e8f0", pad=12)
+        ax.set_title(strip_emojis(title), fontsize=15, weight="bold", color="#e2e8f0", pad=12)
 
         # -----------------------------------
         # LEGEND

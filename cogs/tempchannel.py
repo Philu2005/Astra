@@ -615,6 +615,13 @@ class TempChannelCog(commands.Cog):
                             reason="JoinHub gejoined."
                         )
 
+                        await output.set_permissions(
+                            member.guild.default_role,
+                            connect=True,
+                            speak=True,
+                            use_voice_activation=True
+                        )
+
                         if output:
                             tempchannels.append(output.id)
 
