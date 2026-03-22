@@ -161,21 +161,11 @@ class Astra(commands.Bot):
             await self.load_cogs()
             self.tree.add_command(Reminder())
             logging.info("Astra ist online!")
-            plain_logger = logging.getLogger("banner")
-            plain_logger.propagate = False
-
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter("%(message)s"))
-            plain_logger.addHandler(handler)
-            plain_logger.setLevel(logging.INFO)
-
-            plain_logger.info("""
-                 _    ____ _____ ____      _    
-                / \\  / ___|_   _|  _ \\    / \\   
-               / _ \\ \\___ \\ | | | |_) |  / _ \\  
-              / ___ \\ ___) || | |  _ <  / ___ \\ 
-             /_/   \\_\\____/ |_| |_| \\_\\/_/   \\_\\
-            """)
+            logging.info(r"     _    ____ _____ ____      _    ")
+            logging.info(r"    / \  / ___|_   _|  _ \    / \   ")
+            logging.info(r"   / _ \ \___ \ | | | |_) |  / _ \  ")
+            logging.info(r"  / ___ \ ___) || | |  _ <  / ___ \ ")
+            logging.info(r" /_/   \_\____/ |_| |_| \_\/_/   \_" "\\")
             self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
         except Exception as e:
             logging.error(f"❌ Fehler beim Setup:\n{e}")
