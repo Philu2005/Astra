@@ -160,8 +160,11 @@ class Astra(commands.Bot):
             await self.load_cogs()
             self.tree.add_command(Reminder())
             logging.info("Astra ist online!")
-            await asyncio.sleep(3)
-            logging.info("[PANEL-INFO] Script started!")
+            logging.info("     _    ____ _____ ____      _    ")
+            logging.info("    / \\  / ___|_   _|  _ \\    / \\   ")
+            logging.info("   / _ \\ \\___ \\ | | | |_) |  / _ \\  ")
+            logging.info("  / ___ \\ ___) || | |  _ <  / ___ \\ ")
+            logging.info(" /_/   \\_\\____/ |_| |_| \\_\\/_/   \\_\\")
             self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
         except Exception as e:
             logging.error(f"❌ Fehler beim Setup:\n{e}")
@@ -748,7 +751,6 @@ async def on_ready():
         for g in bot.guilds:
             guild_cache[g.id] = g
 
-    logging.info(f"[CACHE] {len(guild_cache)} Guilds cached")
     servercount = len(bot.guilds)
     usercount = sum(guild.member_count for guild in bot.guilds)
     commandCount = len(all_app_commands(bot))
