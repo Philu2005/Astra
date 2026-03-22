@@ -69,7 +69,7 @@ async def run_sql_file(pool, path: str):
 
 logging.basicConfig(
     level=logging.INFO,  # oder DEBUG für mehr Details
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(levelname)-5s - %(message)s"
 )
 logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 
