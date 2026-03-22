@@ -162,11 +162,14 @@ class Astra(commands.Bot):
             self.tree.add_command(Reminder())
             logging.info("Astra ist online!")
             logging.info(
-                "     _    ____ _____ ____      _    \n"
-                "    / \\  / ___|_   _|  _ \\    / \\   \n"
-                "   / _ \\ \\___ \\ | | | |_) |  / _ \\  \n"
-                "  / ___ \\ ___) || | |  _ <  / ___ \\ \n"
-                " /_/   \\_\\____/ |_| |_| \\_\\/_/   \\_\\"
+                "Astra ist online!\n"
+                "\n"
+                "  ___   _____ _____ _____ _____ \n"
+                " / _ \\ |  _  /  ___|_   _|  _  |\n"
+                "/ /_\\ \\| | | \\ `--.  | | | | | |\n"
+                "|  _  || | | |`--. \\ | | | | | |\n"
+                "| | | |\\ \\_/ /\\__/ / | | \\ \\_/ /\n"
+                "\\_| |_/ \\___/\\____/  \\_/  \\___/ "
             )
             self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
         except Exception as e:
