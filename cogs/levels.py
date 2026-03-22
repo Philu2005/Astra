@@ -1153,7 +1153,10 @@ class levelsystem(commands.Cog):
                             description=f"Weiter so {msg.author.mention}! Du hast Level {int(lvl_start) + 1} erreicht",
                             color=discord.Color.green()
                         )
-                        await channel.send(msg.author.mention, embed=embed)
+                        try:
+                            await channel.send(msg.author.mention, embed=embed)
+                        except:
+                            pass
                     else:
                         lvl = int(lvl_start + 1)
                         finalmsg = messageres[0].replace("%member", str(msg.author.mention)).replace("%level", str(lvl))
