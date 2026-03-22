@@ -71,6 +71,7 @@ logging.basicConfig(
     level=logging.INFO,  # oder DEBUG für mehr Details
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 
 intents = discord.Intents.default()
 
