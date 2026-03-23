@@ -43,8 +43,49 @@ async def table_has_data(cur, table_name: str) -> bool:
     try:
         await cur.execute(f"SELECT 1 FROM `{table_name}` LIMIT 1")
         return await cur.fetchone() is not None
-    except:
+    except Exception:
         return False
+
+
+def extract_table_name(stmt: str, keyword: str):
+    """
+    Robust gegen:
+    - Whitespace
+    - Backticks
+    - neue Zeilen
+    """
+    pattern = rf"{keyword}\s+(?:IF NOT EXISTS\s+)?`?([a-zA-Z0-9_]+)`?"
+    match = re.search(pattern, stmt, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def split_sql_statements(sql: str):
+    """
+    Sicherer Split als simples .split(";")
+    (ignoriert Semikolons in Strings)
+    """
+    statements = []
+    current = []
+    in_string = False
+
+    for char in sql:
+        if char == "'":
+            in_string = not in_string
+
+        if char == ";" and not in_string:
+            stmt = "".join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+        else:
+            current.append(char)
+
+    if current:
+        stmt = "".join(current).strip()
+        if stmt:
+            statements.append(stmt)
+
+    return statements
 
 
 async def run_sql_file(pool, path: str):
@@ -57,32 +98,24 @@ async def run_sql_file(pool, path: str):
 
     # Kommentare entfernen
     raw = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)
-    lines = []
-    for line in raw.splitlines():
-        line = re.sub(r"--.*$", "", line)
-        lines.append(line)
-    cleaned = "\n".join(lines)
+    raw = re.sub(r"--.*$", "", raw, flags=re.M)
 
-    statements = [s.strip() for s in cleaned.split(";") if s.strip()]
+    statements = split_sql_statements(raw)
 
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
 
             for stmt in statements:
-                try:
-                    stmt_upper = stmt.upper()
+                stmt = stmt.strip()
+                if not stmt:
+                    continue
 
+                try:
                     # ------------------------
                     # CREATE TABLE check
                     # ------------------------
-                    match = re.match(
-                        r"CREATE TABLE\s+(IF NOT EXISTS\s+)?`?(\w+)`?",
-                        stmt,
-                        re.IGNORECASE
-                    )
-                    if match:
-                        table_name = match.group(1)
-
+                    table_name = extract_table_name(stmt, "CREATE TABLE")
+                    if table_name:
                         if await table_exists(cur, table_name):
                             logging.info(f"[DB] Skip table (exists): {table_name}")
                             continue
@@ -90,21 +123,23 @@ async def run_sql_file(pool, path: str):
                     # ------------------------
                     # INSERT check
                     # ------------------------
-                    match = re.match(r"INSERT INTO\s+`?(\w+)`?", stmt, re.IGNORECASE)
-                    if match:
-                        table_name = match.group(1)
-
+                    table_name = extract_table_name(stmt, "INSERT INTO")
+                    if table_name:
                         if await table_has_data(cur, table_name):
                             logging.info(f"[DB] Skip insert (data exists): {table_name}")
                             continue
 
                     # ------------------------
-                    # EXECUTE nur wenn nötig
+                    # EXECUTE
                     # ------------------------
                     await cur.execute(stmt)
 
                 except Exception as e:
                     logging.error(f"[DB] Fehler in Statement:\n{stmt}\n{e}")
+
+        await conn.commit()
+
+    logging.info(f"[DB] SQL vollständig ausgeführt ({len(statements)} Statements)")
 
 logging.basicConfig(
     level=logging.INFO,
