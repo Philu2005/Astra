@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="/cogs/assets/banner.svg" alt="Astra Banner" />
+</p>
+
 # 🚀 Astra
 
 ![Version](https://img.shields.io/badge/Projekt_Version-2.8.4-blue)

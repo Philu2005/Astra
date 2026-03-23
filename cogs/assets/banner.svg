@@ -1,7 +1,7 @@
 <svg width="100%" height="220" viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg">
 
   <defs>
-    <!-- Enhanced Gradient -->
+    <!-- Gradient -->
     <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#a855f7">
         <animate attributeName="offset" values="-1;1" dur="6s" repeatCount="indefinite"/>
@@ -22,48 +22,52 @@
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
+
+    <!-- CLIP für echte runde Ecken oben + unten -->
+    <clipPath id="roundedClip">
+      <rect x="0" y="0" width="900" height="220" rx="30" ry="30"/>
+    </clipPath>
   </defs>
 
-  <!-- Shape Background -->
-  <path d="
-    M0,0
-    H900
-    V170
-    C700,240 200,240 0,170
-    Z"
-    fill="url(#gradient)" opacity="0.85"/>
+  <!-- Alles wird sauber abgeschnitten -->
+  <g clip-path="url(#roundedClip)">
 
-  <!-- Wave -->
-  <path fill="#020617" opacity="0.9">
-    <animate attributeName="d"
-      dur="5s"
-      repeatCount="indefinite"
-      values="
-        M0,155 C250,110 650,210 900,155 L900,220 L0,220 Z;
-        M0,175 C300,140 600,190 900,145 L900,220 L0,220 Z;
-        M0,155 C250,110 650,210 900,155 L900,220 L0,220 Z
-      " />
-  </path>
+    <!-- Hintergrund -->
+    <rect x="0" y="0" width="900" height="220"
+          fill="url(#gradient)" />
 
-  <!-- Title (höher) -->
+    <!-- Wave (KEINE Transparenz mehr) -->
+    <path fill="#020617">
+      <animate attributeName="d"
+        dur="5s"
+        repeatCount="indefinite"
+        values="
+          M0,155 C250,110 650,210 900,155 L900,220 L0,220 Z;
+          M0,175 C300,140 600,190 900,145 L900,220 L0,220 Z;
+          M0,155 C250,110 650,210 900,155 L900,220 L0,220 Z
+        " />
+    </path>
+
+  </g>
+
+  <!-- Title -->
   <text x="50%" y="40%" text-anchor="middle"
         font-size="66"
         font-weight="800"
         fill="#ffffff"
         font-family="Segoe UI, Inter, Arial, sans-serif"
-        filter="url(#glow)"
-        letter-spacing="2">
+        filter="url(#glow)">
     <animate attributeName="opacity" values="1;0.85;1" dur="2s" repeatCount="indefinite"/>
     Astra
   </text>
 
-  <!-- Accent Line (leicht runter) -->
+  <!-- Accent Line -->
   <rect x="350" y="125" width="200" height="2"
         fill="#ffffff" opacity="0.4">
     <animate attributeName="opacity" values="0.2;0.6;0.2" dur="3s" repeatCount="indefinite"/>
   </rect>
 
-  <!-- Subtitle (deutlich mehr Abstand) -->
+  <!-- Subtitle -->
   <text x="50%" y="155" text-anchor="middle"
         font-size="18"
         font-weight="600"
