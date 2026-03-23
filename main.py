@@ -72,7 +72,6 @@ class Astra(commands.Bot):
         self.task = False
         self.task2 = False
         self.pool = None  # Pool-Objekt hier zentral gespeichert
-        self.funktion2 = funktion2
         self.initial_extensions = [
             "cogs.stats",
             "cogs.birthday",
@@ -335,8 +334,6 @@ class Astra(commands.Bot):
 bot = Astra()
 
 
-setup_topgg_events(bot)
-
 def all_app_commands(bot):
     global_commands = bot.tree.get_commands()
     from itertools import chain
@@ -460,7 +457,9 @@ async def funktion2(user_id: int, when: datetime):
         except Exception:
             pass
 
+bot.funktion2 = funktion2
 
+setup_topgg_events(bot)
 
 async def funktion(when: datetime):
     await bot.wait_until_ready()
