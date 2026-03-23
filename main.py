@@ -1,45 +1,51 @@
 import discord
-import requests
-import json
 import random
 from waitress import serve
 import threading
-import httpx
-from discord.ext import commands, tasks
-from discord.app_commands import AppCommandError
+from discord.ext import commands
 from discord import app_commands
-from discord.app_commands import Group
-from flask import Flask, request, jsonify
-import io
-import hashlib
-import json
-import platform
+from flask import Flask, jsonify
 from zoneinfo import ZoneInfo
-import tempfile
-from pathlib import Path
-from topgg import WebhookManager
 import math
 import traceback
 import asyncio
 import topgg
 import aiomysql
-import jishaku
 import os
-import logging
-import time
 from dotenv import load_dotenv
-import aiohttp
 from datetime import datetime, timezone
 from typing import Literal
-
 import re
+import logging
+from pathlib import Path
 from threading import Lock
 
 guild_cache = {}
 guild_cache_lock = Lock()
 bot_ready = False
 
-SCHEMA_PATH = "/root/Astra/opt/schema.sql"  # <- Pfad zu deiner Datei
+
+SCHEMA_PATH = "/root/Astra/opt/schema.sql"
+
+
+async def table_exists(cur, table_name: str) -> bool:
+    await cur.execute("""
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+        AND table_name = %s
+        LIMIT 1
+    """, (table_name,))
+    return await cur.fetchone() is not None
+
+
+async def table_has_data(cur, table_name: str) -> bool:
+    try:
+        await cur.execute(f"SELECT 1 FROM `{table_name}` LIMIT 1")
+        return await cur.fetchone() is not None
+    except:
+        return False
+
 
 async def run_sql_file(pool, path: str):
     p = Path(path)
@@ -49,21 +55,50 @@ async def run_sql_file(pool, path: str):
 
     raw = p.read_text(encoding="utf-8")
 
-    # -- Kommentare entfernen (-- … und /* … */), dann an ';' splitten
-    raw = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)          # block comments
+    # Kommentare entfernen
+    raw = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)
     lines = []
     for line in raw.splitlines():
-        # entferne Zeilenkommentare, aber nicht in Strings (einfacher Ansatz reicht hier)
         line = re.sub(r"--.*$", "", line)
         lines.append(line)
     cleaned = "\n".join(lines)
 
     statements = [s.strip() for s in cleaned.split(";") if s.strip()]
+
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+
             for stmt in statements:
                 try:
+                    stmt_upper = stmt.upper()
+
+                    # ------------------------
+                    # CREATE TABLE check
+                    # ------------------------
+                    match = re.match(r"CREATE TABLE\s+`?(\w+)`?", stmt, re.IGNORECASE)
+                    if match:
+                        table_name = match.group(1)
+
+                        if await table_exists(cur, table_name):
+                            logging.info(f"[DB] Skip table (exists): {table_name}")
+                            continue
+
+                    # ------------------------
+                    # INSERT check
+                    # ------------------------
+                    match = re.match(r"INSERT INTO\s+`?(\w+)`?", stmt, re.IGNORECASE)
+                    if match:
+                        table_name = match.group(1)
+
+                        if await table_has_data(cur, table_name):
+                            logging.info(f"[DB] Skip insert (data exists): {table_name}")
+                            continue
+
+                    # ------------------------
+                    # EXECUTE nur wenn nötig
+                    # ------------------------
                     await cur.execute(stmt)
+
                 except Exception as e:
                     logging.error(f"[DB] Fehler in Statement:\n{stmt}\n{e}")
 
@@ -308,7 +343,7 @@ class Astra(commands.Bot):
                 logging.info('---------------------------------------------')
 
         gesamt = geladen + fehler
-        logging.info(f"\n📦 Cogs geladen: {geladen}/{gesamt} erfolgreich ✅")
+        logging.info(f"📦 Cogs geladen: {geladen}/{gesamt} erfolgreich ✅")
         if fehler > 0:
             logging.error(f"❗ {fehler} Cog(s) konnten nicht geladen werden.")
 
