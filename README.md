@@ -1,8 +1,14 @@
 # 🚀 Astra
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![discord.py](https://img.shields.io/badge/Library-discord.py-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
+![Version](https://img.shields.io/badge/Projekt_Version-2.1.0-blue)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python\&logoColor=white)
+![discord.py](https://img.shields.io/badge/Library-discord.py-5865F2?logo=discord\&logoColor=white)
+![MySQL](https://img.shields.io/badge/database-MySQL-4479A1?logo=mysql\&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-2ea44f)
+![Stars](https://img.shields.io/github/stars/Philu2005/astra?style=social)
+
+
+
 
 **Astra** ist ein modularer Discord-Bot zur **Serververwaltung, Automatisierung und Community-Interaktion**.
 
@@ -14,14 +20,17 @@ Der Bot kombiniert Moderation, Community-Systeme, Automationen und Unterhaltung 
 
 Astra unterstützt Discord-Server dabei, **organisiert, aktiv und automatisiert** zu bleiben.
 
-Wichtige Funktionen:
+## ⚙️ Wichtige Funktionen
 
-• 🛡 Moderation & Automod  
-• 📈 Community-Systeme (Level, Economy, Events)  
-• ⚙ Server-Automationen  
-• 🎮 Spiele & Fun-Commands  
-• 📊 Utility & Informationsbefehle  
-• 💾 Server-Backups  
+| Kategorie      | Beschreibung                 |
+|:---------------|:-----------------------------|
+| 🛡 Moderation  | Automod, Moderationstools    |
+| 📈 Community   | Levelsystem, Economy, Events |
+| ⚙ Automationen| Server-Automationen          |
+| 🎮 Fun         | Spiele & Commands            |
+| 📊 Utility     | Infos & Tools                |
+| 💾 Backups     | Server-Backups               |
+
 
 ---
 
