@@ -184,7 +184,6 @@ class Astra(commands.Bot):
         logging.info("")
         logging.info("──────────────── 🗄️ DATABASE ────────────────")
         logging.info("✅ DB-Verbindung erfolgreich")
-        logging.info("───────────────────── ✓ ─────────────────────")
 
     async def init_tables(self):
         """Erstellt/Registriert Tasks und führt einen DB-Healthcheck aus."""
@@ -195,6 +194,7 @@ class Astra(commands.Bot):
             async with conn.cursor() as cur:
                 await cur.execute("SELECT 1")
         logging.info("✅ DB-Test erfolgreich")
+        logging.info("───────────────────── ✓ ─────────────────────")
 
         # Aiomysql anstoßen
         async with self.pool.acquire() as conn:
