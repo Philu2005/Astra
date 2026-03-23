@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="/cogs/assets/banner.svg" alt="Astra Banner" />
+  <img src="/cogs/assets/banner.svg?v=4" alt="Astra Banner" />
 </p>
 
 # 🚀 Astra

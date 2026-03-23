@@ -1,26 +1,23 @@
 <svg width="100%" height="220" viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg">
 
   <defs>
-    <!-- Gradient -->
-    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#a855f7">
-        <animate attributeName="offset" values="-1;1" dur="6s" repeatCount="indefinite"/>
-      </stop>
-      <stop offset="50%" stop-color="#6366f1">
-        <animate attributeName="offset" values="0;2" dur="6s" repeatCount="indefinite"/>
-      </stop>
-      <stop offset="100%" stop-color="#22d3ee">
-        <animate attributeName="offset" values="1;3" dur="6s" repeatCount="indefinite"/>
-      </stop>
+    <!-- 🔥 Animated Gradient -->
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="200%" y2="0%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="50%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+      <animateTransform attributeName="gradientTransform"
+        type="translate"
+        from="-1 0"
+        to="1 0"
+        dur="6s"
+        repeatCount="indefinite"/>
     </linearGradient>
 
-    <!-- 🔥 COMBINED MASK -->
+    <!-- 🔥 Mask -->
     <mask id="mask">
+      <rect width="900" height="220" rx="30" fill="white"/>
 
-      <!-- Alles sichtbar -->
-      <rect x="0" y="0" width="900" height="220" rx="30" fill="white"/>
-
-      <!-- Wave wird "ausgeschnitten" -->
       <path fill="black"
         d="M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z">
         <animate attributeName="d"
@@ -32,38 +29,45 @@
             M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z
           " />
       </path>
-
     </mask>
 
     <!-- Glow -->
     <filter id="glow">
-      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feGaussianBlur stdDeviation="8" result="blur"/>
       <feMerge>
-        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
 
   </defs>
 
-  <!-- Background mit ausgeschnittener Wave -->
-  <rect x="0" y="0" width="900" height="220"
-        rx="30"
+  <!-- Background -->
+  <rect width="900" height="220"
         fill="url(#gradient)"
-        mask="url(#mask)" />
+        mask="url(#mask)"
+        rx="30"/>
 
-  <!-- Optional: darunter dunkle Fläche (wie dein Screenshot) -->
-  <rect x="0" y="150" width="900" height="70"
-        fill="#020617" rx="0"/>
+  <!-- Accent Line -->
+  <rect x="350" y="125" width="200" height="2"
+        fill="#ffffff" opacity="0.4">
+    <animate attributeName="opacity"
+      values="0.2;0.6;0.2"
+      dur="3s"
+      repeatCount="indefinite"/>
+  </rect>
 
   <!-- Title -->
   <text x="50%" y="40%" text-anchor="middle"
         font-size="66"
         font-weight="800"
         fill="#ffffff"
-        font-family="Segoe UI, Inter, Arial, sans-serif"
+        font-family="Segoe UI, Inter, Arial"
         filter="url(#glow)">
-    <animate attributeName="opacity" values="1;0.85;1" dur="2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity"
+      values="1;0.85;1"
+      dur="2s"
+      repeatCount="indefinite"/>
     Astra
   </text>
 
