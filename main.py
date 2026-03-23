@@ -245,34 +245,30 @@ class Astra(commands.Bot):
     async def load_cogs(self):
         """Lädt alle Cogs"""
         geladen, fehler = 0, 0
-        failed = []
-
-        logging.info(f"📦 Lade {len(self.initial_extensions)} Cogs...")
 
         # Optional: jishaku laden, aber Fehler ignorieren
         try:
             await self.load_extension("jishaku")
-            logging.debug("🧪 jishaku geladen")
-        except Exception:
-            logging.debug("jishaku nicht verfügbar")
+            logging.info("🧪 jishaku erfolgreich geladen")
+        except Exception as e:
+            logging.error("⚠️  jishaku konnte nicht geladen werden:", e)
 
         for ext in self.initial_extensions:
+            logging.info(f"🔄 Lade: {ext}")
             try:
                 await self.load_extension(ext)
                 geladen += 1
+                logging.info(f"✅ Erfolgreich geladen: {ext}")
             except Exception:
                 fehler += 1
-                failed.append(ext)
-                logging.exception(f"❌ Fehler beim Laden von: {ext}")
+                logging.error(f'❌ Fehler beim Laden von: {ext}')
+                traceback.print_exc()
+                logging.info('---------------------------------------------')
 
         gesamt = geladen + fehler
-
-        # 🔥 Summary statt Spam
-        if fehler == 0:
-            logging.info(f"📦 Cogs geladen: {geladen}/{gesamt} erfolgreich ✅")
-        else:
-            logging.warning(f"📦 Cogs geladen: {geladen}/{gesamt} ❌")
-            logging.warning(f"❗ Fehlgeschlagen ({fehler}): {', '.join(failed)}")
+        logging.info(f"📦 Cogs geladen: {geladen}/{gesamt} erfolgreich ✅")
+        if fehler > 0:
+            logging.error(f"❗ {fehler} Cog(s) konnten nicht geladen werden.")
 
     async def on_message(self, msg):
         if msg.author.bot:
