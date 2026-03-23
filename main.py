@@ -148,6 +148,7 @@ class Astra(commands.Bot):
             self.tree.add_command(Reminder())
 
             logging.info("")
+            logging.info("")
             logging.info("──────────────── 🚀 STARTUP ────────────────")
             logging.info("Astra ist online!")
             logging.info(" █████╗ ███████╗████████╗██████╗  █████╗  ")
@@ -181,6 +182,7 @@ class Astra(commands.Bot):
             connect_timeout=5,
             maxsize=50
         )
+        logging.info("")
         logging.info("")
         logging.info("──────────────── 🗄️ DATABASE ────────────────")
         logging.info("✅ DB-Verbindung erfolgreich")
@@ -248,6 +250,7 @@ class Astra(commands.Bot):
                     asyncio.create_task(starte_voterole_tasks())
 
         logging.info("")
+        logging.info("")
         logging.info("──────────────── ⏱️ TASKS ────────────────")
         logging.info("✅ Tasks Registered!")
         logging.info("──────────────────── ✓ ────────────────────")
@@ -259,6 +262,7 @@ class Astra(commands.Bot):
         # Optional: jishaku laden, aber Fehler ignorieren
         try:
             await self.load_extension("jishaku")
+            logging.info("")
             logging.info("")
             logging.info("──────────────── 📦 COGS ────────────────")
             logging.info("🧪 jishaku erfolgreich geladen")
