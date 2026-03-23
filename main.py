@@ -75,7 +75,11 @@ async def run_sql_file(pool, path: str):
                     # ------------------------
                     # CREATE TABLE check
                     # ------------------------
-                    match = re.match(r"CREATE TABLE\s+`?(\w+)`?", stmt, re.IGNORECASE)
+                    match = re.match(
+                        r"CREATE TABLE\s+(IF NOT EXISTS\s+)?`?(\w+)`?",
+                        stmt,
+                        re.IGNORECASE
+                    )
                     if match:
                         table_name = match.group(1)
 
