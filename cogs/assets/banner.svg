@@ -1,0 +1,79 @@
+<svg width="100%" height="220" viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg">
+
+  <defs>
+    <!-- Enhanced Gradient -->
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a855f7">
+        <animate attributeName="offset" values="-1;1" dur="6s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="50%" stop-color="#6366f1">
+        <animate attributeName="offset" values="0;2" dur="6s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" stop-color="#22d3ee">
+        <animate attributeName="offset" values="1;3" dur="6s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+
+    <!-- Stronger Glow -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="220" fill="url(#gradient)" opacity="0.85"/>
+
+  <!-- Wave (hinter allem wichtigen Content) -->
+  <path fill="#020617" opacity="0.9">
+    <animate attributeName="d"
+      dur="5s"
+      repeatCount="indefinite"
+      values="
+        M0,155 C250,110 650,210 900,155 L900,220 L0,220 Z;
+        M0,175 C300,140 600,190 900,145 L900,220 L0,220 Z;
+        M0,155 C250,110 650,210 900,155 L900,220 L0,220 Z
+      " />
+  </path>
+
+  <!-- Title -->
+  <text x="50%" y="45%" text-anchor="middle"
+        font-size="66"
+        font-weight="800"
+        fill="#ffffff"
+        font-family="Segoe UI, Inter, Arial, sans-serif"
+        filter="url(#glow)"
+        letter-spacing="2">
+
+    <animate attributeName="opacity" values="1;0.85;1" dur="2s" repeatCount="indefinite"/>
+    Astra
+  </text>
+
+  <!-- Accent Line -->
+  <rect x="350" y="120" width="200" height="2" fill="#ffffff" opacity="0.4">
+    <animate attributeName="opacity" values="0.2;0.6;0.2" dur="3s" repeatCount="indefinite"/>
+  </rect>
+
+  <!-- Subtitle (NEU + ÜBER WAVE + CLEAN AF) -->
+  <text x="50%" y="140" text-anchor="middle"
+        font-size="18"
+        font-weight="600"
+        fill="#e0e7ff"
+        font-family="Inter, Segoe UI, sans-serif"
+        letter-spacing="3">
+
+    <tspan>
+      <animate attributeName="fill"
+        values="#a5b4fc;#ffffff;#a5b4fc"
+        dur="3s"
+        repeatCount="indefinite"/>
+      NEXT-GEN DISCORD AUTOMATION
+    </tspan>
+
+  </text>
+
+</svg>
