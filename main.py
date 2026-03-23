@@ -156,6 +156,7 @@ class Astra(commands.Bot):
             logging.info("██╔══██║╚════██║   ██║   ██╔══██╗██╔══██║ ")
             logging.info("██║  ██║███████║   ██║   ██║  ██║██║  ██║ ")
             logging.info("╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ")
+            logging.info("───────────────────── ✓ ─────────────────────")
             self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
         except Exception as e:
             logging.error(f"❌ Fehler beim Setup:\n{e}")
@@ -183,6 +184,7 @@ class Astra(commands.Bot):
         logging.info("")
         logging.info("──────────────── 🗄️ DATABASE ────────────────")
         logging.info("✅ DB-Verbindung erfolgreich")
+        logging.info("───────────────────── ✓ ─────────────────────")
 
     async def init_tables(self):
         """Erstellt/Registriert Tasks und führt einen DB-Healthcheck aus."""
@@ -248,6 +250,7 @@ class Astra(commands.Bot):
         logging.info("")
         logging.info("──────────────── ⏱️ TASKS ────────────────")
         logging.info("✅ Tasks Registered!")
+        logging.info("──────────────────── ✓ ────────────────────")
 
     async def load_cogs(self):
         """Lädt alle Cogs"""
@@ -276,6 +279,7 @@ class Astra(commands.Bot):
 
         gesamt = geladen + fehler
         logging.info(f"📦 Cogs geladen: {geladen}/{gesamt} erfolgreich ✅")
+        logging.info("──────────────────── ✓ ────────────────────")
         if fehler > 0:
             logging.error(f"❗ {fehler} Cog(s) konnten nicht geladen werden.")
 
