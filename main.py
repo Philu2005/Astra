@@ -148,7 +148,7 @@ class Astra(commands.Bot):
             self.tree.add_command(Reminder())
 
             logging.info("")
-            logging.info("────────── 🚀 STARTUP ──────────")
+            logging.info("──────────────── 🚀 STARTUP ────────────────")
             logging.info("Astra ist online!")
             logging.info(" █████╗ ███████╗████████╗██████╗  █████╗  ")
             logging.info("██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗ ")
@@ -181,7 +181,7 @@ class Astra(commands.Bot):
             maxsize=50
         )
         logging.info("")
-        logging.info("────────── 🗄️ DATABASE ──────────")
+        logging.info("──────────────── 🗄️ DATABASE ────────────────")
         logging.info("✅ DB-Verbindung erfolgreich")
 
     async def init_tables(self):
@@ -246,7 +246,7 @@ class Astra(commands.Bot):
                     asyncio.create_task(starte_voterole_tasks())
 
         logging.info("")
-        logging.info("────────── ⏱️ TASKS ──────────")
+        logging.info("──────────────── ⏱️ TASKS ────────────────")
         logging.info("✅ Tasks Registered!")
 
     async def load_cogs(self):
@@ -257,7 +257,7 @@ class Astra(commands.Bot):
         try:
             await self.load_extension("jishaku")
             logging.info("")
-            logging.info("────────── 📦 COGS ──────────")
+            logging.info("──────────────── 📦 COGS ────────────────")
             logging.info("🧪 jishaku erfolgreich geladen")
         except Exception as e:
             logging.error("⚠️  jishaku konnte nicht geladen werden:", e)
