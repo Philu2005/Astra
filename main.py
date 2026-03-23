@@ -48,22 +48,12 @@ async def table_has_data(cur, table_name: str) -> bool:
 
 
 def extract_table_name(stmt: str, keyword: str):
-    """
-    Robust gegen:
-    - Whitespace
-    - Backticks
-    - neue Zeilen
-    """
     pattern = rf"{keyword}\s+(?:IF NOT EXISTS\s+)?`?([a-zA-Z0-9_]+)`?"
     match = re.search(pattern, stmt, re.IGNORECASE)
     return match.group(1) if match else None
 
 
 def split_sql_statements(sql: str):
-    """
-    Sicherer Split als simples .split(";")
-    (ignoriert Semikolons in Strings)
-    """
     statements = []
     current = []
     in_string = False
@@ -105,41 +95,75 @@ async def run_sql_file(pool, path: str):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
 
+            skipped_tables = 0
+            skipped_inserts = 0
+            executed = 0
+
             for stmt in statements:
                 stmt = stmt.strip()
                 if not stmt:
                     continue
 
                 try:
+                    stmt_upper = stmt.upper()
+
                     # ------------------------
-                    # CREATE TABLE check
+                    # CREATE TABLE
                     # ------------------------
-                    table_name = extract_table_name(stmt, "CREATE TABLE")
-                    if table_name:
-                        if await table_exists(cur, table_name):
-                            logging.info(f"[DB] Skip table (exists): {table_name}")
+                    if "CREATE TABLE" in stmt_upper:
+                        table_name = extract_table_name(stmt, "CREATE TABLE")
+
+                        if table_name and await table_exists(cur, table_name):
+                            skipped_tables += 1
                             continue
 
                     # ------------------------
-                    # INSERT check
+                    # DROP TABLE
                     # ------------------------
-                    table_name = extract_table_name(stmt, "INSERT INTO")
-                    if table_name:
-                        if await table_has_data(cur, table_name):
-                            logging.info(f"[DB] Skip insert (data exists): {table_name}")
+                    elif "DROP TABLE" in stmt_upper:
+                        table_name = extract_table_name(stmt, "DROP TABLE")
+
+                        if table_name and not await table_exists(cur, table_name):
                             continue
+
+                    # ------------------------
+                    # INSERT
+                    # ------------------------
+                    elif "INSERT INTO" in stmt_upper:
+                        table_name = extract_table_name(stmt, "INSERT INTO")
+
+                        if table_name:
+                            # Speziell für deine Quiz-Daten
+                            if table_name == "emojiquiz_quizzez":
+                                await cur.execute("SELECT COUNT(*) FROM emojiquiz_quizzez")
+                                count = (await cur.fetchone())[0]
+
+                                if count > 0:
+                                    skipped_inserts += 1
+                                    continue
+                            else:
+                                if await table_has_data(cur, table_name):
+                                    skipped_inserts += 1
+                                    continue
 
                     # ------------------------
                     # EXECUTE
                     # ------------------------
                     await cur.execute(stmt)
+                    executed += 1
 
                 except Exception as e:
                     logging.error(f"[DB] Fehler in Statement:\n{stmt}\n{e}")
 
         await conn.commit()
 
-    logging.info(f"[DB] SQL vollständig ausgeführt ({len(statements)} Statements)")
+    # 🔥 EIN sauberer Log
+    logging.info(
+        f"[DB] Done | Executed: {executed} | "
+        f"Tables skipped: {skipped_tables} | "
+        f"Inserts skipped: {skipped_inserts} | "
+        f"Total: {len(statements)}"
+    )
 
 logging.basicConfig(
     level=logging.INFO,
