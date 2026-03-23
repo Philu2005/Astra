@@ -151,6 +151,7 @@ class Astra(commands.Bot):
             logging.info("")
             logging.info("──────────────── 🚀 STARTUP ────────────────")
             logging.info("Astra ist online!")
+            logging.info("")
             logging.info(" █████╗ ███████╗████████╗██████╗  █████╗  ")
             logging.info("██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗ ")
             logging.info("███████║███████╗   ██║   ██████╔╝███████║ ")
