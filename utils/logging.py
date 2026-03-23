@@ -27,7 +27,7 @@ class CleanLogs(logging.Filter):
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s | %(levelname)-5s | %(message)-60s",
+        format="%(asctime)s | %(levelname)-5s | %(message)s",
         datefmt="%H:%M:%S"
     )
 
