@@ -74,6 +74,33 @@ logging.basicConfig(
 )
 logging.getLogger("discord.gateway").setLevel(logging.WARNING)
 
+class CleanLogs(logging.Filter):
+    def filter(self, record):
+        msg = record.getMessage()
+
+        # Webhook Logs raus
+        if "/webhook/" in msg:
+            return False
+
+        # Scanner Müll raus
+        noise = [
+            "UNKNOWN / HTTP",
+            "GET / HTTP",
+            "POST / HTTP",
+            "favicon.ico",
+            ".well-known",
+            "/api",
+            "/_next",
+            "BadHttpMessage"
+        ]
+
+        if any(n in msg for n in noise):
+            return False
+
+        return True
+
+logging.getLogger().addFilter(CleanLogs())
+
 intents = discord.Intents.default()
 
 intents.guilds = True
