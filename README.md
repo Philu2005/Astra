@@ -1,6 +1,6 @@
 # 🚀 Astra
 
-![Version](https://img.shields.io/badge/Projekt_Version-2.1.0-blue)
+![Version](https://img.shields.io/badge/Projekt_Version-2.8.4-blue)
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python\&logoColor=white)
 ![discord.py](https://img.shields.io/badge/Library-discord.py-5865F2?logo=discord\&logoColor=white)
 ![MySQL](https://img.shields.io/badge/database-MySQL-4479A1?logo=mysql\&logoColor=white)
