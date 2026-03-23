@@ -146,6 +146,9 @@ class Astra(commands.Bot):
             await self.init_tables()
             await self.load_cogs()
             self.tree.add_command(Reminder())
+
+            logging.info("")
+            logging.info("────────── 🚀 STARTUP ──────────")
             logging.info("Astra ist online!")
             logging.info(" █████╗ ███████╗████████╗██████╗  █████╗  ")
             logging.info("██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗ ")
@@ -177,6 +180,8 @@ class Astra(commands.Bot):
             connect_timeout=5,
             maxsize=50
         )
+        logging.info("")
+        logging.info("────────── 🗄️ DATABASE ──────────")
         logging.info("✅ DB-Verbindung erfolgreich")
 
     async def init_tables(self):
@@ -187,7 +192,7 @@ class Astra(commands.Bot):
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute("SELECT 1")
-        logging.info("✅ DB erreichbar")
+        logging.info("✅ DB-Test erfolgreich")
 
         # Aiomysql anstoßen
         async with self.pool.acquire() as conn:
@@ -240,6 +245,8 @@ class Astra(commands.Bot):
 
                     asyncio.create_task(starte_voterole_tasks())
 
+        logging.info("")
+        logging.info("────────── ⏱️ TASKS ──────────")
         logging.info("✅ Tasks Registered!")
 
     async def load_cogs(self):
@@ -249,6 +256,8 @@ class Astra(commands.Bot):
         # Optional: jishaku laden, aber Fehler ignorieren
         try:
             await self.load_extension("jishaku")
+            logging.info("")
+            logging.info("────────── 📦 COGS ──────────")
             logging.info("🧪 jishaku erfolgreich geladen")
         except Exception as e:
             logging.error("⚠️  jishaku konnte nicht geladen werden:", e)
