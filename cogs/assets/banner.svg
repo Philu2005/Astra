@@ -1,39 +1,38 @@
 <svg width="100%" height="220" viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg">
 
   <defs>
-    <!-- 🔥 Animated Gradient -->
-    <linearGradient id="gradient" x1="0%" y1="0%" x2="200%" y2="0%">
+    <!-- Gradient -->
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="150%" y2="0%">
       <stop offset="0%" stop-color="#a855f7"/>
       <stop offset="50%" stop-color="#6366f1"/>
       <stop offset="100%" stop-color="#22d3ee"/>
       <animateTransform attributeName="gradientTransform"
         type="translate"
-        from="-1 0"
-        to="1 0"
-        dur="6s"
+        values="-0.5 0;0.5 0;-0.5 0"
+        dur="12s"
         repeatCount="indefinite"/>
     </linearGradient>
 
-    <!-- 🔥 Mask -->
-    <mask id="mask">
-      <rect width="900" height="220" rx="30" fill="white"/>
+    <!-- Text Gradient -->
+    <linearGradient id="textGradient" x1="-50%" y1="0%" x2="150%" y2="0%">
+      <stop offset="0%" stop-color="#a5b4fc"/>
+      <stop offset="50%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#a5b4fc"/>
+      <animateTransform attributeName="gradientTransform"
+        type="translate"
+        values="-1 0;1 0"
+        dur="8s"
+        repeatCount="indefinite"/>
+    </linearGradient>
 
-      <path fill="black"
-        d="M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z">
-        <animate attributeName="d"
-          dur="5s"
-          repeatCount="indefinite"
-          values="
-            M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z;
-            M-2,175 C300,140 600,190 902,145 L902,222 L-2,222 Z;
-            M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z
-          " />
-      </path>
-    </mask>
+    <!-- 🔥 REAL CLIP (NOT MASK) -->
+    <clipPath id="clip">
+      <path d="M0,0 H900 V160 C650,190 250,130 0,160 Z" />
+    </clipPath>
 
     <!-- Glow -->
     <filter id="glow">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feGaussianBlur stdDeviation="6" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
@@ -42,18 +41,50 @@
 
   </defs>
 
-  <!-- Background -->
-  <rect width="900" height="220"
-        fill="url(#gradient)"
-        mask="url(#mask)"
-        rx="30"/>
+  <!-- 🔥 GROUP WITH CLIP -->
+  <g clip-path="url(#clip)">
+
+    <!-- Background -->
+    <rect width="900" height="220"
+          fill="url(#gradient)"
+          rx="30"/>
+
+    <!-- Secondary Wave (NOW PROPERLY CUT) -->
+    <path fill="#020617" opacity="0.22"
+      d="M-2,150 C200,120 720,200 902,150 L902,222 L-2,222 Z">
+      <animate attributeName="d"
+        dur="14s"
+        repeatCount="indefinite"
+        values="
+          M-2,150 C200,120 720,200 902,150 L902,222 L-2,222 Z;
+          M-2,165 C260,140 650,180 902,160 L902,222 L-2,222 Z;
+          M-2,155 C180,110 750,210 902,145 L902,222 L-2,222 Z;
+          M-2,150 C200,120 720,200 902,150 L902,222 L-2,222 Z
+        " />
+    </path>
+
+    <!-- Highlight -->
+    <path fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2"
+      d="M-2,160 C250,130 650,190 902,160">
+      <animate attributeName="d"
+        dur="10s"
+        repeatCount="indefinite"
+        values="
+          M-2,160 C250,130 650,190 902,160;
+          M-2,170 C300,150 600,180 902,150;
+          M-2,155 C220,120 700,200 902,165;
+          M-2,160 C250,130 650,190 902,160
+        " />
+    </path>
+
+  </g>
 
   <!-- Accent Line -->
   <rect x="350" y="125" width="200" height="2"
-        fill="#ffffff" opacity="0.4">
+        fill="#ffffff" opacity="0.3">
     <animate attributeName="opacity"
-      values="0.2;0.6;0.2"
-      dur="3s"
+      values="0.2;0.5;0.2"
+      dur="4s"
       repeatCount="indefinite"/>
   </rect>
 
@@ -65,8 +96,8 @@
         font-family="Segoe UI, Inter, Arial"
         filter="url(#glow)">
     <animate attributeName="opacity"
-      values="1;0.85;1"
-      dur="2s"
+      values="1;0.9;1"
+      dur="3s"
       repeatCount="indefinite"/>
     Astra
   </text>
@@ -75,16 +106,15 @@
   <text x="50%" y="155" text-anchor="middle"
         font-size="18"
         font-weight="600"
-        fill="#e0e7ff"
+        fill="url(#textGradient)"
         font-family="Inter, Segoe UI, sans-serif"
-        letter-spacing="3">
-    <tspan>
-      <animate attributeName="fill"
-        values="#a5b4fc;#ffffff;#a5b4fc"
-        dur="3s"
-        repeatCount="indefinite"/>
-      NEXT-GEN DISCORD AUTOMATION
-    </tspan>
+        letter-spacing="3"
+        filter="url(#glow)">
+    <animate attributeName="opacity"
+      values="0.85;1;0.85"
+      dur="6s"
+      repeatCount="indefinite"/>
+    NEXT-GEN DISCORD AUTOMATION
   </text>
 
 </svg>
