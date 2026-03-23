@@ -23,28 +23,29 @@
       </feMerge>
     </filter>
 
-    <!-- CLIP für echte runde Ecken oben + unten -->
-    <clipPath id="roundedClip">
-      <rect x="0" y="0" width="900" height="220" rx="30" ry="30"/>
-    </clipPath>
+    <!-- MASK statt CLIP (sauberer!) -->
+    <mask id="mask">
+      <rect x="0" y="0" width="900" height="220" rx="30" ry="30" fill="white"/>
+    </mask>
   </defs>
 
-  <!-- Alles wird sauber abgeschnitten -->
-  <g clip-path="url(#roundedClip)">
+  <!-- Inhalt mit Mask -->
+  <g mask="url(#mask)">
 
-    <!-- Hintergrund -->
+    <!-- Background -->
     <rect x="0" y="0" width="900" height="220"
           fill="url(#gradient)" />
 
-    <!-- Wave (KEINE Transparenz mehr) -->
-    <path fill="#020617">
+    <!-- Wave (leicht größer für Anti-Pixel-Fix) -->
+    <path fill="#020617"
+      d="M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z">
       <animate attributeName="d"
         dur="5s"
         repeatCount="indefinite"
         values="
-          M0,155 C250,110 650,210 900,155 L900,220 L0,220 Z;
-          M0,175 C300,140 600,190 900,145 L900,220 L0,220 Z;
-          M0,155 C250,110 650,210 900,155 L900,220 L0,220 Z
+          M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z;
+          M-2,175 C300,140 600,190 902,145 L902,222 L-2,222 Z;
+          M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z
         " />
     </path>
 
