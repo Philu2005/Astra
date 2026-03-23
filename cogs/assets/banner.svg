@@ -14,19 +14,19 @@
         repeatCount="indefinite"/>
     </linearGradient>
 
-    <!-- 🔥 MASK (UNVERÄNDERT = PERFEKTE BEWEGUNG) -->
+    <!-- 🔥 MASK (WAVE TIEFER = MEHR GRADIENT OBEN) -->
     <mask id="mask">
       <rect width="900" height="220" rx="30" fill="white"/>
 
       <path fill="black"
-        d="M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z">
+        d="M-2,185 C250,140 650,240 902,185 L902,222 L-2,222 Z">
         <animate attributeName="d"
           dur="5s"
           repeatCount="indefinite"
           values="
-            M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z;
-            M-2,175 C300,140 600,190 902,145 L902,222 L-2,222 Z;
-            M-2,155 C250,110 650,210 902,155 L902,222 L-2,222 Z
+            M-2,185 C250,140 650,240 902,185 L902,222 L-2,222 Z;
+            M-2,205 C300,170 600,220 902,175 L902,222 L-2,222 Z;
+            M-2,185 C250,140 650,240 902,185 L902,222 L-2,222 Z
           " />
       </path>
     </mask>
@@ -42,23 +42,23 @@
 
   </defs>
 
-  <!-- 🔥 Background -->
+  <!-- Background -->
   <rect width="900" height="220"
         fill="url(#gradient)"
         mask="url(#mask)"
         rx="30"/>
 
-  <!-- 🔥 Secondary Wave (WIRD JETZT RICHTIG MITGESCHNITTEN) -->
+  <!-- Secondary Wave (AUCH TIEFER ANGEPASST) -->
   <path fill="#020617" opacity="0.22"
     mask="url(#mask)"
-    d="M-2,150 C200,120 720,200 902,150 L902,222 L-2,222 Z">
+    d="M-2,180 C200,140 720,240 902,180 L902,222 L-2,222 Z">
     <animate attributeName="d"
       dur="7s"
       repeatCount="indefinite"
       values="
-        M-2,150 C200,120 720,200 902,150 L902,222 L-2,222 Z;
-        M-2,165 C260,140 650,180 902,160 L902,222 L-2,222 Z;
-        M-2,150 C200,120 720,200 902,150 L902,222 L-2,222 Z
+        M-2,180 C200,140 720,240 902,180 L902,222 L-2,222 Z;
+        M-2,200 C260,170 650,220 902,185 L902,222 L-2,222 Z;
+        M-2,180 C200,140 720,240 902,180 L902,222 L-2,222 Z
       " />
   </path>
 
