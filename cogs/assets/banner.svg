@@ -14,7 +14,7 @@
       </stop>
     </linearGradient>
 
-    <!-- Stronger Glow -->
+    <!-- Glow -->
     <filter id="glow">
       <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
       <feMerge>
@@ -22,13 +22,18 @@
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
-
   </defs>
 
-  <!-- Background -->
-  <rect width="900" height="220" fill="url(#gradient)" opacity="0.85"/>
+  <!-- Shape Background -->
+  <path d="
+    M0,0
+    H900
+    V170
+    C700,240 200,240 0,170
+    Z"
+    fill="url(#gradient)" opacity="0.85"/>
 
-  <!-- Wave (hinter allem wichtigen Content) -->
+  <!-- Wave -->
   <path fill="#020617" opacity="0.9">
     <animate attributeName="d"
       dur="5s"
@@ -40,32 +45,31 @@
       " />
   </path>
 
-  <!-- Title -->
-  <text x="50%" y="45%" text-anchor="middle"
+  <!-- Title (höher) -->
+  <text x="50%" y="40%" text-anchor="middle"
         font-size="66"
         font-weight="800"
         fill="#ffffff"
         font-family="Segoe UI, Inter, Arial, sans-serif"
         filter="url(#glow)"
         letter-spacing="2">
-
     <animate attributeName="opacity" values="1;0.85;1" dur="2s" repeatCount="indefinite"/>
     Astra
   </text>
 
-  <!-- Accent Line -->
-  <rect x="350" y="120" width="200" height="2" fill="#ffffff" opacity="0.4">
+  <!-- Accent Line (leicht runter) -->
+  <rect x="350" y="125" width="200" height="2"
+        fill="#ffffff" opacity="0.4">
     <animate attributeName="opacity" values="0.2;0.6;0.2" dur="3s" repeatCount="indefinite"/>
   </rect>
 
-  <!-- Subtitle (NEU + ÜBER WAVE + CLEAN AF) -->
-  <text x="50%" y="140" text-anchor="middle"
+  <!-- Subtitle (deutlich mehr Abstand) -->
+  <text x="50%" y="155" text-anchor="middle"
         font-size="18"
         font-weight="600"
         fill="#e0e7ff"
         font-family="Inter, Segoe UI, sans-serif"
         letter-spacing="3">
-
     <tspan>
       <animate attributeName="fill"
         values="#a5b4fc;#ffffff;#a5b4fc"
@@ -73,7 +77,6 @@
         repeatCount="indefinite"/>
       NEXT-GEN DISCORD AUTOMATION
     </tspan>
-
   </text>
 
 </svg>
