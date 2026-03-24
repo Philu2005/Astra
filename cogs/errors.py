@@ -120,7 +120,7 @@ class ErrorCog(commands.Cog, name="errors"):
     async def testfehler(
             self,
             interaction: discord.Interaction,
-            art: Literal["runtime", "zero", "nested"] = "runtime",
+            art: Literal["runtime", "zero", "nested", "deep", "async"] = "runtime",
     ):
         try:
 
@@ -138,6 +138,30 @@ class ErrorCog(commands.Cog, name="errors"):
                     b()
 
                 a()
+            elif art == "deep":
+                def a():
+                    def b():
+                        def c():
+                            def d():
+                                def e():
+                                    raise RuntimeError("Deep error explosion 💥")
+
+                                e()
+
+                            d()
+
+                        c()
+
+                    b()
+
+                a()
+            elif art == "async":
+
+                async def boom():
+                    await asyncio.sleep(0.1)
+                    raise RuntimeError("Async exploded")
+
+                await boom()
 
         except Exception as e:
             # 🔥 DAS IST DER WICHTIGE TEIL
