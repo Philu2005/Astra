@@ -3,13 +3,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from typing import Literal
-from utils.logging import setup_logging
+import logging
 import traceback, json, os, re, asyncio, aiohttp, tempfile, sys, platform
 from pathlib import Path
 from datetime import datetime, timezone
 
-
-setup_logging()
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = "/root/Astra"
 LOG_CHANNEL_ID = 1141116983815962819
@@ -142,7 +141,7 @@ class ErrorCog(commands.Cog, name="errors"):
 
         except Exception as e:
             # 🔥 DAS IST DER WICHTIGE TEIL
-            logging.error("❌ TEST ERROR:\n%s", traceback.format_exc())
+            logger.error("❌ TEST ERROR:\n%s", traceback.format_exc())
 
             # Fehler weiterwerfen → damit dein ErrorCog ihn auch verarbeitet
             raise e
