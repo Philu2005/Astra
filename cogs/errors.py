@@ -3,10 +3,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from typing import Literal
-
+from utils.logging import setup_logging
 import traceback, json, os, re, asyncio, aiohttp, tempfile, sys, platform
 from pathlib import Path
 from datetime import datetime, timezone
+
+
+setup_logging()
 
 PROJECT_ROOT = "/root/Astra"
 LOG_CHANNEL_ID = 1141116983815962819
@@ -113,23 +116,36 @@ class ErrorCog(commands.Cog, name="errors"):
         self.bot = bot
         # WICHTIG: KEIN self.bot.tree.on_error hier setzen → sonst Doppel-Antworten!
 
-    # Dein Test-Command IM COG
-    @app_commands.command(name="testfehler", description="Wirft absichtlich einen Fehler zum Testen des Error-Handlers.")
+    @app_commands.command(name="testfehler",
+                          description="Wirft absichtlich einen Fehler zum Testen des Error-Handlers.")
     async def testfehler(
-        self,
-        interaction: discord.Interaction,
-        art: Literal["runtime", "zero", "nested"] = "runtime",
+            self,
+            interaction: discord.Interaction,
+            art: Literal["runtime", "zero", "nested"] = "runtime",
     ):
-        if art == "runtime":
-            raise RuntimeError("Absichtlich ausgelöster Testfehler (runtime).")
-        elif art == "zero":
-            1 / 0
-        elif art == "nested":
-            def a():
-                def b():
-                    raise ValueError("Absichtlich verschachtelt (nested).")
-                b()
-            a()
+        try:
+
+            if art == "runtime":
+                raise RuntimeError("Absichtlich ausgelöster Testfehler (runtime).")
+
+            elif art == "zero":
+                1 / 0
+
+            elif art == "nested":
+                def a():
+                    def b():
+                        raise ValueError("Absichtlich verschachtelt (nested).")
+
+                    b()
+
+                a()
+
+        except Exception as e:
+            # 🔥 DAS IST DER WICHTIGE TEIL
+            logging.error("❌ TEST ERROR:\n%s", traceback.format_exc())
+
+            # Fehler weiterwerfen → damit dein ErrorCog ihn auch verarbeitet
+            raise e
 
     # Einziger Handler: greift für alle App-Commands dieser Cog
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):

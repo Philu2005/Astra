@@ -85,7 +85,7 @@ class afk(commands.Cog):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(f"SELECT userID FROM afk WHERE guildID = {interaction.guild.id}")
-                result = cursor.fetchall()
+                result = await cursor.fetchall()
                 members = result
 
                 if interaction.user.id not in members:
