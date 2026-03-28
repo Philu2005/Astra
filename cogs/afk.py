@@ -1,22 +1,29 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class afk(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # 🔹 SAFE DATETIME CONVERTER
+    # 🔹 SAFE DATETIME CONVERTER (FIXED WITH UTC)
     def _safe_dt(self, value):
         if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
             return value
+
         if isinstance(value, str):
             try:
-                return datetime.fromisoformat(value)
+                dt = datetime.fromisoformat(value)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
             except:
                 return discord.utils.utcnow()
+
         return discord.utils.utcnow()
 
     @commands.Cog.listener()
@@ -184,7 +191,6 @@ class afk(commands.Cog):
                         pass
 
                 await interaction.response.send_message(embed=embed)
-                return None
 
 
 async def setup(bot: commands.Bot) -> None:
