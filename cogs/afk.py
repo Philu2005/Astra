@@ -1,11 +1,23 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+from datetime import datetime
 
 
 class afk(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    # 🔹 SAFE DATETIME CONVERTER
+    def _safe_dt(self, value):
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except:
+                return discord.utils.utcnow()
+        return discord.utils.utcnow()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -16,7 +28,7 @@ class afk(commands.Cog):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
 
-                # 🔹 Alle AFK User mit Daten holen (EINE QUERY)
+                # 🔹 Alle AFK User holen (eine Query)
                 await cursor.execute(
                     "SELECT userID, reason, time, prevName FROM afk WHERE guildID = %s",
                     (message.guild.id,)
@@ -26,11 +38,11 @@ class afk(commands.Cog):
                 if not rows:
                     return
 
-                # 🔹 Dict für schnellen Zugriff
+                # 🔹 Dict bauen + Zeit fixen
                 afk_users = {
                     row[0]: {
                         "reason": row[1],
-                        "time": row[2],
+                        "time": self._safe_dt(row[2]),
                         "prev": row[3]
                     }
                     for row in rows
