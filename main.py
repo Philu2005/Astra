@@ -142,7 +142,7 @@ class Astra(commands.Bot):
 
     async def connect_db(self):
         """Stellt den DB-Pool her und speichert ihn in self.pool"""
-        self.pool = await aiomysql.create_pool(
+        self.pool = await aiomysql.create_pool(# type: ignore
             host=host,
             port=3306,
             user=benutzer,
