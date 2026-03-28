@@ -1,16 +1,13 @@
 import discord
 from discord.ext import commands
-import subprocess
 import textwrap
 import traceback
 from math import ceil
-import sys
 import psutil
-from discord import app_commands
 from collections import defaultdict
 import inspect
-import io
 import asyncio
+import subprocess
 import time
 from typing import List, Optional
 import logging
@@ -1080,7 +1077,8 @@ class DevTools(commands.Cog):
         """Führt git pull im /root/Astra Verzeichnis aus."""
         await ctx.send("Ziehe Updates vom Git-Repo in /root/Astra...")
 
-        proc = subprocess.run(
+        proc = await asyncio.to_thread(
+            subprocess.run,
             ["/usr/bin/git", "-C", "/root/Astra", "pull"],
             capture_output=True,
             text=True,
