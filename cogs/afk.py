@@ -64,21 +64,27 @@ class afk(commands.Cog):
 
                         embed = discord.Embed(
                             description=(
-                                f"`{user.name}` ist AFK!\n"
-                                f"Grund: `{data['reason']}`\n"
-                                f"Seit: {discord.utils.format_dt(data['time'], 'R')}"
+                                f"### <:Astra_mic_off:1141824920809132122> {user.mention} ist aktuell AFK\n\n"
+                                f"**Grund:** {data['reason']}\n"
+                                f"<:Astra_time:1141303932061233202> Seit {discord.utils.format_dt(data['time'], 'R')}"
                             ),
-                            color=discord.Colour.blue()
-                        )
-                        embed.set_author(
-                            name=message.author.name,
-                            icon_url=message.author.display_avatar
-                        )
-                        embed.set_footer(
-                            text=f"UserID: {user.id}"
+                            color=discord.Color.blue()
                         )
 
-                        await message.channel.send(message.author.mention, embed=embed)
+                        embed.set_author(
+                            name=f"{user.display_name} ist AFK",
+                            icon_url=user.display_avatar
+                        )
+
+                        embed.set_footer(
+                            text=f"Erwähnt von {message.author.display_name}",
+                            icon_url=message.author.display_avatar
+                        )
+
+                        await message.reply(
+                            embed=embed,
+                            mention_author=True
+                        )
 
                 # =========================
                 # 👋 AFK ENTFERNEN
@@ -93,13 +99,15 @@ class afk(commands.Cog):
 
                     embed = discord.Embed(
                         description=(
-                            f"Willkommen zurück {message.author.mention}!\n"
-                            f"Du warst AFK seit {discord.utils.format_dt(data['time'], 'R')}"
+                            f"### 👋 Willkommen zurück!\n\n"
+                            f"{message.author.mention}, du bist nicht mehr AFK\n"
+                            f"<:Astra_time:1141303932061233202> AFK seit {discord.utils.format_dt(data['time'], 'R')}"
                         ),
-                        color=discord.Colour.blue()
+                        color=discord.Color.blue()
                     )
+
                     embed.set_author(
-                        name=message.author.name,
+                        name=message.author.display_name,
                         icon_url=message.author.display_avatar
                     )
 
@@ -166,14 +174,15 @@ class afk(commands.Cog):
 
                 embed = discord.Embed(
                     description=(
-                        f"{interaction.user.mention}, du bist jetzt AFK!\n"
-                        f"Grund: `{grund}`\n"
-                        f"Seit: {discord.utils.format_dt(now, 'R')}"
+                        f"### <:Astra_mic_off:1141824920809132122> Du bist jetzt AFK\n\n"
+                        f"**Grund:** {grund}\n"
+                        f"<:Astra_time:1141303932061233202> Seit {discord.utils.format_dt(now, 'R')}"
                     ),
-                    color=discord.Colour.blue()
+                    color=discord.Color.blue()
                 )
+
                 embed.set_author(
-                    name=interaction.user.name,
+                    name=interaction.user.display_name,
                     icon_url=interaction.user.display_avatar
                 )
                 embed.set_footer(
