@@ -64,7 +64,7 @@ class afk(commands.Cog):
 
                         embed = discord.Embed(
                             description=(
-                                f"### <:Astra_mic_off:1141824920809132122> {user.mention} ist aktuell AFK\n\n"
+                                f"### <:Astra_mic_off:1141824920809132122> {user.mention} ist aktuell AFK\n\n\n"
                                 f"**Grund:** {data['reason']}\n"
                                 f"<:Astra_time:1141303932061233202> Seit {discord.utils.format_dt(data['time'], 'R')}"
                             ),
@@ -99,7 +99,7 @@ class afk(commands.Cog):
 
                     embed = discord.Embed(
                         description=(
-                            f"### 👋 Willkommen zurück!\n\n"
+                            f"### <:Astra_user2:1141303942324699206> Willkommen zurück!\n\n\n"
                             f"{message.author.mention}, du bist nicht mehr AFK\n"
                             f"<:Astra_time:1141303932061233202> AFK seit {discord.utils.format_dt(data['time'], 'R')}"
                         ),
@@ -174,7 +174,7 @@ class afk(commands.Cog):
 
                 embed = discord.Embed(
                     description=(
-                        f"### <:Astra_mic_off:1141824920809132122> Du bist jetzt AFK\n\n"
+                        f"### <:Astra_mic_off:1141824920809132122> Du bist jetzt AFK\n\n\n"
                         f"**Grund:** {grund}\n"
                         f"<:Astra_time:1141303932061233202> Seit {discord.utils.format_dt(now, 'R')}"
                     ),
