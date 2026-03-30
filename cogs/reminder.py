@@ -5,7 +5,7 @@ import asyncio
 import math
 from datetime import datetime, timezone
 
-ASTRA_BLUE = discord.Colour.from_rgb(88, 101, 242)
+ASTRA_BLUE = discord.Colour.blue()
 
 import re
 
@@ -563,7 +563,7 @@ class Reminder(commands.Cog):
         embed = discord.Embed(
             title="<:Astra_time:1141303932061233202> Erinnerung",
             description=f"> {grund}",
-            color=ASTRA_BLUE
+            colour=discord.Colour.blue()
         )
 
         embed.add_field(name="⏳ Fällig", value=f"<t:{int(when.timestamp())}:R>", inline=True)
