@@ -71,7 +71,7 @@ def setup_topgg_events(bot):   # 👈 DAS IST DER FIX
                     _, _, last_vote_epoch, _, _ = row
                     if last_vote_epoch and now_ts - int(last_vote_epoch) < 600:
                         logging.warning(f"[Vote] Duplicate Vote ignoriert ({user_id})")
-                        return
+                        return None
 
                 # =============================
                 # USER EXISTIERT NICHT
