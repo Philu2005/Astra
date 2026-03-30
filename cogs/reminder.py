@@ -548,7 +548,7 @@ class Reminder(commands.Cog):
 
         self.tasks.pop(rid, None)
 
-    @app_commands.command(name="erinnerungen", description="Öffne den Manager")
+    @app_commands.command(name="erinnerungen", description="Öffnet eine Übersicht deiner Erinnerungen mit Optionen zum Erstellen, Löschen und Verwalten")
     async def manager(self, interaction: discord.Interaction):
 
         view = ReminderManagerView(self.bot, self, interaction.user)
