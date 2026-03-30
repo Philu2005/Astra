@@ -212,7 +212,7 @@ class ReminderManagerView(ui.LayoutView):
         if self.state == "help":
 
             container.add_item(ui.TextDisplay(
-                "## <:Astra_support:1141303923752325210> Hilfe & Guide\n\n"
+                "\n"
 
                 "### <:Astra_punkt:1141303896745201696> Übersicht\n"
                 "Hier kannst du alle deine Erinnerungen an einem Ort verwalten.\n"
