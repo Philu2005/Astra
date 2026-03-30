@@ -338,7 +338,7 @@ class ReminderManagerView(ui.LayoutView):
                     section = ui.Section(
                         ui.TextDisplay(
                             f"## <:Astra_punkt:1141303896745201696> Erinnerung {index}\n"
-                            f"> **{grund}**\n\n"
+                            f"> {grund}\n\n"
                             f"<:Astra_time:1141303932061233202> <t:{ts}:R>\n"
                             f"<:Astra_calender:1141303828625489940> <t:{ts}:F>"
                         ),
@@ -425,7 +425,7 @@ class ReminderManagerView(ui.LayoutView):
 
             container.add_item(ui.TextDisplay(
                 f"## <:Astra_x:1141303954555289600> Wirklich löschen?\n"
-                f"> **{grund[:80]}{'...' if len(grund) > 80 else ''}**"
+                f"> {grund[:80]}{'...' if len(grund) > 80 else ''}"
             ))
 
             yes_btn = ui.Button(
@@ -529,7 +529,7 @@ class Reminder(commands.Cog):
 
         embed = discord.Embed(
             title="<:Astra_time:1141303932061233202> Erinnerung",
-            description=f"> **{grund}**",
+            description=f"> {grund}",
             color=ASTRA_BLUE
         )
 
