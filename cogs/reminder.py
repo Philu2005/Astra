@@ -197,17 +197,18 @@ class ReminderManagerView(ui.LayoutView):
                 "## <:Astra_support:1141303923752325210> Hilfe & Guide\n\n"
 
                 "### <:Astra_punkt:1141303896745201696> Übersicht\n"
-                "Hier verwaltest du alle deine Reminder zentral.\n\n"
+                "Hier kannst du alle deine Erinnerungen an einem Ort verwalten.\n"
+                "Erstelle neue Reminder, behalte den Überblick und lösche sie jederzeit wieder.\n\n"
 
                 "### <:Astra_punkt:1141303896745201696> Funktionen\n"
-                "<:Astra_accept:1141303821176422460> Reminder erstellen\n"
-                "<:Astra_accept:1141303821176422460> Quick Reminder (10m / 1h / 1d)\n"
-                "<:Astra_accept:1141303821176422460> Löschen über ❌ Button\n"
-                "<:Astra_accept:1141303821176422460> Seiten Navigation\n\n"
+                "<:Astra_accept:1141303821176422460> Neue Erinnerungen erstellen\n"
+                "<:Astra_accept:1141303821176422460> Schnelle Reminder über die Quick-Buttons (10m / 1h / 1d)\n"
+                "<:Astra_accept:1141303821176422460> Erinnerungen mit <:Astra_x:1141303954555289600> löschen\n"
+                "<:Astra_accept:1141303821176422460> Zwischen Seiten navigieren\n\n"
 
                 "### <:Astra_punkt:1141303896745201696> Tipps\n"
-                "<:Astra_light_on:1141303864134467675> Nutze Quick Buttons für Speed\n"
-                "<:Astra_light_on:1141303864134467675> Zeiten werden dynamisch angezeigt\n"
+                "<:Astra_light_on:1141303864134467675> Nutze die Quick-Buttons für schnelle Erinnerungen\n"
+                "<:Astra_light_on:1141303864134467675> Die angezeigten Zeiten passen sich automatisch an\n"
             ))
 
             home_btn = ui.Button(
@@ -339,7 +340,7 @@ class ReminderManagerView(ui.LayoutView):
                             f"## <:Astra_punkt:1141303896745201696> Erinnerung {index}\n"
                             f"> {grund}\n\n"
                             f"<:Astra_time:1141303932061233202> <t:{ts}:R>\n"
-                            f"📅 <t:{ts}:F>"
+                            f"<:Astra_calender:1141303828625489940> <t:{ts}:F>"
                         ),
                         accessory=delete_btn
                     )
