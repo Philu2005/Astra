@@ -217,7 +217,7 @@ class ReminderManagerView(ui.LayoutView):
                 "Verwalte alles übersichtlich an einem Ort.\n"
             ))
 
-            container.add_item(ui.Seperator())
+            container.add_item(ui.Separator())
 
             container.add_item(ui.TextDisplay(
                 "### 📋 Übersicht\n"
@@ -226,7 +226,7 @@ class ReminderManagerView(ui.LayoutView):
                 "<:Astra_punkt:1141303896745201696> Jederzeit einfach löschen\n"
             ))
 
-            container.add_item(ui.Seperator())
+            container.add_item(ui.Separator())
 
             container.add_item(ui.TextDisplay(
                 "### ⚙️ Funktionen\n"
@@ -236,7 +236,7 @@ class ReminderManagerView(ui.LayoutView):
                 "<:Astra_punkt:1141303896745201696> Navigation zwischen Seiten\n"
             ))
 
-            container.add_item(ui.Seperator())
+            container.add_item(ui.Separator())
 
             container.add_item(ui.TextDisplay(
                 "### 💡 Tipps\n"
