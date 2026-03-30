@@ -17,7 +17,7 @@ def convert(time: str):
     if not time:
         return -1
 
-    time = time.lower().replace(",", ".").strip()
+    time = time.lower().replace(",", " ").strip()
 
     units = {
         "s": 1,
@@ -85,7 +85,7 @@ class ReminderCreateModal(ui.Modal, title="Neue Erinnerung"):
 
     zeit = ui.TextInput(
         label="⏳ Zeit",
-        placeholder="10m / 2h / 1d",
+        placeholder="z.B. 10m / 1h30m / 1.5h / 1h, 30m",
         max_length=20
     )
 
