@@ -213,20 +213,46 @@ class ReminderManagerView(ui.LayoutView):
 
             container.add_item(ui.TextDisplay(
                 "\n"
+                "╔══════════════════════════════════╗\n"
+                "      <:Astra_punkt:1141303896745201696>  ERINNERUNGEN PANEL\n"
+                "╚══════════════════════════════════╝\n\n"
 
                 "### <:Astra_punkt:1141303896745201696> Übersicht\n"
-                "Verwalte deine Erinnerungen zentral an einem Ort.\n"
-                "Erstellen • Anzeigen • Löschen\n\n"
+                "Behalte alles im Blick – schnell, einfach und zentral.\n"
+                "> Erstellen • Verwalten • Entfernen\n\n"
 
-                "### <:Astra_punkt:1141303896745201696> Funktionen\n"
-                "<:Astra_accept:1141303821176422460> **Erstellen** — Eigene Erinnerung mit Zeit\n"
-                "<:Astra_time:1141303932061233202> **Quick** — 10m / 1h / 1d sofort erstellen\n"
-                "<:Astra_x:1141303954555289600> **Löschen** — Direkt über den Button entfernen\n"
-                "<:Astra_arrow:1141303823600717885> **Navigation** — Zwischen Seiten wechseln\n\n"
+                "──────────────────────────────────\n"
 
-                "### <:Astra_punkt:1141303896745201696> Tipps\n"
-                "<:Astra_light_on:1141303864134467675> Quick-Buttons sparen Zeit\n"
-                "<:Astra_light_on:1141303864134467675> Zeiten werden automatisch angepasst"
+                "### <:Astra_punkt:1141303896745201696> Funktionen\n\n"
+
+                "<:Astra_accept:1141303821176422460> **Erstellen**\n"
+                "└ Eigene Erinnerung mit individueller Zeit setzen\n\n"
+
+                "<:Astra_time:1141303932061233202> **Quick Actions**\n"
+                "└ Sofort-Erinnerungen mit:\n"
+                "   • 10 Minuten\n"
+                "   • 1 Stunde\n"
+                "   • 1 Tag\n\n"
+
+                "<:Astra_x:1141303954555289600> **Löschen**\n"
+                "└ Entferne Erinnerungen direkt per Button\n\n"
+
+                "<:Astra_arrow:1141303823600717885> **Navigation**\n"
+                "└ Wechsle bequem zwischen Seiten & Einträgen\n\n"
+
+                "──────────────────────────────────\n"
+
+                "### <:Astra_punkt:1141303896745201696> Tipps & Tricks\n\n"
+
+                "<:Astra_light_on:1141303864134467675> **Spare Zeit**\n"
+                "└ Nutze Quick-Buttons für häufige Erinnerungen\n\n"
+
+                "<:Astra_light_on:1141303864134467675> **Smart Timing**\n"
+                "└ Zeiten werden automatisch korrekt berechnet\n\n"
+
+                "──────────────────────────────────\n"
+
+                "✨ **Pro-Tipp:** Halte deine Liste kurz – so bleibst du produktiv!\n"
             ))
 
             home_btn = ui.Button(
