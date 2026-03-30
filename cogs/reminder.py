@@ -179,15 +179,33 @@ class ReminderManagerView(ui.LayoutView):
 
         help_btn.callback = help_cb
 
-        header = ui.Section(
-            ui.TextDisplay(
-                "# <:Astra_time:1141303932061233202> Reminder Manager\n"
-                f"╰➤ **{len(self.reminders)} Erinnerungen gespeichert**"
-            ),
-            accessory=help_btn
-        )
+        # ================= HEADER =================
+        # ================= HEADER =================
+        if self.state != "help":
+            help_btn = ui.Button(
+                emoji="<:Astra_support:1141303923752325210>",
+                style=discord.ButtonStyle.secondary
+            )
 
-        container.add_item(header)
+            async def help_cb(interaction):
+                self.state = "help"
+                await self.reload(interaction)
+
+            help_btn.callback = help_cb
+
+            container.add_item(ui.Section(
+                ui.TextDisplay(
+                    "# <:Astra_time:1141303932061233202> Reminder Manager\n"
+                    f"╰➤ **{len(self.reminders)} Erinnerungen gespeichert**"
+                ),
+                accessory=help_btn
+            ))
+        else:
+            container.add_item(ui.TextDisplay(
+                "# <:Astra_support:1141303923752325210> Hilfe & Guide\n"
+                f"╰➤ **{len(self.reminders)} Erinnerungen gespeichert**"
+            ))
+
         container.add_item(ui.Separator())
 
         # ================= HELP =================
