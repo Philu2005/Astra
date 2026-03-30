@@ -36,7 +36,6 @@ intents.messages = True
 intents.message_content = True
 intents.reactions = True
 
-
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 host = os.getenv('DB_HOST')
@@ -47,23 +46,11 @@ dbl_token = os.getenv('DBL_TOKEN')
 dbl_password = os.getenv('DBL_PASS')
 dbl_port = os.getenv('DBL_PORT')
 
-def convert(time):
-    pos = ["s", "m", "h", "d", "w"]
-    time_dict = {"s": 1, "m": 60, "h": 3600, "d": 3600 * 24, "w": 3600 * 24 * 7}
-    unit = time[-1]
-    if unit not in pos:
-        return -1
-    try:
-        val = int(time[:-1])
-    except Exception:
-        return -2
-    return val * time_dict[unit]
-
 
 class Astra(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="astra!", help_command=None, case_insensitive=True,
-                         intents=discord.Intents.all())
+                         intents=discord.Intents.all(), reconnect=True)
 
         pool: aiomysql.Pool
         self.topggpy = None
@@ -140,7 +127,7 @@ class Astra(commands.Bot):
 
     async def connect_db(self):
         """Stellt den DB-Pool her und speichert ihn in self.pool"""
-        self.pool = await aiomysql.create_pool(# type: ignore
+        self.pool = await aiomysql.create_pool(  # type: ignore
             host=host,
             port=3306,
             user=benutzer,
@@ -328,6 +315,7 @@ def all_app_commands(bot):
             unique.append(cmd)
     return unique
 
+
 @bot.event
 async def on_ready():
     if bot.pool is None:
@@ -436,6 +424,7 @@ async def funktion2(user_id: int, when: datetime):
         except Exception:
             pass
 
+
 bot.funktion2 = funktion2
 
 setup_topgg_events(bot)
@@ -447,7 +436,8 @@ setup_topgg_events(bot)
 async def advert(ctx):
     embed = discord.Embed(title="`🎃` Astra x Astra Support",
                           url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands",
-                          description="Astra ist der einzige Bot, den Sie zur Verwaltung Ihres gesamten Servers benötigen. Es gibt viele Server, die Astra verwenden. Vielleicht sind Sie der Nächste?\n\n> __**Was bieten wir an?**__\n・<:Astra_ticket:1141833836204937347> Öffentliches Ticketsystem für Ihren Server\n・<:Astra_time:1141303932061233202> Automatische Moderation\n・<:Astra_messages:1141303867850641488> Willkommen/Nachrichten hinterlassen\n・<:Astra_settings:1141303908778639490> Joinrole&Botrole\n・<:Astra_herz:1141303857855594527> Reaktionsrollen\n・<:Astra_global1:1141303843993436200> Globalchat\n\n\n> __**Nützliche Links:**__\n・[Astra einladen ➚](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n・[Support erhalten ➚](https://discord.gg/eatdJPfjWc)",colour=discord.Colour.blue())
+                          description="Astra ist der einzige Bot, den Sie zur Verwaltung Ihres gesamten Servers benötigen. Es gibt viele Server, die Astra verwenden. Vielleicht sind Sie der Nächste?\n\n> __**Was bieten wir an?**__\n・<:Astra_ticket:1141833836204937347> Öffentliches Ticketsystem für Ihren Server\n・<:Astra_time:1141303932061233202> Automatische Moderation\n・<:Astra_messages:1141303867850641488> Willkommen/Nachrichten hinterlassen\n・<:Astra_settings:1141303908778639490> Joinrole&Botrole\n・<:Astra_herz:1141303857855594527> Reaktionsrollen\n・<:Astra_global1:1141303843993436200> Globalchat\n\n\n> __**Nützliche Links:**__\n・[Astra einladen ➚](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n・[Support erhalten ➚](https://discord.gg/eatdJPfjWc)",
+                          colour=discord.Colour.blue())
     embed.set_image(
         url="https://cdn.discordapp.com/attachments/842039934142513152/879880068262940672/Astra-premium3.gif")
     embed.set_thumbnail(url=ctx.guild.icon.url)
@@ -487,6 +477,7 @@ async def sync(ctx, serverid: int = None):
         if guild is None:
             await ctx.send(f"❌ Der Server mit der ID `{serverid}` wurde nicht gefunden.")
 
+
 def serialize_guild(guild: discord.Guild):
     return {
         "id": str(guild.id).strip(),
@@ -498,9 +489,11 @@ def serialize_guild(guild: discord.Guild):
 
 app = Flask(__name__)
 
+
 @app.route('/status')
 def status():
     return jsonify(online=True)
+
 
 @app.route('/servers')
 def servers():
@@ -515,6 +508,7 @@ def servers():
         count=len(servers),
         servers=servers
     )
+
 
 @app.route('/servers/<int:guild_id>')
 def server_detail(guild_id):
@@ -541,6 +535,7 @@ def server_detail(guild_id):
             "ownerId": str(guild.owner_id)
         }
     )
+
 
 @app.route('/servers/<int:guild_id>/roles')
 def server_roles(guild_id):
@@ -569,9 +564,9 @@ def server_roles(guild_id):
     )
 
 
-
 def run_flask():
     serve(app, host="localhost", port=5000)  # produktionsreif, keine Warning
+
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
