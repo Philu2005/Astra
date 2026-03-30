@@ -1,25 +1,226 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
+from discord import app_commands, ui
 import asyncio
 import math
 from datetime import datetime, timezone
 
+ASTRA_BLUE = discord.Colour.blue()
+
+
+# =========================================================
+#                     TIME CONVERT
+# =========================================================
 
 def convert(time):
     pos = ["s", "m", "h", "d", "w"]
     time_dict = {"s": 1, "m": 60, "h": 3600, "d": 3600 * 24, "w": 3600 * 24 * 7}
     unit = time[-1]
+
     if unit not in pos:
         return -1
+
     try:
         val = int(time[:-1])
-    except Exception:
+    except:
         return -2
+
     return val * time_dict[unit]
+
+
+# =========================================================
+#                     MODAL
+# =========================================================
+
+class ReminderCreateModal(ui.Modal, title="Erinnerung erstellen"):
+
+    beschreibung = ui.TextInput(
+        label="Beschreibung",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500
+    )
+
+    zeit = ui.TextInput(
+        label="Zeit (z.B. 10m, 2h, 1d)",
+        required=True,
+        max_length=20
+    )
+
+    def __init__(self, view):
+        super().__init__()
+        self.view = view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        seconds = convert(self.zeit.value)
+
+        if seconds < 0:
+            return await interaction.response.send_message("❌ Ungültige Zeit!", ephemeral=True)
+
+        t1 = math.floor(discord.utils.utcnow().timestamp() + seconds)
+        t2 = datetime.fromtimestamp(t1, tz=timezone.utc)
+
+        async with self.view.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO reminder(userID, grund, time) VALUES(%s, %s, %s)",
+                    (interaction.user.id, self.beschreibung.value, t1)
+                )
+                reminder_id = cur.lastrowid
+
+        task = asyncio.create_task(
+            self.view.cog.reminder_task(reminder_id, interaction.user.id, self.beschreibung.value, t2)
+        )
+        self.view.cog.tasks[reminder_id] = task
+
+        await interaction.response.send_message(
+            f"✅ Erinnerung erstellt (ID `{reminder_id}`)\n<t:{t1}:F>",
+            ephemeral=True
+        )
+
+
+# =========================================================
+#                     VIEW (MANAGER)
+# =========================================================
+
+class ReminderManagerView(ui.LayoutView):
+
+    def __init__(self, bot, cog, user):
+        super().__init__(timeout=180)
+        self.bot = bot
+        self.cog = cog
+        self.user = user
+        self.reminders = []
+
+        self.page = 0
+        self._build()
+
+    async def load(self):
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT id, grund, time FROM reminder WHERE userID=%s ORDER BY time ASC",
+                    (self.user.id,)
+                )
+                self.reminders = await cur.fetchall()
+
+    def _build(self):
+        self.clear_items()
+
+        container = ui.Container(accent_color=ASTRA_BLUE.value)
+
+        # HEADER
+        container.add_item(ui.TextDisplay(
+            "# Erinnerungen Manager\n"
+            "Verwalte alle deine Erinnerungen an einem Ort."
+        ))
+
+        container.add_item(ui.Separator())
+
+        # LISTE
+        if not self.reminders:
+            container.add_item(ui.TextDisplay(
+                "❌ Du hast keine aktiven Erinnerungen."
+            ))
+        else:
+            start = self.page * 5
+            end = start + 5
+
+            for rid, grund, ts in self.reminders[start:end]:
+                container.add_item(ui.TextDisplay(
+                    f"**ID {rid}**\n"
+                    f"{grund}\n"
+                    f"⏱ <t:{ts}:F>"
+                ))
+
+        container.add_item(ui.Separator())
+
+        # BUTTONS
+        create_btn = ui.Button(
+            label="Erstellen",
+            style=discord.ButtonStyle.success,
+            emoji="➕"
+        )
+
+        async def create_cb(interaction):
+            await interaction.response.send_modal(ReminderCreateModal(self))
+
+        create_btn.callback = create_cb
+
+        delete_btn = ui.Button(
+            label="Löschen",
+            style=discord.ButtonStyle.danger,
+            emoji="🗑"
+        )
+
+        async def delete_cb(interaction):
+            if not self.reminders:
+                return await interaction.response.send_message("Keine Erinnerungen.", ephemeral=True)
+
+            options = [
+                discord.SelectOption(
+                    label=f"ID {rid}",
+                    description=grund[:50],
+                    value=str(rid)
+                )
+                for rid, grund, _ in self.reminders
+            ]
+
+            select = ui.Select(
+                placeholder="Wähle Erinnerung zum Löschen",
+                options=options[:25]
+            )
+
+            async def select_cb(inter2):
+                rid = int(select.values[0])
+
+                async with self.bot.pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            "DELETE FROM reminder WHERE id=%s AND userID=%s",
+                            (rid, self.user.id)
+                        )
+
+                task = self.cog.tasks.pop(rid, None)
+                if task:
+                    task.cancel()
+
+                await inter2.response.send_message(f"🗑 Erinnerung `{rid}` gelöscht.", ephemeral=True)
+
+            select.callback = select_cb
+
+            view = ui.View()
+            view.add_item(select)
+
+            await interaction.response.send_message("Wähle:", view=view, ephemeral=True)
+
+        delete_btn.callback = delete_cb
+
+        refresh_btn = ui.Button(
+            label="Aktualisieren",
+            style=discord.ButtonStyle.secondary,
+            emoji="🔄"
+        )
+
+        async def refresh_cb(interaction):
+            await self.load()
+            self._build()
+            await interaction.response.edit_message(view=self)
+
+        refresh_btn.callback = refresh_cb
+
+        container.add_item(ui.ActionRow(create_btn, delete_btn, refresh_btn))
+
+        self.add_item(container)
+
+
+# =========================================================
+#                     COG
+# =========================================================
 
 @app_commands.guild_only()
 class Reminder(commands.Cog):
+
     def __init__(self, bot):
         self.bot = bot
         self.tasks = {}
@@ -48,168 +249,44 @@ class Reminder(commands.Cog):
     async def reminder_task(self, reminder_id, user_id, grund, when):
         await self.bot.wait_until_ready()
 
-        if when.tzinfo is None:
-            when = when.replace(tzinfo=timezone.utc)
-
         await discord.utils.sleep_until(when)
 
-        user = self.bot.get_user(user_id)
-        if not user:
-            try:
-                user = await self.bot.fetch_user(user_id)
-            except Exception:
-                return
+        try:
+            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+        except:
+            return
 
         embed = discord.Embed(
-            title="<:Astra_time:1141303932061233202> Erinnerung abgeschlossen.",
-            description=f"Hier ist deine Erinnerung\n<:Astra_arrow:1141303823600717885> {grund}",
-            colour=discord.Colour.blue()
+            title="⏰ Erinnerung",
+            description=grund,
+            colour=ASTRA_BLUE
         )
 
         try:
             await user.send(embed=embed)
-        except Exception:
+        except:
             pass
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "DELETE FROM reminder WHERE id = %s",
-                    (reminder_id,)
-                )
+                await cur.execute("DELETE FROM reminder WHERE id=%s", (reminder_id,))
 
         self.tasks.pop(reminder_id, None)
 
-    # ---------------- SLASH COMMANDS ---------------- #
+    # =========================================================
+    #                     COMMAND
+    # =========================================================
 
-    reminder = app_commands.Group(
-        name="erinnerung",
-        description="Verwalte Erinnerungen."
-    )
+    @app_commands.command(name="erinnerungen", description="Öffne den Erinnerungs Manager")
+    async def manager(self, interaction: discord.Interaction):
 
-    @reminder.command(name="erstellen", description="Setze eine Erinnerung.")
-    @app_commands.describe(
-        beschreibung="Beschreibung der Erinnerung.",
-        zeit="Wie lange bis zur Erinnerung."
-    )
-    async def reminder_set(
-        self,
-        interaction: discord.Interaction,
-        beschreibung: str,
-        zeit: str
-    ):
-        seconds = convert(zeit)
+        view = ReminderManagerView(self.bot, self, interaction.user)
+        await view.load()
 
-        if seconds < 0:
-            return await interaction.response.send_message(
-                "❌ Ungültige Zeit!",
-                ephemeral=True
-            )
-
-        t1 = math.floor(discord.utils.utcnow().timestamp() + seconds)
-        t2 = datetime.fromtimestamp(t1, tz=timezone.utc)
-
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO reminder(userID, grund, time) VALUES(%s, %s, %s)",
-                    (interaction.user.id, beschreibung, t1)
-                )
-                reminder_id = cur.lastrowid
-
-        task = asyncio.create_task(
-            self.reminder_task(reminder_id, interaction.user.id, beschreibung, t2)
+        await interaction.response.send_message(
+            view=view,
+            ephemeral=True
         )
-        self.tasks[reminder_id] = task
-
-        embed = discord.Embed(
-            title=f"<:Astra_time:1141303932061233202> Erinnerung erstellt (ID {reminder_id})",
-            description=f"Erinnerung gesetzt auf {discord.utils.format_dt(t2, 'F')}\n<:Astra_arrow:1141303823600717885> {beschreibung}",
-            colour=discord.Colour.blue()
-        )
-
-        await interaction.response.send_message(embed=embed)
-
-    @reminder.command(name="anzeigen", description="Zeigt alle Erinnerungen an.")
-    async def reminder_list(self, interaction: discord.Interaction):
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT grund, id, time FROM reminder WHERE userID = %s",
-                    (interaction.user.id,)
-                )
-                result = await cur.fetchall()
-
-        if not result:
-            embed = discord.Embed(
-                title=f"Alle Erinnerungen von {interaction.user}",
-                description=f"{interaction.user.name} hat zur Zeit keine aktiven Erinnerungen.",
-                color=discord.Color.blue()
-            )
-            return await interaction.response.send_message(embed=embed)
-
-        embed = discord.Embed(
-            title=f"Alle Erinnerungen von {interaction.user.name}",
-            description="Um eine Erinnerung zu setzen, nutze den Befehl `/erinnerung erstellen`.",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow()
-        )
-
-        embed.set_author(
-            name=interaction.user,
-            icon_url=interaction.user.avatar.url if interaction.user.avatar else None
-        )
-
-        for eintrag in result:
-            reason = eintrag[0]
-            remindID = eintrag[1]
-            time = eintrag[2]
-
-            embed.add_field(
-                name=f"ID: {remindID}",
-                value=f"<:Astra_arrow:1141303823600717885>: {reason}\n<:Astra_time:1141303932061233202> Endet: <t:{time}:F>",
-                inline=True
-            )
-
-        await interaction.response.send_message(embed=embed)
-        return None
-
-    @reminder.command(name="löschen", description="Löscht eine Erinnerung.")
-    @app_commands.describe(id="Die ID der Erinnerung, die gelöscht werden soll.")
-    async def reminder_delete(self, interaction: discord.Interaction, id: int):
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT id FROM reminder WHERE userID = %s AND id = %s",
-                    (interaction.user.id, id)
-                )
-                result = await cur.fetchone()
-
-                if not result:
-                    embed = discord.Embed(
-                        title="Keine Erinnerung gefunden",
-                        description=f"Es gibt keine aktive Erinnerung mit der ID: `{id}`.",
-                        color=discord.Color.red()
-                    )
-                    return await interaction.response.send_message(embed=embed)
-
-                await cur.execute(
-                    "DELETE FROM reminder WHERE userID = %s AND id = %s",
-                    (interaction.user.id, id)
-                )
-
-        task = self.tasks.pop(id, None)
-        if task:
-            task.cancel()
-
-        embed = discord.Embed(
-            title="Erinnerung gelöscht",
-            description=f"Die Erinnerung mit der ID `{id}` wurde gelöscht.",
-            color=discord.Color.green()
-        )
-
-        await interaction.response.send_message(embed=embed)
-        return None
 
 
 async def setup(bot):
