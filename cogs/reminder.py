@@ -215,18 +215,25 @@ class ReminderManagerView(ui.LayoutView):
                 "\n"
 
                 "### <:Astra_punkt:1141303896745201696> Übersicht\n"
-                "Hier kannst du alle deine Erinnerungen an einem Ort verwalten.\n"
-                "Erstelle neue Reminder, behalte den Überblick und lösche sie jederzeit wieder.\n\n"
+                "Verwalte hier alle deine Erinnerungen an einem Ort.\n"
+                "Du kannst neue erstellen, bestehende ansehen und jederzeit wieder löschen.\n\n"
 
                 "### <:Astra_punkt:1141303896745201696> Funktionen\n"
-                "<:Astra_accept:1141303821176422460> Neue Erinnerungen erstellen\n"
-                "<:Astra_accept:1141303821176422460> Schnelle Reminder über die Quick-Buttons (10m / 1h / 1d)\n"
-                "<:Astra_accept:1141303821176422460> Erinnerungen mit <:Astra_x:1141303954555289600> löschen\n"
-                "<:Astra_accept:1141303821176422460> Zwischen Seiten navigieren\n\n"
+                "<:Astra_accept:1141303821176422460> **Erstellen**\n"
+                "Erstelle individuelle Erinnerungen mit eigener Beschreibung und Zeit.\n\n"
+
+                "<:Astra_accept:1141303821176422460> **Quick Reminder**\n"
+                "Nutze die Buttons (10m / 1h / 1d) für schnelle Erinnerungen ohne Eingabe.\n\n"
+
+                "<:Astra_accept:1141303821176422460> **Löschen**\n"
+                "Entferne Erinnerungen ganz einfach über den <:Astra_x:1141303954555289600> Button.\n\n"
+
+                "<:Astra_accept:1141303821176422460> **Navigation**\n"
+                "Wechsle zwischen Seiten, wenn du viele Erinnerungen hast.\n\n"
 
                 "### <:Astra_punkt:1141303896745201696> Tipps\n"
-                "<:Astra_light_on:1141303864134467675> Nutze die Quick-Buttons für schnelle Erinnerungen\n"
-                "<:Astra_light_on:1141303864134467675> Die angezeigten Zeiten passen sich automatisch an\n"
+                "<:Astra_light_on:1141303864134467675> Quick-Buttons sparen Zeit bei häufigen Erinnerungen\n"
+                "<:Astra_light_on:1141303864134467675> Zeiten werden automatisch relativ und als Datum angezeigt\n"
             ))
 
             home_btn = ui.Button(
