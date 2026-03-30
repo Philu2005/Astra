@@ -778,7 +778,8 @@ class DevTools(commands.Cog):
         await ctx.send(embed=pages[0], view=view)
 
     # --- Serverliste (NEU) ---
-    @commands.hybrid_command(name="serverlist", aliases=["servers"])
+    @commands.guild_only()
+    @commands.command(name="serverlist", aliases=["servers"])
     @commands.is_owner()
     async def serverlist(self, ctx: commands.Context):
         """Zeigt alle Server mit Dropdown, Paging und Leave-Button (nur Owner)."""

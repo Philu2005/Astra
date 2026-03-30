@@ -541,22 +541,23 @@ class Analytics(commands.Cog):
 
     statistik = app_commands.Group(
         name="statistik",
-        description="Astra Analytics System"
+        description="Astra Analytics System",
+        guild_only=True
     )
 
-    @statistik.command(name="server")
+    @statistik.command(name="server", description="Zeigt die Aktivitäts-Statistiken eines Servers")
     async def server(self, interaction: discord.Interaction):
         await interaction.response.defer()
         await self.send_stats(interaction, "server", 7)
 
-    @statistik.command(name="user")
+    @statistik.command(name="user",  description="Zeigt die Aktivitäts-Statistiken eines Nutzers")
     async def user(self, interaction: discord.Interaction, member: discord.Member=None):
         await interaction.response.defer()
         if member is None:
             member = interaction.user
         await self.send_stats(interaction, "user", 7, member.id)
 
-    @statistik.command(name="reset")
+    @statistik.command(name="reset", description="Setzt alle Server-Statistiken zurück")
     @app_commands.checks.has_permissions(administrator=True)
     async def reset(self, interaction: discord.Interaction):
 
