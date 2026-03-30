@@ -25,7 +25,7 @@ class Reminder(commands.Cog):
         self.tasks = {}
 
     async def cog_load(self):
-        await self.load_reminders()
+        self.bot.loop.create_task(self.load_reminders())
 
     async def load_reminders(self):
         await self.bot.wait_until_ready()
