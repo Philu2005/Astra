@@ -215,25 +215,18 @@ class ReminderManagerView(ui.LayoutView):
                 "\n"
 
                 "### <:Astra_punkt:1141303896745201696> Übersicht\n"
-                "Verwalte hier alle deine Erinnerungen an einem Ort.\n"
-                "Du kannst neue erstellen, bestehende ansehen und jederzeit wieder löschen.\n\n"
+                "Verwalte deine Erinnerungen zentral an einem Ort.\n"
+                "Erstellen • Anzeigen • Löschen\n\n"
 
                 "### <:Astra_punkt:1141303896745201696> Funktionen\n"
-                "<:Astra_accept:1141303821176422460> **Erstellen**\n"
-                "Erstelle individuelle Erinnerungen mit eigener Beschreibung und Zeit.\n\n"
-
-                "<:Astra_accept:1141303821176422460> **Quick Reminder**\n"
-                "Nutze die Buttons (10m / 1h / 1d) für schnelle Erinnerungen ohne Eingabe.\n\n"
-
-                "<:Astra_accept:1141303821176422460> **Löschen**\n"
-                "Entferne Erinnerungen ganz einfach über den <:Astra_x:1141303954555289600> Button.\n\n"
-
-                "<:Astra_accept:1141303821176422460> **Navigation**\n"
-                "Wechsle zwischen Seiten, wenn du viele Erinnerungen hast.\n\n"
+                "<:Astra_accept:1141303821176422460> **Erstellen** — Eigene Erinnerung mit Zeit\n"
+                "<:Astra_time:1141303932061233202> **Quick** — 10m / 1h / 1d sofort erstellen\n"
+                "<:Astra_x:1141303954555289600> **Löschen** — Direkt über den Button entfernen\n"
+                "<:Astra_arrow:1141303823600717885> **Navigation** — Zwischen Seiten wechseln\n\n"
 
                 "### <:Astra_punkt:1141303896745201696> Tipps\n"
-                "<:Astra_light_on:1141303864134467675> Quick-Buttons sparen Zeit bei häufigen Erinnerungen\n"
-                "<:Astra_light_on:1141303864134467675> Zeiten werden automatisch relativ und als Datum angezeigt\n"
+                "<:Astra_light_on:1141303864134467675> Quick-Buttons sparen Zeit\n"
+                "<:Astra_light_on:1141303864134467675> Zeiten werden automatisch angepasst"
             ))
 
             home_btn = ui.Button(
