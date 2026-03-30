@@ -213,35 +213,35 @@ class ReminderManagerView(ui.LayoutView):
 
             container.add_item(ui.TextDisplay(
                 "\n"
-                "## <:Astra_punkt:1141303896745201696> Erinnerungen\n"
-                "Verwalte alles übersichtlich an einem Ort.\n"
+                "## Erinnerungen\n"
+                "Behalte alle deine Erinnerungen im Blick – einfach, schnell und übersichtlich.\n"
             ))
 
             container.add_item(ui.Separator())
 
             container.add_item(ui.TextDisplay(
-                "### 📋 Übersicht\n"
-                "<:Astra_punkt:1141303896745201696> Zentrale Verwaltung aller Erinnerungen\n"
-                "<:Astra_punkt:1141303896745201696> Neue erstellen und bestehende im Blick behalten\n"
-                "<:Astra_punkt:1141303896745201696> Jederzeit einfach löschen\n"
+                "### <:Astra_info:1141303860556738620> Übersicht\n"
+                "<:Astra_punkt:1141303896745201696> Verwalte alle deine Erinnerungen zentral an einem Ort\n"
+                "<:Astra_punkt:1141303896745201696> Erstelle neue Einträge und behalte bestehende jederzeit im Blick\n"
+                "<:Astra_punkt:1141303896745201696> Entferne Erinnerungen unkompliziert, sobald du sie nicht mehr brauchst\n"
             ))
 
             container.add_item(ui.Separator())
 
             container.add_item(ui.TextDisplay(
-                "### ⚙️ Funktionen\n"
-                "<:Astra_punkt:1141303896745201696> Erinnerungen erstellen\n"
-                "<:Astra_punkt:1141303896745201696> Quick-Reminder (10m / 1h / 1d)\n"
-                "<:Astra_punkt:1141303896745201696> Löschen über <:Astra_x:1141303954555289600>\n"
-                "<:Astra_punkt:1141303896745201696> Navigation zwischen Seiten\n"
+                "### <:Astra_settings:1141303908778639490> Funktionen\n"
+                "<:Astra_punkt:1141303896745201696> Erstelle individuelle Erinnerungen mit eigener Zeitangabe\n"
+                "<:Astra_punkt:1141303896745201696> Nutze Quick-Reminder für sofortige Erinnerungen (10 Minuten, 1 Stunde oder 1 Tag)\n"
+                "<:Astra_punkt:1141303896745201696> Lösche Erinnerungen direkt über <:Astra_x:1141303954555289600> ohne Umwege\n"
+                "<:Astra_punkt:1141303896745201696> Navigiere einfach zwischen mehreren Seiten und Einträgen\n"
             ))
 
             container.add_item(ui.Separator())
 
             container.add_item(ui.TextDisplay(
-                "### 💡 Tipps\n"
-                "<:Astra_punkt:1141303896745201696> Quick-Buttons sparen Zeit\n"
-                "<:Astra_punkt:1141303896745201696> Zeiten werden automatisch angepasst\n"
+                "### <:Astra_light_on:1141303864134467675> Tipps\n"
+                "<:Astra_punkt:1141303896745201696> Quick-Buttons eignen sich perfekt für häufige oder spontane Erinnerungen\n"
+                "<:Astra_punkt:1141303896745201696> Die angezeigten Zeiten werden automatisch angepasst und aktuell gehalten\n"
             ))
 
             home_btn = ui.Button(
