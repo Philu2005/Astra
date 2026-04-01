@@ -324,10 +324,11 @@ class HelpCog(commands.Cog):
         embed.add_field(
             name="Letzte Updates",
             value=(
-                f"> <:Astra_user:1141303940365959241> Joinrole und Botrole nun als </autorole:{self._cid('autorole')}> zusammengeführt!\n"
-                "> <:Astra_settings:1141303908778639490> Automod System nun mit neuem Setup und Config Command.\n"
-                "> <:Astra_ticket:1141833836204937347> Ticket System nun mit neuem Setup command.\n"
-                f"> <:Astra_pin:1141303893616250900> Statistik System hinzugefügt."
+                "> <:Astra_punkt:1141303896745201696> Levelsystem refactored (Config Panel, XP-Handling, UI, Command-Struktur).\n"
+                "> <:Astra_punkt:1141303896745201696> Help-Command synchronisiert und strukturell überarbeitet.\n"
+                "> <:Astra_punkt:1141303896745201696> Reminder-System auf interaktive UI + Task-basiertes Scheduling umgestellt.\n"
+                "> <:Astra_punkt:1141303896745201696> AFK-System optimiert (DB-Queries, Zeit-Handling, Multi-User Support).\n"
+                "> <:Astra_punkt:1141303896745201696> Infrastruktur verbessert (Webhook-Proxy, Logging, DB-Schema idempotent)."
             ),
             inline=False,
         )
