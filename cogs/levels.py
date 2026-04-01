@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageChops, ImageFont
 ASSETS_DIR = "cogs/assets/Levelcards"
 DEFAULT_STYLE = "standard"  # entspricht standard.png
 
+
 def list_styles():
     if not os.path.isdir(ASSETS_DIR):
         return []
@@ -23,6 +24,7 @@ def list_styles():
         if f.lower().endswith(".png")
     )
 
+
 def style_to_path(style_name: str) -> str:
     if not os.path.isdir(ASSETS_DIR):
         return os.path.join(ASSETS_DIR, f"{DEFAULT_STYLE}.png")
@@ -30,6 +32,7 @@ def style_to_path(style_name: str) -> str:
         if f.lower().endswith(".png") and os.path.splitext(f)[0].lower() == style_name.lower():
             return os.path.join(ASSETS_DIR, f)
     return os.path.join(ASSETS_DIR, f"{DEFAULT_STYLE}.png")
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Layout-Gruppen + Skalierung
@@ -40,14 +43,17 @@ def _layout_key_for_style(style: str) -> str:
         return "standard"
     return "new"
 
+
 BASE_BY_GROUP = {
     "new": (1075, 340),
     "standard": (1064, 339),
 }
 
+
 def _deepcopy(obj):
     import json as _json
     return _json.loads(_json.dumps(obj))
+
 
 def _merge_overrides(base: dict, ovr: dict | None) -> dict:
     res = _deepcopy(base)
@@ -58,25 +64,29 @@ def _merge_overrides(base: dict, ovr: dict | None) -> dict:
             res[k] = v
     return res
 
+
 def _scale_layout(layout: dict, dst_w: int, dst_h: int, base_w: int, base_h: int) -> dict:
     sx = dst_w / float(base_w)
     sy = dst_h / float(base_h)
     sfont = (sx + sy) / 2.0
+
     def sc(d: dict) -> dict:
         out = {}
         for k, v in d.items():
             if isinstance(v, dict):
                 out[k] = sc(v)
-            elif k in ("x","w","size","border","pad_x","r","max_w","ring_width","inset","x0","x1"):
+            elif k in ("x", "w", "size", "border", "pad_x", "r", "max_w", "ring_width", "inset", "x0", "x1"):
                 out[k] = int(round(v * sx))
-            elif k in ("y","h","pad_y","y0","y1"):
+            elif k in ("y", "h", "pad_y", "y0", "y1"):
                 out[k] = int(round(v * sy))
-            elif k in ("font","min_font","base_font"):
+            elif k in ("font", "min_font", "base_font"):
                 out[k] = max(8, int(round(v * sfont)))
             else:
                 out[k] = v
         return out
+
     return sc(layout)
+
 
 def _resolved_layout(style: str, img_w: int, img_h: int) -> dict:
     key = _layout_key_for_style(style)
@@ -85,22 +95,26 @@ def _resolved_layout(style: str, img_w: int, img_h: int) -> dict:
     bw, bh = BASE_BY_GROUP[key]
     return _scale_layout(merged, img_w, img_h, bw, bh)
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Progressbar-Farben
 # ──────────────────────────────────────────────────────────────────────────────
 DEFAULT_HEX = "#61BFC4"
 BAR_COLORS = {
-    "türkis_stripes":              "#C980E8",
-    "Halloween_stripes":           "#61BFC4",
-    "Christmas_stripes":           "#61BFC4",
-    "Easter Stripes":              "#61BFC4",
-    "Easter_stripes":              "#61BFC4",
-    "standard_stripes_left_star":  "#61BFC4",
+    "türkis_stripes": "#C980E8",
+    "Halloween_stripes": "#61BFC4",
+    "Christmas_stripes": "#61BFC4",
+    "Easter Stripes": "#61BFC4",
+    "Easter_stripes": "#61BFC4",
+    "standard_stripes_left_star": "#61BFC4",
     "standard_stripes_right_star": "#61BFC4",
-    "standard":                    "#61BFC4",
+    "standard": "#61BFC4",
 }
+
+
 def bar_color_for(style: str) -> str:
     return BAR_COLORS.get(style, DEFAULT_HEX)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Pixelgenaue Layouts (Avatar/Text + exakte Boxen für Name/Level/XP)
@@ -112,11 +126,14 @@ LAYOUTS = {
         "rank": {"x": 393, "y": 157, "font": 53},
 
         # Name-Box leicht nach rechts; zentriert im Balken
-        "name_box":  {"x0": 252, "y0": 89,  "x1": 818, "y1": 143, "base_font": 36, "min_font": 24, "pad_x": 22, "pad_y": 10},
+        "name_box": {"x0": 252, "y0": 89, "x1": 818, "y1": 143, "base_font": 36, "min_font": 24, "pad_x": 22,
+                     "pad_y": 10},
 
         # Level/XP-Boxen – hohe Schrift möglich dank kleiner pad_y
-        "level_box": {"x0": 853, "y0": 89,  "x1": 1021, "y1": 129, "base_font": 52, "min_font": 24, "pad_x": 10, "pad_y": 4},
-        "xp_box":    {"x0": 853, "y0": 204, "x1": 1021, "y1": 244, "base_font": 40, "min_font": 20, "pad_x": 10, "pad_y": 6},
+        "level_box": {"x0": 853, "y0": 89, "x1": 1021, "y1": 129, "base_font": 52, "min_font": 24, "pad_x": 10,
+                      "pad_y": 4},
+        "xp_box": {"x0": 853, "y0": 204, "x1": 1021, "y1": 244, "base_font": 40, "min_font": 20, "pad_x": 10,
+                   "pad_y": 6},
     },
 
     # Standard (1064 x 339)
@@ -125,10 +142,13 @@ LAYOUTS = {
         "rank": {"x": 393, "y": 157, "font": 53},
 
         # Name-Box etwas nach rechts verschoben (vorher 232..808)
-        "name_box":  {"x0": 246, "y0": 88,  "x1": 813, "y1": 142, "base_font": 36, "min_font": 24, "pad_x": 22, "pad_y": 10},
+        "name_box": {"x0": 246, "y0": 88, "x1": 813, "y1": 142, "base_font": 36, "min_font": 24, "pad_x": 22,
+                     "pad_y": 10},
 
-        "level_box": {"x0": 847, "y0": 88,  "x1": 1015, "y1": 128, "base_font": 52, "min_font": 24, "pad_x": 10, "pad_y": 4},
-        "xp_box":    {"x0": 847, "y0": 205, "x1": 1015, "y1": 243, "base_font": 40, "min_font": 20, "pad_x": 10, "pad_y": 6},
+        "level_box": {"x0": 847, "y0": 88, "x1": 1015, "y1": 128, "base_font": 52, "min_font": 24, "pad_x": 10,
+                      "pad_y": 4},
+        "xp_box": {"x0": 847, "y0": 205, "x1": 1015, "y1": 243, "base_font": 40, "min_font": 20, "pad_x": 10,
+                   "pad_y": 6},
     }
 }
 
@@ -156,24 +176,24 @@ PRETTY_CHOICES = tuple(PRETTY_TO_FILENAME.keys())
 PB_GEOM = {
     "standard": {  # 1064 x 339
         "left_cap": {
-            214:(275,312), 213:(276,311), 212:(276,311), 211:(276,310),
-            210:(278,309), 209:(279,308), 208:(281,306),
+            214: (275, 312), 213: (276, 311), 212: (276, 311), 211: (276, 310),
+            210: (278, 309), 209: (279, 308), 208: (281, 306),
         },
         "right_cap": {
-            881:(275,312), 882:(276,311), 883:(276,311), 884:(277,310),
-            885:(278,309), 886:(279,308), 887:(281,306),
+            881: (275, 312), 882: (276, 311), 883: (276, 311), 884: (277, 310),
+            885: (278, 309), 886: (279, 308), 887: (281, 306),
         },
         "y_full": (275, 312),
         "x_span": (208, 887),
     },
-    "new": {       # 1075 x 340
+    "new": {  # 1075 x 340
         "left_cap": {
-            220:(276,313), 219:(277,312), 218:(277,312), 217:(278,311),
-            216:(279,310), 215:(280,309), 214:(282,307),
+            220: (276, 313), 219: (277, 312), 218: (277, 312), 217: (278, 311),
+            216: (279, 310), 215: (280, 309), 214: (282, 307),
         },
         "right_cap": {
-            887:(276,313), 888:(277,312), 889:(277,312), 890:(278,311),
-            891:(279,310), 892:(280,309), 893:(282,307),
+            887: (276, 313), 888: (277, 312), 889: (277, 312), 890: (278, 311),
+            891: (279, 310), 892: (280, 309), 893: (282, 307),
         },
         "y_full": (276, 313),
         "x_span": (214, 893),
@@ -181,12 +201,14 @@ PB_GEOM = {
 }
 
 # Cache für Slot-Masken
-_SLOT_MASK_CACHE: dict[tuple[str, tuple[int,int]], Image.Image] = {}
+_SLOT_MASK_CACHE: dict[tuple[str, tuple[int, int]], Image.Image] = {}
+
 
 def _geom_key(img_w: int, img_h: int, style: str) -> str:
     if (img_w, img_h) == (1064, 339) or (style or "").lower() in ("standard", "levelcard_astra"):
         return "standard"
     return "new"
+
 
 def _slot_mask_from_coords(img_w: int, img_h: int, layout_key: str) -> Image.Image:
     cache_key = (layout_key, (img_w, img_h))
@@ -196,7 +218,7 @@ def _slot_mask_from_coords(img_w: int, img_h: int, layout_key: str) -> Image.Ima
     geom = PB_GEOM[layout_key]
     x0, x1 = geom["x_span"]
     y0, y1 = geom["y_full"]
-    left_cap  = geom["left_cap"]
+    left_cap = geom["left_cap"]
     right_cap = geom["right_cap"]
 
     mask = Image.new("L", (img_w, img_h), 0)
@@ -217,11 +239,13 @@ def _slot_mask_from_coords(img_w: int, img_h: int, layout_key: str) -> Image.Ima
     _SLOT_MASK_CACHE[cache_key] = mask
     return mask
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Render-Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 def _mk_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(FONT_PATH, size=max(8, int(size)))
+
 
 def _truncate_to_width(draw, text: str, font, max_px: int) -> str:
     if draw.textlength(text, font=font) <= max_px:
@@ -231,12 +255,14 @@ def _truncate_to_width(draw, text: str, font, max_px: int) -> str:
         text = text[:-1]
     return text + ell
 
+
 def _center_text(draw: ImageDraw.ImageDraw, cx: int, cy: int,
                  text: str, font: ImageFont.FreeTypeFont, fill: str):
     w = draw.textlength(text, font=font)
     x0, y0, x1, y1 = font.getbbox(text)
     y_mid = (y0 + y1) / 2.0
     draw.text((cx - w / 2.0, cy - y_mid), text, font=font, fill=fill)
+
 
 def _draw_centered_in_box(draw: ImageDraw.ImageDraw, text: str, box: dict,
                           base_font: int, min_font: int, fill: str = "white", pad: int | None = None):
@@ -286,6 +312,7 @@ def _draw_centered_in_box(draw: ImageDraw.ImageDraw, text: str, box: dict,
     cy = (y0 + y1) // 2
     _center_text(draw, cx, cy, text, font, fill)
 
+
 def _draw_progressbar(background: Image.Image, lay: dict,
                       xp_start: int | float, xp_end: int | float,
                       style_key: str):
@@ -301,7 +328,7 @@ def _draw_progressbar(background: Image.Image, lay: dict,
     y0, y1 = geom["y_full"]
 
     total_w = x1 - x0 + 1
-    fill_w  = max(1, min(int(round(total_w * perc)), total_w))
+    fill_w = max(1, min(int(round(total_w * perc)), total_w))
     x_fill_end = x0 + fill_w - 1
 
     slot_mask = _slot_mask_from_coords(img_w, img_h, geom_key)
@@ -313,6 +340,444 @@ def _draw_progressbar(background: Image.Image, lay: dict,
 
     fill_img = Image.new("RGBA", (img_w, img_h), bar_color_for(style_key))
     background.paste(fill_img, (0, 0), fill_mask)
+
+
+class LevelSystemConfigView(discord.ui.LayoutView):
+
+    def __init__(self, bot: commands.Bot, invoker: discord.User, guild: discord.Guild):
+        super().__init__(timeout=None)
+
+        self.bot = bot
+        self.invoker = invoker
+        self.guild = guild
+
+        self.help_mode = False
+
+        self.xp_boost = False
+        self.xp_multiplier = 1.0
+
+        self.channel_type = "Last Channel"
+        self.level_message = None
+        self.roles: list[tuple[int, int]] = []
+
+    # ================= LOAD =================
+
+    async def _load(self):
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+
+                await cur.execute("SELECT xp FROM levelxp WHERE guildID=%s", (self.guild.id,))
+                r = await cur.fetchone()
+
+                if r:
+                    self.xp_boost = True
+                    self.xp_multiplier = float(r[0])
+                else:
+                    self.xp_boost = False
+                    self.xp_multiplier = 1.0
+
+                await cur.execute("SELECT type FROM levelchannel WHERE guildID=%s", (self.guild.id,))
+                r = await cur.fetchone()
+                self.channel_type = r[0] if r else "Last Channel"
+
+                await cur.execute("SELECT message FROM levelmsg WHERE guildID=%s", (self.guild.id,))
+                r = await cur.fetchone()
+                self.level_message = r[0] if r else None
+
+                await cur.execute("SELECT roleID, levelreq FROM levelroles WHERE guildID=%s", (self.guild.id,))
+                self.roles = await cur.fetchall() or []
+
+    async def start(self, interaction: discord.Interaction):
+        await self._load()
+        self._build()
+        await interaction.response.send_message(view=self, ephemeral=True)
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        if interaction.user.id != self.invoker.id:
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Nicht dein Panel.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    # ================= BUILD =================
+
+    def _build(self):
+        self.clear_items()
+
+        container = discord.ui.Container(
+            accent_color=discord.Colour.from_rgb(88, 101, 242).value
+        )
+
+        # ================= HEADER =================
+
+        help_btn = discord.ui.Button(
+            emoji="<:Astra_support:1141303923752325210>",
+            style=discord.ButtonStyle.secondary
+        )
+
+        async def help_cb(i):
+            self.help_mode = True
+            await self.refresh(i)
+
+        help_btn.callback = help_cb
+
+        container.add_item(discord.ui.Section(
+            discord.ui.TextDisplay(
+                "# <:Astra_settings:1141303908778639490> LEVELSYSTEM CONFIG\n\n"
+                "<:Astra_punkt:1141303896745201696> XP Boost & Multiplier\n"
+                "<:Astra_punkt:1141303896745201696> Channel & Messages\n"
+                "<:Astra_punkt:1141303896745201696> Rollen Rewards\n\n"
+                "<:Astra_light_on:1141303864134467675> "
+                "Zentrale Steuerung für dein Levelsystem."
+            ),
+            accessory=help_btn
+        ))
+
+        container.add_item(discord.ui.Separator())
+
+        # ================= HELP =================
+
+        if self.help_mode:
+            container.add_item(discord.ui.TextDisplay(
+                "## <:Astra_support:1141303923752325210> SYSTEM GUIDE\n\n"
+
+                "### <:Astra_boost:1141303827107164270> XP SYSTEM\n"
+                "<:Astra_punkt:1141303896745201696> Boost aktivieren / deaktivieren\n"
+                "<:Astra_punkt:1141303896745201696> Multiplier bestimmt XP Stärke\n"
+                "<:Astra_punkt:1141303896745201696> x1 = normal\n"
+                "<:Astra_punkt:1141303896745201696> x2 = doppelt\n"
+                "<:Astra_punkt:1141303896745201696> x3+ = insane\n\n"
+
+                "### <:Astra_news:1141303885533827072> CHANNEL SYSTEM\n"
+                "<:Astra_punkt:1141303896745201696> Last Channel → Standard\n"
+                "<:Astra_punkt:1141303896745201696> Private Message → DM\n"
+                "<:Astra_punkt:1141303896745201696> Deactivated → kein Output\n\n"
+
+                "### <:Astra_messages:1141303867850641488> MESSAGE SYSTEM\n"
+                "<:Astra_punkt:1141303896745201696> %member → User Ping\n"
+                "<:Astra_punkt:1141303896745201696> %level → Level\n\n"
+
+                "### <:Astra_pokal:1141825582108258334> ROLE SYSTEM\n"
+                "<:Astra_punkt:1141303896745201696> Auto Rewards bei Level-Up\n"
+                "<:Astra_punkt:1141303896745201696> Perfekt für Progression\n\n"
+
+                "<:Astra_light_on:1141303864134467675> PRO TIP\n"
+                "XP Boost + Rollen = maximale Aktivität 🚀"
+            ))
+
+            back = discord.ui.Button(
+                label="Zurück",
+                style=discord.ButtonStyle.secondary,
+                emoji="<:Astra_arrow_backwards:1392540551546671348>"
+            )
+
+            async def back_cb(i):
+                self.help_mode = False
+                await self.refresh(i)
+
+            back.callback = back_cb
+
+            container.add_item(discord.ui.ActionRow(back))
+            self.add_item(container)
+            return
+
+        # ================= XP =================
+
+        xp_btn = discord.ui.Button(
+            label="Deaktivieren" if self.xp_boost else "Aktivieren",
+            style=discord.ButtonStyle.danger if self.xp_boost else discord.ButtonStyle.success
+        )
+
+        set_multi = discord.ui.Button(label="Multiplier setzen", style=discord.ButtonStyle.primary)
+        reset_multi = discord.ui.Button(label="Reset x1", style=discord.ButtonStyle.secondary)
+
+        async def xp_cb(i):
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    if not self.xp_boost:
+                        await cur.execute(
+                            "INSERT INTO levelxp(guildID,xp) VALUES(%s,%s)",
+                            (self.guild.id, self.xp_multiplier)
+                        )
+                    else:
+                        await cur.execute("DELETE FROM levelxp WHERE guildID=%s", (self.guild.id,))
+            await self.refresh(i)
+
+        async def set_multi_cb(i):
+
+            class Modal(discord.ui.Modal, title="XP Multiplier"):
+
+                def __init__(self, view):
+                    super().__init__()
+                    self.view = view
+
+                value = discord.ui.TextInput(label="Multiplier", required=True)
+
+                async def on_submit(self, inter):
+
+                    raw = self.value.value.strip().replace(",", ".")
+
+                    try:
+                        val = float(raw)
+                    except ValueError:
+                        return await inter.response.send_message(
+                            "<:Astra_x:1141303954555289600> Ungültiger Wert.",
+                            ephemeral=True
+                        )
+
+                    if val <= 0:
+                        return await inter.response.send_message(
+                            "<:Astra_x:1141303954555289600> Multiplier muss größer als 0 sein.",
+                            ephemeral=True
+                        )
+
+                    if val > 10:
+                        return await inter.response.send_message(
+                            "<:Astra_x:1141303954555289600> Maximal x10.",
+                            ephemeral=True
+                        )
+
+                    async with self.view.bot.pool.acquire() as conn:
+                        async with conn.cursor() as cur:
+                            await cur.execute(
+                                "INSERT INTO levelxp(guildID,xp) VALUES(%s,%s) "
+                                "ON DUPLICATE KEY UPDATE xp=%s",
+                                (self.view.guild.id, val, val)
+                            )
+
+                    await self.view.refresh(inter)
+                    return None
+
+            await i.response.send_modal(Modal(view=self))
+
+        async def reset_cb(i):
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM levelxp WHERE guildID=%s", (self.guild.id,))
+            await self.refresh(i)
+
+        xp_btn.callback = xp_cb
+        set_multi.callback = set_multi_cb
+        reset_multi.callback = reset_cb
+
+        status_emoji = (
+            "<:Astra_accept:1141303821176422460>"
+            if self.xp_boost else
+            "<:Astra_x:1141303954555289600>"
+        )
+
+        container.add_item(discord.ui.Section(
+            discord.ui.TextDisplay(
+                "## <:Astra_boost:1141303827107164270> XP SYSTEM\n\n"
+                f"{status_emoji} **Status:** {'Aktiv' if self.xp_boost else 'Deaktiviert'}\n"
+                f"<:Astra_punkt:1141303896745201696> Multiplier: **x{self.xp_multiplier}**\n\n"
+            ),
+            accessory=xp_btn
+        ))
+
+        container.add_item(discord.ui.ActionRow(set_multi, reset_multi))
+        container.add_item(discord.ui.Separator())
+
+        # ================= CHANNEL =================
+
+        channel_display = self.channel_type
+        if channel_display.isdigit():
+            channel_display = f"<#{channel_display}>"
+
+        container.add_item(discord.ui.TextDisplay(
+            "## <:Astra_news:1141303885533827072> CHANNEL SYSTEM\n\n"
+            f"<:Astra_punkt:1141303896745201696> Aktuell: **{channel_display}**"
+        ))
+
+        mode_select = discord.ui.Select(
+            placeholder=f"Aktuell: {self.channel_type}",
+            options=[
+                discord.SelectOption(label="Letzter Kanal", value="Last Channel"),
+                discord.SelectOption(label="Private Nachricht", value="Private Message"),
+                discord.SelectOption(label="Deaktiviert", value="Deactivated"),
+            ]
+        )
+
+        async def mode_cb(i):
+            val = mode_select.values[0]
+
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM levelchannel WHERE guildID=%s", (self.guild.id,))
+                    await cur.execute(
+                        "INSERT INTO levelchannel(guildID,type) VALUES(%s,%s)",
+                        (self.guild.id, val)
+                    )
+
+            await self.refresh(i)
+
+        mode_select.callback = mode_cb
+
+        channel_select = discord.ui.ChannelSelect(
+            channel_types=[discord.ChannelType.text],
+            placeholder="Festen Kanal wählen..."
+        )
+
+        async def channel_cb(i):
+            ch = channel_select.values[0]
+
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM levelchannel WHERE guildID=%s", (self.guild.id,))
+                    await cur.execute(
+                        "INSERT INTO levelchannel(guildID,type) VALUES(%s,%s)",
+                        (self.guild.id, str(ch.id))
+                    )
+
+            await self.refresh(i)
+
+        channel_select.callback = channel_cb
+
+        container.add_item(discord.ui.ActionRow(mode_select))
+        container.add_item(discord.ui.ActionRow(channel_select))
+        container.add_item(discord.ui.Separator())
+
+        # ================= MESSAGE =================
+
+        container.add_item(discord.ui.TextDisplay(
+            "## <:Astra_messages:1141303867850641488> LEVEL MESSAGE\n\n"
+            f"{self.level_message or '*Standard Nachricht aktiv*'}\n\n"
+            "<:Astra_light_on:1141303864134467675> "
+            "Nutze %member und %level."
+        ))
+
+        edit = discord.ui.Button(label="Bearbeiten", style=discord.ButtonStyle.primary)
+        reset = discord.ui.Button(label="Reset", style=discord.ButtonStyle.secondary)
+
+        async def edit_cb(i):
+
+            class Modal(discord.ui.Modal, title="Level Nachricht"):
+
+                def __init__(self, view):
+                    super().__init__()
+                    self.view = view  # 🔥 DAS FEHLT BEI DIR
+
+                text = discord.ui.TextInput(
+                    label="Level-Up Nachricht",
+                    placeholder=(
+                        "🎉 %member ist jetzt Level %level!\n"
+                        "(%member = User | %level = Level)"
+                    ),
+                    style=discord.TextStyle.paragraph,
+                    required=True,
+                    max_length=2000
+                )
+
+                async def on_submit(self, inter):
+                    async with self.view.bot.pool.acquire() as conn:
+                        async with conn.cursor() as cur:
+                            await cur.execute(
+                                "INSERT INTO levelmsg(guildID,message) VALUES(%s,%s) "
+                                "ON DUPLICATE KEY UPDATE message=%s",
+                                (self.view.guild.id, self.text.value, self.text.value)
+                            )
+
+                    await self.view.refresh(inter)
+
+            await i.response.send_modal(Modal(view=self))
+
+        async def reset_cb(i):
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM levelmsg WHERE guildID=%s", (self.guild.id,))
+            await self.refresh(i)
+
+        edit.callback = edit_cb
+        reset.callback = reset_cb
+
+        container.add_item(discord.ui.ActionRow(edit, reset))
+        container.add_item(discord.ui.Separator())
+
+        # ================= ROLES =================
+
+        role_text = (
+            "\n".join(
+                f"<:Astra_punkt:1141303896745201696> Level **{lvl}** → <@&{rid}>"
+                for rid, lvl in self.roles
+            )
+            if self.roles else
+            "<:Astra_x:1141303954555289600> Keine Rollen gesetzt."
+        )
+
+        container.add_item(discord.ui.TextDisplay(
+            "## <:Astra_pokal:1141825582108258334> ROLE REWARDS\n\n"
+            f"{role_text}"
+        ))
+
+        add = discord.ui.Button(label="Hinzufügen", style=discord.ButtonStyle.success)
+        remove = discord.ui.Button(label="Entfernen", style=discord.ButtonStyle.danger)
+
+        async def add_cb(i):
+
+            class Modal(discord.ui.Modal, title="Neue Levelrolle"):
+
+                def __init__(self, view):
+                    super().__init__()
+                    self.view = view  # 🔥 wichtig
+
+                role = discord.ui.TextInput(label="Role ID")
+                level = discord.ui.TextInput(label="Level")
+
+                async def on_submit(self, inter):
+                    # ✅ HIER REIN (GANZ OBEN!)
+                    if not self.role.value.isdigit() or not self.level.value.isdigit():
+                        return await inter.response.send_message(
+                            "<:Astra_x:1141303954555289600> Ungültige Eingabe.",
+                            ephemeral=True
+                        )
+
+                    async with self.view.bot.pool.acquire() as conn:
+                        async with conn.cursor() as cur:
+                            await cur.execute(
+                                "INSERT INTO levelroles(guildID,roleID,levelreq) VALUES(%s,%s,%s)",
+                                (self.view.guild.id, self.role.value, self.level.value)
+                            )
+
+                    await self.view.refresh(inter)
+
+            await i.response.send_modal(Modal(view=self))
+
+        async def remove_cb(i):
+
+            class Modal(discord.ui.Modal, title="Levelrolle entfernen"):
+                level = discord.ui.TextInput(label="Level")
+
+                async def on_submit(self, inter):
+                    async with self.view.bot.pool.acquire() as conn:
+                        async with conn.cursor() as cur:
+                            await cur.execute(
+                                "DELETE FROM levelroles WHERE guildID=%s AND levelreq=%s",
+                                (self.view.guild.id, self.level.value)
+                            )
+                    await self.view.refresh(inter)
+
+            await i.response.send_modal(Modal())
+
+        add.callback = add_cb
+        remove.callback = remove_cb
+
+        container.add_item(discord.ui.ActionRow(add, remove))
+
+        self.add_item(container)
+
+    # ================= REFRESH =================
+
+    async def refresh(self, interaction):
+        await self._load()
+        self._build()
+
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=self)
+        else:
+            await interaction.response.edit_message(view=self)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Slash-Gruppe nur für Levelkarten
@@ -397,7 +862,8 @@ class Level(app_commands.Group):
         inset = av.get("inset", 0)
         if av.get("draw_ring", False):
             ring_w = av.get("ring_width", 10)
-            ImageDraw.Draw(background).ellipse((av_x, av_y, av_x + av_size, av_y + av_size), outline="white", width=ring_w)
+            ImageDraw.Draw(background).ellipse((av_x, av_y, av_x + av_size, av_y + av_size), outline="white",
+                                               width=ring_w)
             inset = max(inset, ring_w)
 
         inner_d = (av_size - 2 * inset, av_size - 2 * inset)
@@ -418,7 +884,7 @@ class Level(app_commands.Group):
 
         # Level & XP — exakt zentriert, maximal groß
         level_box = lay["level_box"]
-        xp_box    = lay["xp_box"]
+        xp_box = lay["xp_box"]
         _draw_centered_in_box(draw, f"{lvl_start}", level_box,
                               level_box["base_font"], level_box["min_font"], fill="white")
         _draw_centered_in_box(draw, f"{xp_start}/{round(xp_end)}", xp_box,
@@ -459,7 +925,8 @@ class Level(app_commands.Group):
         await interaction.response.send_message(f"✅ Style auf **{style}** gesetzt.", ephemeral=True)
         return None
 
-    @app_commands.command(name="previewstyle", description="Vorschau deiner Levelkarte anzeigen, ohne sie zu speichern.")
+    @app_commands.command(name="previewstyle",
+                          description="Vorschau deiner Levelkarte anzeigen, ohne sie zu speichern.")
     @app_commands.describe(style="Name des Stils, der für die Vorschau verwendet werden soll.")
     @app_commands.guild_only()
     async def previewstyle(self, interaction: discord.Interaction, style: Literal[PRETTY_CHOICES]):
@@ -514,7 +981,8 @@ class Level(app_commands.Group):
         inset = av.get("inset", 0)
         if av.get("draw_ring", False):
             ring_w = av.get("ring_width", 10)
-            ImageDraw.Draw(background).ellipse((av_x, av_y, av_x + av_size, av_y + av_size), outline="white", width=ring_w)
+            ImageDraw.Draw(background).ellipse((av_x, av_y, av_x + av_size, av_y + av_size), outline="white",
+                                               width=ring_w)
             inset = max(inset, ring_w)
 
         inner_d = (av_size - 2 * inset, av_size - 2 * inset)
@@ -535,7 +1003,7 @@ class Level(app_commands.Group):
 
         # Level & XP – exakt zentriert
         level_box = lay["level_box"]
-        xp_box    = lay["xp_box"]
+        xp_box = lay["xp_box"]
         _draw_centered_in_box(draw, f"{lvl_start}", level_box,
                               level_box["base_font"], level_box["min_font"], fill="white")
         _draw_centered_in_box(draw, f"{xp_start}/{round(xp_end)}", xp_box,
@@ -559,37 +1027,63 @@ class Level(app_commands.Group):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def status(self, interaction: discord.Interaction, arg: Literal['Einschalten', 'Ausschalten']):
 
-        """Lege einen Kanal fest, in den die Level Up Nachrichten gesendet werden."""
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                if arg == "Ausschalten":
-                    await cur.execute(f"SELECT enabled FROM levelsystem WHERE guild_id = (%s)", (interaction.guild.id))
-                    enabled = await cur.fetchone()
-                    if enabled[0] == 0:
-                        await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> **Das Levelsystem ist auf diesem Server bereits deaktiviert.**",
-                            ephemeral=True)
-                        return
-                    if enabled[0] == 1:
-                        await cur.execute(f"UPDATE levelsystem SET enabled = 0 WHERE guild_id = (%s)",
-                                          (interaction.guild.id))
-                        await interaction.response.send_message(
-                            "<:Astra_accept:1141303821176422460> **Das Levelsystem ist jetzt auf diesem Server deaktiviert.**")
-                        return
+
+                # 👉 CHECK EXISTENCE
+                await cur.execute(
+                    "SELECT enabled FROM levelsystem WHERE guild_id = %s",
+                    (interaction.guild.id,)
+                )
+                row = await cur.fetchone()
+
+                # 👉 AUTO CREATE SYSTEM
+                if not row:
+                    await cur.execute(
+                        "INSERT INTO levelsystem (client_id, user_xp, user_level, guild_id, enabled) "
+                        "VALUES (%s, %s, %s, %s, %s)",
+                        (interaction.user.id, 0, 0, interaction.guild.id, 1 if arg == "Einschalten" else 0)
+                    )
+
+                    return await interaction.response.send_message(
+                        f"<:Astra_accept:1141303821176422460> **Levelsystem wurde erstellt und {'aktiviert' if arg == 'Einschalten' else 'deaktiviert'}.**"
+                    )
+
+                enabled = row[0]
+
+                # 👉 NORMAL LOGIC
                 if arg == "Einschalten":
-                    await cur.execute(f"SELECT enabled FROM levelsystem WHERE guild_id = (%s)", (interaction.guild.id))
-                    enabled = await cur.fetchone()
-                    if enabled[0] == 0:
-                        await cur.execute(f"UPDATE levelsystem SET enabled = 1 WHERE guild_id = (%s)",
-                                          (interaction.guild.id))
-                        await interaction.response.send_message(
-                            "<:Astra_accept:1141303821176422460> **Das Levelsystem ist jetzt auf diesem Server aktiviert.**")
-                        return
-                    if enabled[0] == 1:
-                        await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> **Das Levelsystem ist auf diesem Server bereits deaktiviert.**",
-                            ephemeral=True)
-                        return
+                    if enabled == 1:
+                        return await interaction.response.send_message(
+                            "<:Astra_x:1141303954555289600> Bereits aktiviert.",
+                            ephemeral=True
+                        )
+
+                    await cur.execute(
+                        "UPDATE levelsystem SET enabled = 1 WHERE guild_id = %s",
+                        (interaction.guild.id,)
+                    )
+
+                    return await interaction.response.send_message(
+                        "<:Astra_accept:1141303821176422460> Levelsystem aktiviert."
+                    )
+
+                if arg == "Ausschalten":
+                    if enabled == 0:
+                        return await interaction.response.send_message(
+                            "<:Astra_x:1141303954555289600> Bereits deaktiviert.",
+                            ephemeral=True
+                        )
+
+                    await cur.execute(
+                        "UPDATE levelsystem SET enabled = 0 WHERE guild_id = %s",
+                        (interaction.guild.id,)
+                    )
+
+                    return await interaction.response.send_message(
+                        "<:Astra_accept:1141303821176422460> Levelsystem deaktiviert."
+                    )
+                return None
 
     @app_commands.command(name="leaderboard", description="Zeigt das Top 10 Level und XP Leaderboard an.")
     @app_commands.guild_only()
@@ -624,264 +1118,34 @@ class Level(app_commands.Group):
         embed.description = description
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="levelupkanal", description="Lege fest, wo Level-Up-Nachrichten gesendet werden.")
-    @app_commands.describe(arg="Wähle den Modus: letzter Kanal, bestimmter Kanal, private Nachricht oder deaktivieren.")
-    @app_commands.describe(channel="Der Kanal, in dem Level-Up-Nachrichten gesendet werden sollen (falls erforderlich).")
-    @app_commands.checks.has_permissions(manage_channels=True)
-    async def levelsystem_setchannel(self, interaction: discord.Interaction, arg: Literal['Kanal des Levelups', 'Bestimmter Kanal(Kanalangabe benötigt)', 'Private Nachricht', 'Deaktivieren'], channel: discord.TextChannel = None):
-        """Set a channel for your levelmessages."""
+    @app_commands.command(name="config", description="Öffne das Levelsystem Control Panel.")
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def config(self, interaction: discord.Interaction):
+
+        # Check ob System existiert
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(f"SELECT enabled FROM levelsystem WHERE guild_id = (%s)", (interaction.guild.id))
+                await cur.execute(
+                    "SELECT enabled FROM levelsystem WHERE guild_id=%s",
+                    (interaction.guild.id,)
+                )
                 enabled = await cur.fetchone()
-                await cur.execute("SELECT type FROM levelchannel WHERE guildID = (%s)", (interaction.guild.id))
-                result = await cur.fetchone()
-                if enabled[0] == 0:
-                    await interaction.response.send_message(
-                        "<:Astra_x:1141303954555289600> **Das Levelsystem ist auf diesem Server bereits deaktiviert.**",
-                        ephemeral=True)
-                    return
-                if enabled[0] == 1:
-                    if arg == "Kanal des Levelups":
-                        if not result:
-                            await cur.execute("INSERT INTO levelchannel(guildID, type) VALUES(%s, %s)",
-                                              (interaction.guild.id, "Last Channel"))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Der Levelupkanal wurde erfolgreich geändert.**")
-                        if result:
-                            await cur.execute("UPDATE levelchannel SET type = (%s) WHERE guildID = (%s)",
-                                              ("Last Channel", interaction.guild.id))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Der Levelupkanal wurde erfolgreich geändert.**")
-                    if arg == "Bestimmter Kanal(Kanalangabe benötigt)":
-                        if not result:
-                            try:
-                                await cur.execute("INSERT INTO levelchannel(guildID, type) VALUES(%s, %s)",
-                                                  (interaction.guild.id, channel.id))
-                                await interaction.response.send_message(
-                                    "<:Astra_accept:1141303821176422460> **Der Levelupkanal wurde erfolgreich geändert.**")
-                            except:
-                                await interaction.response.send_message(
-                                    f"<:Astra_x:1141303954555289600> **Du musst einen Kanel angeben.**", ephemeral=True)
-                                return
-                        if result:
-                            try:
-                                await cur.execute("UPDATE levelchannel SET type = (%s) WHERE guildID = (%s)",
-                                                  (channel.id, interaction.guild.id))
-                                await interaction.response.send_message(
-                                    "<:Astra_accept:1141303821176422460> **Der Levelupkanal wurde erfolgreich geändert.**")
-                            except:
-                                await interaction.response.send_message(
-                                    f"<:Astra_x:1141303954555289600> **Du musst einen Kanal angeben.**", ephemeral=True)
-                                return
-                    if arg == "Private Nachricht":
-                        if not result:
-                            await cur.execute("INSERT INTO levelchannel(guildID, type) VALUES(%s, %s)",
-                                              (interaction.guild.id, "Private Message"))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Der Levelupkanal wurde erfolgreich geändert.**")
-                        if result:
-                            await cur.execute("UPDATE levelchannel SET type = (%s) WHERE guildID = (%s)",
-                                              ("Private Message", interaction.guild.id))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Der Levelupkanal wurde erfolgreich geändert.**")
-                    if arg == "Deaktivieren":
-                        if not result:
-                            await cur.execute("INSERT INTO levelchannel(guildID, type) VALUES(%s, %s)",
-                                              (interaction.guild.id, "Deactivated"))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Der Level-Up-Kanal wurde erfolgreich geändert.**")
-                        if result:
-                            await cur.execute("UPDATE levelchannel SET type = (%s) WHERE guildID = (%s)",
-                                              ("Deactivated", interaction.guild.id))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Der Levelupkanal wurde erfolgreich zurückgesetzt.**")
 
-    @app_commands.command(name="levelupnachricht", description="Richte eine Levelup Nachricht ein.")
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def levelsystem_setmessage(self, interaction: discord.Interaction, arg: Literal['Custom Nachricht', 'Deaktivieren'], message: str = None):
+        if not enabled:
+            return await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> **Levelsystem wurde noch nicht initialisiert.**",
+                ephemeral=True
+            )
 
-        """Custom levelmessage: Use %level for the level and %member as member mention."""
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(f"SELECT enabled FROM levelsystem WHERE guild_id = (%s)", (interaction.guild.id))
-                enabled = await cur.fetchone()
-                if enabled[0] == 0:
-                    await interaction.response.send_message(
-                        "<:Astra_x:1141303954555289600> **Das Levelsystem ist auf diesem Server bereits deaktiviert.**",
-                        ephemeral=True)
-                    return
-                if enabled[0] == 1:
-                    if arg == "Custom Nachricht":
-                        await cur.execute("SELECT message FROM levelmsg WHERE guildID = (%s)", (interaction.guild.id))
-                        result = await cur.fetchone()
-                        if not result:
-                            await cur.execute("INSERT INTO levelmsg(message, guildID) VALUES(%s, %s)",
-                                              (message, interaction.guild.id))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Die Level-UP-Nachricht wurde erfolgreich geändert.**")
-                        if result:
-                            await cur.execute("UPDATE levelmsg SET message = (%s) WHERE guildID = (%s)",
-                                              (message, interaction.guild.id))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Die Level-UP-Nachricht wurde erfolgreich geändert.**")
+        # View starten
+        view = LevelSystemConfigView(
+            bot=self.bot,
+            invoker=interaction.user,
+            guild=interaction.guild
+        )
 
-                    if arg == "Deaktivieren":
-                        await cur.execute("SELECT message FROM levelmsg WHERE guildID = (%s)", (interaction.guild.id))
-                        result = await cur.fetchone()
-                        if not result:
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Die Level-UP-Nachricht wurde erfolgreich zurückgesetzt.**")
-                            return
-                        if result:
-                            await cur.execute("DELETE FROM levelmsg WHERE guildID = (%s)", (interaction.guild.id))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Die Level-UP-Nachricht wurde erfolgreich zurückgesetzt.**")
-
-    @app_commands.command(name="role", description="Füge Levelrollen hinzu oder entferne sie.")
-    @app_commands.describe(modus="Was soll passieren?", level="Ab welchem Level (1–100)?", role="Welche Rolle?")
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def levelsystem_role_add(self, interaction: discord.Interaction, modus: Literal['Hinzufügen', 'Entfernen', 'Anzeigen'], level: int, role: discord.Role):
-        """Füge/Entferne Rollen die man ab dem jeweiligem Level bekommt."""
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                if modus == "Hinzufügen":
-
-                    # -----------------------
-                    # BASIC CHECKS
-                    # -----------------------
-                    if not 1 <= level <= 100:
-                        return await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> **Level muss zwischen 1 und 100 liegen.**",
-                            ephemeral=True
-                        )
-
-                    bot_member = interaction.guild.me
-
-                    if not bot_member.guild_permissions.manage_roles:
-                        return await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> **Ich habe keine Berechtigung, Rollen zu verwalten.**",
-                            ephemeral=True
-                        )
-
-                    if role.is_default():
-                        return await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> **@everyone kann keine Levelrolle sein.**",
-                            ephemeral=True
-                        )
-
-                    if role.managed:
-                        return await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> **Diese Rolle wird von Discord/Integration verwaltet und kann nicht vergeben werden.**",
-                            ephemeral=True
-                        )
-
-                    if role.position >= bot_member.top_role.position:
-                        return await interaction.response.send_message(
-                            f"<:Astra_x:1141303954555289600> **Die Rolle {role.mention} ist höher oder gleich hoch wie meine Bot-Rolle.**\n"
-                            f"<:Astra_arrow:1141303823600717885> **Verschiebe meine Bot-Rolle über diese Rolle.**",
-                            ephemeral=True
-                        )
-
-                    # -----------------------
-                    # SYSTEM AKTIV?
-                    # -----------------------
-                    await cur.execute(
-                        "SELECT enabled FROM levelsystem WHERE guild_id = %s",
-                        (interaction.guild.id,)
-                    )
-                    enabled = await cur.fetchone()
-
-                    if not enabled or enabled[0] == 0:
-                        return await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> **Das Levelsystem ist auf diesem Server deaktiviert.**",
-                            ephemeral=True
-                        )
-
-                    # -----------------------
-                    # DOPPELT?
-                    # -----------------------
-                    await cur.execute(
-                        "SELECT 1 FROM levelroles WHERE levelreq=%s AND roleID=%s AND guildID=%s",
-                        (level, role.id, interaction.guild.id)
-                    )
-                    exists = await cur.fetchone()
-
-                    if exists:
-                        return await interaction.response.send_message(
-                            f"<:Astra_x:1141303954555289600> **Die Rolle {role.mention} ist bereits für Level `{level}` gesetzt.**",
-                            ephemeral=True
-                        )
-
-                    # -----------------------
-                    # INSERT
-                    # -----------------------
-                    await cur.execute(
-                        "INSERT INTO levelroles (guildID, roleID, levelreq) VALUES (%s, %s, %s)",
-                        (interaction.guild.id, role.id, level)
-                    )
-
-                    await interaction.response.send_message(
-                        f"<:Astra_accept:1141303821176422460> **Levelrolle gesetzt!**\n"
-                        f"👤 User erhalten {role.mention} ab **Level {level}**."
-                    )
-
-                if modus == "Entfernen":
-                    await cur.execute(f"SELECT enabled FROM levelsystem WHERE guild_id = (%s)", (interaction.guild.id))
-                    enabled = await cur.fetchone()
-                    if enabled[0] == 0:
-                        if enabled[0] == 0:
-                            await interaction.response.send_message(
-                                "<:Astra_x:1141303954555289600> **Das Levelsystem ist auf diesem Server bereits deaktiviert.**",
-                                ephemeral=True)
-                    if enabled[0] == 1:
-                        await cur.execute(
-                            "SELECT guildID FROM levelroles WHERE roleID = (%s) and levelreq = (%s) and guildID = (%s)",
-                            (role.id, level, interaction.guild.id))
-                        result = await cur.fetchone()
-                        if not result:
-                            await interaction.response.send_message(
-                                f"<:Astra_x:1141303954555289600> **Es sind keine Rollen für das Level `{level}` aktiv.**",
-                                ephemeral=True)
-                        if result:
-                            await cur.execute(
-                                "DELETE FROM levelroles WHERE levelreq = (%s) and roleID = (%s) and guildID = (%s)",
-                                (level, role.id, interaction.guild.id))
-
-                            await interaction.response.send_message(
-                                f"<:Astra_accept:1141303821176422460> **Rolle `{role.name}` von Level `{level}` entfernt.**")
-
-                if modus == "Anzeigen":
-                    await cur.execute(f"SELECT enabled FROM levelsystem WHERE guild_id = (%s)", (interaction.guild.id))
-                    enabled = await cur.fetchone()
-                    if enabled[0] == 0:
-                        await interaction.response.send_message(
-                            "<:Astra_x:1141303954555289600> **Das Levelsystem ist auf diesem Server bereits deaktiviert.**",
-                            ephemeral=True)
-                    if enabled[0] == 1:
-                        await cur.execute("SELECT roleID, levelreq FROM levelroles WHERE guildID = (%s)",
-                                          (interaction.guild.id))
-                        result = await cur.fetchall()
-                        if result == ():
-                            await interaction.response.send_message(
-                                "<:Astra_x:1141303954555289600> **Es sind Keine Level-UP-Rollen aktiv.**",
-                                ephemeral=True)
-                        if result:
-                            embed = discord.Embed(title="Aktive Level-UP-Rollen",
-                                                  description=f"Um Rollen zu entfernen nutze `/levelsystem role`",
-                                                  color=discord.Color.blue())
-                            for x in result:
-                                roleid = x[0]
-                                level = x[1]
-                                try:
-                                    role = interaction.guild.get_role(int(roleid))
-                                except:
-                                    await interaction.response.send_message(
-                                        "<:Astra_x:1141303954555289600> **Es sind Keine Level-UP-Rollen aktiv.**",
-                                        ephemeral=True)
-
-                                embed.add_field(name=f"Level: {level}", value=f"Rolle: {role.mention}", inline=True)
-                            await interaction.response.send_message(embed=embed)
+        await view.start(interaction)
 
 
 class levelsystem(commands.Cog):
@@ -934,9 +1198,12 @@ class levelsystem(commands.Cog):
                 xp_end = 5.5 * (lvl_start ** 2) + 30 * lvl_start
 
                 # XP-Boost prüfen
-                await cur.execute("SELECT xp FROM levelxp WHERE guildID = (%s)", (msg.guild.id,))
+                await cur.execute("SELECT xp FROM levelxp WHERE guildID = %s", (msg.guild.id,))
                 xpres = await cur.fetchone()
-                gain = random.randint(1, 5) * (2 if xpres else 1)
+
+                multiplier = float(xpres[0]) if xpres else 1.0
+
+                gain = int(random.randint(1, 5) * multiplier)
 
                 # ------------------------------
                 # HARD CAP & EARLY RETURN (Lvl 100)
@@ -1175,43 +1442,6 @@ class levelsystem(commands.Cog):
                         await channel.send(msg.author.mention, embed=embed)
                     return
 
-    @app_commands.command(name="xpboost", description="Aktiviere oder deaktiviere den XP-Boost für deinen Server.")
-    @app_commands.guild_only()
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def levelsystem_xpboost(self, interaction: discord.Interaction, status: Literal['Aktivieren(x2)', 'Deaktivieren(x1)']):
-        """Aktiviere den XP-Boost für deinen Server."""
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(f"SELECT enabled FROM levelsystem WHERE guild_id = (%s)", (interaction.guild.id))
-                enabled = await cur.fetchone()
-                if enabled[0] == 0:
-                    await interaction.response.send_message(
-                        "<:Astra_x:1141303954555289600> **Das Levelsystem ist auf diesem Server bereits deaktiviert.**",
-                        ephemeral=True)
-                if enabled[0] == 1:
-                    await cur.execute("SELECT xp FROM levelxp WHERE guildID = (%s)", (interaction.guild.id))
-                    result = await cur.fetchone()
-                    if status == "Aktivieren(x2)":
-                        if not result:
-                            await cur.execute("INSERT INTO levelxp(guildID, xp) VALUES(%s, %s)",
-                                              (interaction.guild.id, 2))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Der XP-Boost ist jetzt für diesen Server aktiviert. User bekommen nun 2x XP.**")
-                        if result:
-                            await interaction.response.send_message(
-                                "<:Astra_x:1141303954555289600> **Der XP-Boost ist für diesen Server bereits aktiviert.**",
-                                ephemeral=True)
-                    if status == "Deaktivieren(x1)":
-                        if not result:
-                            await interaction.response.send_message(
-                                "<:Astra_x:1141303954555289600> **Der XP-Boost ist für diesen Server bereits deaktiviert.**.",
-                                ephemeral=True)
-                        if result:
-                            await cur.execute("DELETE FROM levelxp WHERE guildID = (%s) and xp = (%s)",
-                                              (interaction.guild.id, 2))
-                            await interaction.response.send_message(
-                                "<:Astra_accept:1141303821176422460> **Der XP-Boost ist jetzt für diesen Server deaktiviert. User bekommen nun nichtmehr 2x XP**")
-
     @app_commands.command(name="setlevel", description="Setze das Level eines Mitglieds auf deinem Server.")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -1306,6 +1536,7 @@ class levelsystem(commands.Cog):
         await interaction.response.send_message(
             f"<:Astra_accept:1141303821176422460> **XP von {member.mention} auf `{new_xp}` gesetzt (Level `{current_level}`, Ziel `{int(xp_end)}`).**"
         )
+        return None
 
 
 async def setup(bot):
