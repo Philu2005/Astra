@@ -1,5 +1,5 @@
 import re
-import logger
+import logging
 from pathlib import Path
 
 SCHEMA_PATH = "/root/Astra/opt/schema.sql"
