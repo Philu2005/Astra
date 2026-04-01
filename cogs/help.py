@@ -328,7 +328,7 @@ class HelpCog(commands.Cog):
                 "> <:Astra_punkt:1141303896745201696> Help-Command synchronisiert und strukturell überarbeitet.\n"
                 "> <:Astra_punkt:1141303896745201696> Reminder-System auf interaktive UI + Task-basiertes Scheduling umgestellt.\n"
                 "> <:Astra_punkt:1141303896745201696> AFK-System optimiert (DB-Queries, Zeit-Handling, Multi-User Support).\n"
-                "> <:Astra_punkt:1141303896745201696> Infrastruktur verbessert (Webhook-Proxy, Logging, DB-Schema idempotent). "
+                "> <:Astra_punkt:1141303896745201696> Infrastruktur verbessert (Webhook-Proxy, Logging, DB-Schema idempotent)."
             ),
             inline=False,
         )
