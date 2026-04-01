@@ -303,7 +303,7 @@ class Astra(commands.Bot):
 
 bot = Astra()
 
-def all_app_commands():
+def all_app_commands(bot):
     global_commands = bot.tree.get_commands()
     from itertools import chain
     guild_commands = chain.from_iterable(bot.tree._guild_commands.values())
