@@ -418,7 +418,7 @@ class astra(commands.Cog):
         embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="ping")
+    @app_commands.command(name="ping", description="Überprüfe die Antwortzeit (Ping) zwischen dir und dem Bot.")
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def ping(self, interaction: discord.Interaction):

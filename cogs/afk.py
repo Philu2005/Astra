@@ -128,7 +128,7 @@ class afk(commands.Cog):
     # =========================
     # 💤 AFK COMMAND
     # =========================
-    @app_commands.command(name="afk")
+    @app_commands.command(name="afk", description="Setze deinen AFK-Status und teile anderen mit, warum du abwesend bist.")
     @app_commands.guild_only()
     @app_commands.describe(grund="Warum gehst du genau AFK?")
     async def afk(self, interaction: discord.Interaction, grund: str = "AFK"):
