@@ -17,8 +17,9 @@ import re
 import logging
 from threading import Lock
 from utils.db_scheme import run_sql_file
-from utils.logging import setup_logging
+from utils.logger import setup_logging
 from utils.presence import rotating_presence
+from utils.file_watcher import Watcher
 from events.topgg import setup_topgg_events
 
 guild_cache = {}
@@ -56,6 +57,7 @@ class Astra(commands.Bot):
         self.topggpy = None
         self.task = False
         self.task2 = False
+        self.watcher = None
         self.pool = None  # Pool-Objekt hier zentral gespeichert
         self.initial_extensions = [
             "cogs.reminder",
@@ -114,6 +116,8 @@ class Astra(commands.Bot):
             logging.info("██║  ██║███████║   ██║   ██║  ██║██║  ██║ ")
             logging.info("╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ")
             logging.info("───────────────────── ✓ ─────────────────────")
+            self.watcher = Watcher(self)
+            self.watcher.start()
             self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
         except Exception as e:
             logging.error(f"❌ Fehler beim Setup:\n{e}")
@@ -299,8 +303,7 @@ class Astra(commands.Bot):
 
 bot = Astra()
 
-
-def all_app_commands(bot):
+def all_app_commands():
     global_commands = bot.tree.get_commands()
     from itertools import chain
     guild_commands = chain.from_iterable(bot.tree._guild_commands.values())
