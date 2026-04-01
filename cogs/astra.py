@@ -537,7 +537,7 @@ class astra(commands.Cog):
         )
 
         await interaction.followup.send(embed=embed)
-    @app_commands.command(name="uptime")
+    @app_commands.command(name="uptime", description="Zeigt die Uptime dieses Bots.")
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def uptime(self, interaction: discord.Interaction):
