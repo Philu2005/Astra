@@ -99,6 +99,10 @@ class HelpCog(commands.Cog):
         self.pages: dict[str, str] = {}
         self._view_registered = False  # verhindert doppeltes Registrieren bei Reconnects
 
+    async def cog_load(self):
+        await self.on_ready_cache_ids()
+        self._build_pages()
+
     async def on_ready_cache_ids(self):
         """Cacht IDs (für Slash-Mentions) und Beschreibungen inkl. aller Subcommands – direkt aus der API-Struktur."""
         await self.bot.wait_until_ready()
