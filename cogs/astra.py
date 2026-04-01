@@ -541,7 +541,6 @@ class astra(commands.Cog):
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def uptime(self, interaction: discord.Interaction):
-        """Zeigt wie lang Astra online ist."""
         delta_uptime = datetime.utcnow() - self.uptime
         hours, remainder = divmod(int(delta_uptime.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
