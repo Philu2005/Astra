@@ -13,7 +13,6 @@ class WebsiteButton(discord.ui.Button):
 
 class Dropdown(discord.ui.Select):
     def __init__(self, cog: commands.Cog):
-        self.cog = cog
         options = [
             # Administration / Moderation
             discord.SelectOption(label='Moderation', value="Mod", emoji='<:Astra_moderation:1141303878541918250>'),
@@ -44,9 +43,11 @@ class Dropdown(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("HelpCog")
+        description2 = cog.pages.get(self.values[0], "Seite nicht gefunden!")
         embed = discord.Embed(
             title=" ",
-            description=self.cog.pages.get(self.values[0], "Seite nicht gefunden!"),
+            description=description2,
             colour=discord.Colour.blue()
         )
         embed.set_author(
@@ -57,7 +58,7 @@ class Dropdown(discord.ui.Select):
         embed.set_footer(text="Astra Development ©2025", icon_url=guild_icon_url)
 
         # Für Folge-Interaktionen wieder dieselbe persistent View-Klasse verwenden
-        view = HelpView(self.cog)
+        view = HelpView(cog)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -66,7 +67,6 @@ class HelpView(View):
     def __init__(self, cog: commands.Cog):
         # timeout=None => persistent
         super().__init__(timeout=None)
-        self.cog = cog
         self.add_item(Dropdown(cog))
         self.add_item(WebsiteButton())
 
