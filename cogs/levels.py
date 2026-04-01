@@ -1417,7 +1417,7 @@ class levelsystem(commands.Cog):
                                 await member.add_roles(role)
                         embed = discord.Embed(
                             title="Level-UP",
-                            description=f"Weiter so {msg.author.mention}! Du hast Level {int(lvl_start) + 1} erreicht",
+                            description=f"Weiter so {msg.author.mention}! Du hast Level {int(lvl_start) + 1} erreicht.",
                             color=discord.Color.green()
                         )
                         try:
