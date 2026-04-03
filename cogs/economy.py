@@ -1682,7 +1682,7 @@ class Economy(commands.Cog):
 
     @app_commands.command(name="test1", description="Zeigt deinen aktuellen Kontostand an.")
     @app_commands.guild_only()
-    async def balance(self, interaction: discord.Interaction):
+    async def test1(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
         wallet, bank = user_data[0], user_data[1]
@@ -1699,7 +1699,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="test2", description="Zahle Geld auf dein Bankkonto ein.")
     @app_commands.guild_only()
     @app_commands.describe(betrag="Der Betrag, den du einzahlen möchtest.")
-    async def deposit(self, interaction: discord.Interaction, betrag: int):
+    async def test2(self, interaction: discord.Interaction, betrag: int):
         if betrag <= 0:
             await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein.", ephemeral=True)
             return
@@ -1715,7 +1715,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="test3", description="Hebe Geld von deinem Bankkonto ab.")
     @app_commands.guild_only()
     @app_commands.describe(betrag="Der Betrag, den du abheben möchtest.")
-    async def withdraw(self, interaction: discord.Interaction, betrag: int):
+    async def test3(self, interaction: discord.Interaction, betrag: int):
         if betrag <= 0:
             await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein.", ephemeral=True)
             return
@@ -1730,7 +1730,7 @@ class Economy(commands.Cog):
 
     @app_commands.command(name="test4", description="Bitte um ein kleines Trinkgeld.")
     @app_commands.guild_only()
-    async def beg(self, interaction: discord.Interaction):
+    async def test4(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
 
@@ -1787,7 +1787,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="test5", description="Spiele ein realistisches 3×3 Slot-Spiel.")
     @app_commands.guild_only()
     @app_commands.describe(einsatz="Wie viele Coins willst du setzen?")
-    async def slot(self, interaction: discord.Interaction, einsatz: int):
+    async def test5(self, interaction: discord.Interaction, einsatz: int):
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
         wallet = user_data[0]
@@ -1830,7 +1830,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="test6", description="Spiele Schere, Stein, Papier gegen den Bot.")
     @app_commands.guild_only()
     @app_commands.describe(choice="Wähle 'Schere', 'Stein' oder 'Papier'.")
-    async def rps(self, interaction: discord.Interaction, choice: Literal['Stein', 'Schere', 'Papier']):
+    async def test6(self, interaction: discord.Interaction, choice: Literal['Stein', 'Schere', 'Papier']):
         choice = choice.lower()
         if choice not in ["schere", "stein", "papier"]:
             await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte wähle entweder 'Schere', 'Stein' oder 'Papier'.",
@@ -1859,7 +1859,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="test7", description="Münzwurf: Wähle Kopf oder Zahl und setze.")
     @app_commands.guild_only()
     @app_commands.describe(wahl="Deine Wahl: 'Kopf' oder 'Zahl'", betrag="Der Betrag, den du setzen möchtest.")
-    async def coinflip(self, interaction: discord.Interaction, wahl: str, betrag: int):
+    async def test7(self, interaction: discord.Interaction, wahl: str, betrag: int):
         guess = wahl.lower()
         if guess not in ["kopf", "zahl"]:
             await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte wähle entweder 'Kopf' oder 'Zahl'.", ephemeral=True)
@@ -1904,7 +1904,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="test8", description="Versuche, einen anderen Nutzer auszurauben!")
     @app_commands.guild_only()
     @app_commands.describe(ziel="Wen willst du ausrauben?")
-    async def rob(self, interaction: discord.Interaction, ziel: discord.User):
+    async def test8(self, interaction: discord.Interaction, ziel: discord.User):
         user_id = interaction.user.id
         target_id = ziel.id
 
@@ -1984,7 +1984,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="test9", description="Zeige die reichsten Spieler.")
     @app_commands.guild_only()
     @app_commands.describe(scope="Wähle, ob die globale oder serverbezogene Rangliste angezeigt wird.")
-    async def leaderboard(
+    async def test9(
             self,
             interaction: discord.Interaction,
             scope: Literal["global", "server"]
@@ -2065,7 +2065,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="test10", description="Spiele eine Runde Blackjack.")
     @app_commands.guild_only()
     @app_commands.describe(einsatz="Der Betrag, den du setzen möchtest.")
-    async def blackjack(self, interaction: discord.Interaction, einsatz: int):
+    async def test10(self, interaction: discord.Interaction, einsatz: int):
         user_data = await self.get_user(interaction.user.id)
         wallet = user_data[0]
 
