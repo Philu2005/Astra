@@ -1185,9 +1185,9 @@ class EconomyClass(app_commands.Group):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="rob", description="Versuche, einen anderen Nutzer auszurauben!")
+    @app_commands.command(name="rob", description="Versuche, Coins von einem anderen Nutzer zu stehlen!")
     @app_commands.guild_only()
-    @app_commands.describe(ziel="Wen willst du ausrauben?")
+    @app_commands.describe(ziel="Welchen Nutzer willst du auswählen?")
     async def rob(self, interaction: discord.Interaction, ziel: discord.User):
         user_id = interaction.user.id
         target_id = ziel.id
