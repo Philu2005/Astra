@@ -964,62 +964,6 @@ class EconomyClass(app_commands.Group):
                 await cur.execute("SELECT wallet, bank FROM economy_users WHERE user_id = %s", (user_id,))
                 return await cur.fetchone()
 
-    @app_commands.command(name="beg", description="Bettle für Münzen.")
-    @app_commands.guild_only()
-    async def beg(self, interaction: discord.Interaction):
-        user_id = interaction.user.id
-        user_data = await self.get_user(user_id)
-
-        last_beg = user_data[5]  # neue Spalte
-        from datetime import datetime, timedelta, timezone
-
-        now = datetime.now(timezone.utc)
-
-        # MySQL DATETIME ist oft naive → zu UTC machen
-        if last_beg and last_beg.tzinfo is None:
-            last_beg = last_beg.replace(tzinfo=timezone.utc)
-
-        if last_beg:
-            cooldown_end = last_beg + timedelta(hours=3)
-
-            if now < cooldown_end:
-                remaining = cooldown_end - now
-                total_seconds = int(remaining.total_seconds())
-
-                hours_left, remainder = divmod(total_seconds, 3600)
-                minutes_left, seconds_left = divmod(remainder, 60)
-
-                parts = []
-                if hours_left:
-                    parts.append(f"{hours_left}h")
-                if minutes_left:
-                    parts.append(f"{minutes_left}m")
-                if seconds_left or not parts:
-                    parts.append(f"{seconds_left}s")
-
-                time_string = " ".join(parts)
-
-                await interaction.response.send_message(
-                    f"<:Astra_time:1141303932061233202> Du kannst in **{time_string}** wieder betteln.",
-                    ephemeral=True
-                )
-                return
-
-        amount = random.randint(5, 25)
-
-        await self.update_balance(user_id, wallet_change=amount)
-
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "UPDATE economy_users SET last_beg = %s WHERE user_id = %s",
-                    (now, user_id)
-                )
-
-        await interaction.response.send_message(
-            f"<:Astra_accept:1141303821176422460> Du hast {amount} <:Coin:1359178077011181811> von einem freundlichen Fremden erhalten!"
-        )
-
 
 
     @app_commands.command(name="rob", description="Versuche, Coins von einem anderen Nutzer zu stehlen!")
