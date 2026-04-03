@@ -1012,23 +1012,22 @@ class EconomyClass(app_commands.Group):
         await self.update_balance(interaction.user.id, betrag, -betrag)
         await interaction.response.send_message(f"Du hast {betrag} <:Coin:1359178077011181811> von deinem Bankkonto abgehoben.")
 
-    @app_commands.command(name="beg", description="Bettle für Coins")
+    @app_commands.command(name="daily", description="Erhalte deine tägliche Belohnung.")
     @app_commands.guild_only()
-    async def beg(self, interaction: discord.Interaction):
+    async def daily(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         user_data = await self.get_user(user_id)
 
-        last_beg = user_data[5]  # neue Spalte
+        last_daily = user_data[5]  # kannst du so lassen, DB muss nicht zwingend umbenannt werden
         from datetime import datetime, timedelta, timezone
 
         now = datetime.now(timezone.utc)
 
-        # MySQL DATETIME ist oft naive → zu UTC machen
-        if last_beg and last_beg.tzinfo is None:
-            last_beg = last_beg.replace(tzinfo=timezone.utc)
+        if last_daily and last_daily.tzinfo is None:
+            last_daily = last_daily.replace(tzinfo=timezone.utc)
 
-        if last_beg:
-            cooldown_end = last_beg + timedelta(hours=3)
+        if last_daily:
+            cooldown_end = last_daily + timedelta(hours=3)
 
             if now < cooldown_end:
                 remaining = cooldown_end - now
@@ -1048,7 +1047,7 @@ class EconomyClass(app_commands.Group):
                 time_string = " ".join(parts)
 
                 await interaction.response.send_message(
-                    f"<:Astra_time:1141303932061233202> Du kannst in **{time_string}** wieder betteln.",
+                    f"<:Astra_time:1141303932061233202> Du kannst in **{time_string}** wieder deine Belohnung abholen.",
                     ephemeral=True
                 )
                 return
@@ -1065,7 +1064,7 @@ class EconomyClass(app_commands.Group):
                 )
 
         await interaction.response.send_message(
-            f"<:Astra_accept:1141303821176422460> Du hast {amount} <:Coin:1359178077011181811> von einem freundlichen Fremden erhalten!"
+            f"<:Astra_accept:1141303821176422460> Du hast deine tägliche Belohnung erhalten: {amount} <:Coin:1359178077011181811>!"
         )
 
     @app_commands.command(name="slot", description="Spiele ein realistisches 3×3 Slot-Spiel.")
