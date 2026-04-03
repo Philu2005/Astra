@@ -928,7 +928,7 @@ class EconomyClass(app_commands.Group):
     def __init__(self, bot):
         self.bot = bot
         super().__init__(
-            name="eco",
+            name="economy",
             description="Alles rund um Economy."
         )
 
