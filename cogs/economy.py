@@ -1067,7 +1067,7 @@ class EconomyClass(app_commands.Group):
             f"<:Astra_accept:1141303821176422460> Du hast deine tägliche Belohnung erhalten: {amount} <:Coin:1359178077011181811>!"
         )
 
-    @app_commands.command(name="slot", description="Spiele ein realistisches 3×3 Slot-Spiel.")
+    @app_commands.command(name="slot", description="Probiere dein Glück.")
     @app_commands.guild_only()
     @app_commands.describe(einsatz="Wie viele Coins willst du setzen?")
     async def slot(self, interaction: discord.Interaction, einsatz: int):
