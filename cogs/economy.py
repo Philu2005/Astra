@@ -964,7 +964,226 @@ class EconomyClass(app_commands.Group):
                 await cur.execute("SELECT wallet, bank FROM economy_users WHERE user_id = %s", (user_id,))
                 return await cur.fetchone()
 
+    @app_commands.command(name="balance", description="Zeigt deinen aktuellen Kontostand an.")
+    @app_commands.guild_only()
+    async def balance(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        user_data = await self.get_user(user_id)
+        wallet, bank = user_data[0], user_data[1]
+        job_name = user_data[2]
+        hours = user_data[3]
 
+        embed = discord.Embed(title=f"{interaction.user}'s Kontostand", description="> Erhalte Hier Infos über deinen Kontostand und über deinen aktuellen Beruf.", color=discord.Color.blue())
+        embed.add_field(name="Barvermögen", value=f"{wallet} <:Coin:1359178077011181811>", inline=True)
+        embed.add_field(name="Bank", value=f"{bank} <:Coin:1359178077011181811>", inline=True)
+        embed.add_field(name="Beruf", value=f"{job_name}, <:Astra_time:1141303932061233202> {hours} Stunden", inline=True)
+        embed.set_thumbnail(url=interaction.user.avatar)
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="deposit", description="Zahle Geld auf dein Bankkonto ein.")
+    @app_commands.guild_only()
+    @app_commands.describe(betrag="Der Betrag, den du einzahlen möchtest.")
+    async def deposit(self, interaction: discord.Interaction, betrag: int):
+        if betrag <= 0:
+            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein.", ephemeral=True)
+            return
+
+        user_data = await self.get_user(interaction.user.id)
+        if user_data[0] < betrag:
+            await interaction.response.send_message("<:Astra_x:1141303954555289600> Du hast nicht genug Geld in deinem Wallet.", ephemeral=True)
+            return
+
+        await self.update_balance(interaction.user.id, -betrag, betrag)
+        await interaction.response.send_message(f"Du hast {betrag} <:Coin:1359178077011181811> auf dein Bankkonto eingezahlt.", ephemeral=True)
+
+    @app_commands.command(name="withdraw", description="Hebe Geld von deinem Bankkonto ab.")
+    @app_commands.guild_only()
+    @app_commands.describe(betrag="Der Betrag, den du abheben möchtest.")
+    async def withdraw(self, interaction: discord.Interaction, betrag: int):
+        if betrag <= 0:
+            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein.", ephemeral=True)
+            return
+
+        user_data = await self.get_user(interaction.user.id)
+        if user_data[1] < betrag:
+            await interaction.response.send_message("<:Astra_x:1141303954555289600> Du hast nicht genug Geld auf deinem Bankkonto.", ephemeral=True)
+            return
+
+        await self.update_balance(interaction.user.id, betrag, -betrag)
+        await interaction.response.send_message(f"Du hast {betrag} <:Coin:1359178077011181811> von deinem Bankkonto abgehoben.")
+
+    @app_commands.command(name="beg", description="Bettle für Coins")
+    @app_commands.guild_only()
+    async def beg(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        user_data = await self.get_user(user_id)
+
+        last_beg = user_data[5]  # neue Spalte
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+
+        # MySQL DATETIME ist oft naive → zu UTC machen
+        if last_beg and last_beg.tzinfo is None:
+            last_beg = last_beg.replace(tzinfo=timezone.utc)
+
+        if last_beg:
+            cooldown_end = last_beg + timedelta(hours=3)
+
+            if now < cooldown_end:
+                remaining = cooldown_end - now
+                total_seconds = int(remaining.total_seconds())
+
+                hours_left, remainder = divmod(total_seconds, 3600)
+                minutes_left, seconds_left = divmod(remainder, 60)
+
+                parts = []
+                if hours_left:
+                    parts.append(f"{hours_left}h")
+                if minutes_left:
+                    parts.append(f"{minutes_left}m")
+                if seconds_left or not parts:
+                    parts.append(f"{seconds_left}s")
+
+                time_string = " ".join(parts)
+
+                await interaction.response.send_message(
+                    f"<:Astra_time:1141303932061233202> Du kannst in **{time_string}** wieder betteln.",
+                    ephemeral=True
+                )
+                return
+
+        amount = random.randint(5, 25)
+
+        await self.update_balance(user_id, wallet_change=amount)
+
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE economy_users SET last_beg = %s WHERE user_id = %s",
+                    (now, user_id)
+                )
+
+        await interaction.response.send_message(
+            f"<:Astra_accept:1141303821176422460> Du hast {amount} <:Coin:1359178077011181811> von einem freundlichen Fremden erhalten!"
+        )
+
+    @app_commands.command(name="slot", description="Spiele ein realistisches 3×3 Slot-Spiel.")
+    @app_commands.guild_only()
+    @app_commands.describe(einsatz="Wie viele Coins willst du setzen?")
+    async def slot(self, interaction: discord.Interaction, einsatz: int):
+        user_id = interaction.user.id
+        user_data = await self.get_user(user_id)
+        wallet = user_data[0]
+
+        if einsatz <= 0:
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Ungültiger Einsatz.",
+                ephemeral=True
+            )
+            return
+
+        if einsatz > MAX_BET:
+            await interaction.response.send_message(
+                f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
+                ephemeral=True
+            )
+            return
+
+        if einsatz > wallet:
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Du hast nicht genug Coins.",
+                ephemeral=True
+            )
+            return
+
+        view = SlotView(self, interaction, einsatz)
+
+        em = discord.Embed(
+            colour=discord.Colour.blurple(),
+            title="🎰 Slots",
+            description=f"Einsatz: **{einsatz}** <:Coin:1359178077011181811>\nViel Glück, {interaction.user.mention}!"
+        )
+        em.add_field(name="Walzen", value=render_board(spin_reels()), inline=False)
+        em.set_author(name=str(interaction.user),
+                      icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None)
+
+        await interaction.response.send_message(embed=em, view=view)
+        view.msg = await interaction.original_response()
+
+    @app_commands.command(name="rps", description="Spiele Schere, Stein, Papier gegen den Bot.")
+    @app_commands.guild_only()
+    @app_commands.describe(choice="Wähle 'Schere', 'Stein' oder 'Papier'.")
+    async def rps(self, interaction: discord.Interaction, choice: Literal['Stein', 'Schere', 'Papier']):
+        choice = choice.lower()
+        if choice not in ["schere", "stein", "papier"]:
+            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte wähle entweder 'Schere', 'Stein' oder 'Papier'.",
+                                                    ephemeral=True)
+            return
+
+        bot_choice = random.choice(["schere", "stein", "papier"])
+        result = ""
+
+        if choice == bot_choice:
+            result = "Unentschieden!"
+        elif (choice == "schere" and bot_choice == "papier") or \
+                (choice == "stein" and bot_choice == "schere") or \
+                (choice == "papier" and bot_choice == "stein"):
+            result = "<:Astra_gw1:1141303852889550928> Du hast gewonnen!"
+        else:
+            result = "<:Astra_x:1141303954555289600> Du hast verloren!"
+
+        embed = discord.Embed(title="Schere, Stein, Papier", color=discord.Color.blue())
+        embed.add_field(name="Deine Wahl", value=f"**{choice.capitalize()}**", inline=False)
+        embed.add_field(name="Bot's Wahl", value=f"**{bot_choice.capitalize()}**", inline=False)
+        embed.add_field(name="Ergebnis", value=result, inline=False)
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="coinflip", description="Münzwurf: Wähle Kopf oder Zahl und setze.")
+    @app_commands.guild_only()
+    @app_commands.describe(wahl="Deine Wahl: 'Kopf' oder 'Zahl'", betrag="Der Betrag, den du setzen möchtest.")
+    async def coinflip(self, interaction: discord.Interaction, wahl: str, betrag: int):
+        guess = wahl.lower()
+        if guess not in ["kopf", "zahl"]:
+            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte wähle entweder 'Kopf' oder 'Zahl'.", ephemeral=True)
+            return
+
+        if betrag <= 0:
+            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein, der größer als 0 ist.",
+                                                    ephemeral=True)
+            return
+
+        user_data = await self.get_user(interaction.user.id)
+        wallet = user_data[0]
+
+        if betrag > MAX_BET:
+            await interaction.response.send_message(
+                f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
+                ephemeral=True
+            )
+            return
+
+        if wallet < betrag:
+            await interaction.response.send_message(
+                f"<:Astra_x:1141303954555289600> Du hast nicht genug Münzen. Dein aktueller Kontostand ist {wallet} <:Coin:1359178077011181811>.", ephemeral=True)
+            return
+
+        result = random.choice(["Kopf", "Zahl"])
+
+        embed = discord.Embed(title="Münzwurf", color=discord.Color.blue())
+        embed.add_field(name="Deine Wahl", value=f"**{guess.capitalize()}**", inline=False)
+        embed.add_field(name="Ergebnis", value=f"**{result}**", inline=False)
+
+        if guess == result.lower():
+            gewonnen = betrag * 2
+            await self.update_balance(interaction.user.id, gewonnen, 0)
+            embed.add_field(name="<:Astra_gw1:1141303852889550928> Glückwunsch!", value=f"Du hast gewonnen! Du erhältst {gewonnen} <:Coin:1359178077011181811>.", inline=False)
+        else:
+            await self.update_balance(interaction.user.id, -betrag, 0)
+            embed.add_field(name="<:Astra_x:1141303954555289600>  Leider verloren", value=f"Du hast verloren und {betrag} <:Coin:1359178077011181811> verloren.", inline=False)
+
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="rob", description="Versuche, Coins von einem anderen Nutzer zu stehlen!")
     @app_commands.guild_only()
@@ -1127,7 +1346,44 @@ class EconomyClass(app_commands.Group):
             )
             print(f"Leaderboard Error: {e}")
 
+    @app_commands.command(name="blackjack", description="Spiele eine Runde Blackjack.")
+    @app_commands.guild_only()
+    @app_commands.describe(einsatz="Der Betrag, den du setzen möchtest.")
+    async def blackjack(self, interaction: discord.Interaction, einsatz: int):
+        user_data = await self.get_user(interaction.user.id)
+        wallet = user_data[0]
 
+        if einsatz > MAX_BET:
+            await interaction.response.send_message(
+                f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
+                ephemeral=True
+            )
+            return
+
+        if einsatz <= 0:
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Bitte gib einen gültigen Einsatz an.", ephemeral=True)
+            return
+
+        if wallet < einsatz:
+            await interaction.response.send_message("<:Astra_x:1141303954555289600> hast nicht genug Münzen.",
+                                                    ephemeral=True)
+            return
+
+        await self.update_balance(interaction.user.id, wallet_change=-einsatz)
+
+        view = BlackjackView(self.bot, interaction, einsatz, self)
+
+        embed = discord.Embed(
+            title="Blackjack wird gestartet!",
+            description="Ziehe Karten mit `Hit` oder beende mit `Stand`. Ziel: So nah wie möglich an 21!",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Einsatz", value=f"{einsatz} <:Coin:1359178077011181811>", inline=False)
+
+        await interaction.response.send_message(embed=embed, view=view)
+        view.message = await interaction.original_response()
+        await view.update_message()
 
 @app_commands.guild_only()
 class Job(app_commands.Group):
