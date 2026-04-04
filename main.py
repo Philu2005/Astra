@@ -51,7 +51,7 @@ dbl_port = os.getenv('DBL_PORT')
 class Astra(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="astra!", help_command=None, case_insensitive=True,
-                         intents=discord.Intents.all(), reconnect=True)
+                         intents=discord.Intents.all())
 
         pool: aiomysql.Pool
         self.topggpy = None
