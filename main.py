@@ -77,8 +77,6 @@ class Astra(commands.Bot):
             "cogs.emojiquiz",
             "cogs.hangman",
             "cogs.economy",
-            "cogs.gamble",
-            "cogs.job",
             "cogs.meta",
             "cogs.mod",
             "cogs.astra",
