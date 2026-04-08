@@ -38,20 +38,24 @@ intents.message_content = True
 intents.reactions = True
 
 load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
-host = os.getenv('DB_HOST')
-benutzer = os.getenv('DB_USER')
-password_db = os.getenv('DB_PASS')
-db_name = os.getenv('DB_NAME')
-dbl_token = os.getenv('DBL_TOKEN')
-dbl_password = os.getenv('DBL_PASS')
-dbl_port = os.getenv('DBL_PORT')
+TOKEN = os.getenv("DISCORD_TOKEN")
+host = os.getenv("DB_HOST")
+benutzer = os.getenv("DB_USER")
+password_db = os.getenv("DB_PASS")
+db_name = os.getenv("DB_NAME")
+dbl_token = os.getenv("DBL_TOKEN")
+dbl_password = os.getenv("DBL_PASS")
+dbl_port = os.getenv("DBL_PORT")
 
 
 class Astra(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="astra!", help_command=None, case_insensitive=True,
-                         intents=discord.Intents.all())
+        super().__init__(
+            command_prefix="astra!",
+            help_command=None,
+            case_insensitive=True,
+            intents=discord.Intents.all(),
+        )
 
         pool: aiomysql.Pool
         self.topggpy = None
@@ -73,6 +77,8 @@ class Astra(commands.Bot):
             "cogs.emojiquiz",
             "cogs.hangman",
             "cogs.economy",
+            "cogs.gamble",
+            "cogs.job",
             "cogs.meta",
             "cogs.mod",
             "cogs.astra",
@@ -91,14 +97,16 @@ class Astra(commands.Bot):
             "cogs.tags",
             "cogs.ticket",
             "cogs.levels",
-            "cogs.snake"
+            "cogs.snake",
         ]
 
     async def setup_hook(self):
         try:
             self.loop.create_task(rotating_presence(self))
-            self.topggpy = topgg.DBLClient(self, dbl_token)
-            bot.topgg_webhook = topgg.WebhookManager(bot).dbl_webhook("/webhook/7d9f1c0a-topgg-astrabot", dbl_password)
+            self.topggpy = topgg.DBLClient(self, str(dbl_token))
+            bot.topgg_webhook = topgg.WebhookManager(bot).dbl_webhook(
+                "/webhook/7d9f1c0a-topgg-astrabot", str(dbl_password)
+            )
             await bot.topgg_webhook.run(int(dbl_port))
             await self.connect_db()
             await self.init_tables()
@@ -126,7 +134,9 @@ class Astra(commands.Bot):
         while True:
             async with self.pool.acquire() as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute("SELECT 1")  # Einfacher Testbefehl, um die Verbindung aufrechtzuerhalten
+                    await cur.execute(
+                        "SELECT 1"
+                    )  # Einfacher Testbefehl, um die Verbindung aufrechtzuerhalten
             await asyncio.sleep(120)  # Alle 2 Minuten
 
     async def connect_db(self):
@@ -140,7 +150,7 @@ class Astra(commands.Bot):
             autocommit=True,
             pool_recycle=3600,
             connect_timeout=5,
-            maxsize=50
+            maxsize=50,
         )
         logging.info("")
         logging.info("")
@@ -186,7 +196,9 @@ class Astra(commands.Bot):
                                 asyncio.create_task(funktion2(user_id, when))
                                 await asyncio.sleep(0.05)
                             except Exception as e:
-                                logging.error(f"❌ Reminder-Replay-Fehler (user={user_id}, ts={ts}): {e}")
+                                logging.error(
+                                    f"❌ Reminder-Replay-Fehler (user={user_id}, ts={ts}): {e}"
+                                )
 
                     asyncio.create_task(starte_voterole_tasks())
 
@@ -218,9 +230,9 @@ class Astra(commands.Bot):
                 logging.info(f"✅ Erfolgreich geladen: {ext}")
             except Exception:
                 fehler += 1
-                logging.error(f'❌ Fehler beim Laden von: {ext}')
+                logging.error(f"❌ Fehler beim Laden von: {ext}")
                 traceback.print_exc()
-                logging.info('---------------------------------------------')
+                logging.info("---------------------------------------------")
 
         gesamt = geladen + fehler
         logging.info(f"📦 Cogs geladen: {geladen}/{gesamt} erfolgreich ✅")
@@ -251,18 +263,18 @@ class Astra(commands.Bot):
                     f"Wenn ich dein Interesse geweckt habe, kannst du mich "
                     f"**[hier einladen ↗](https://astra-bot.de/invite)** "
                     f"und direkt ausprobieren 🚀"
-                )
+                ),
             )
 
             embed.set_author(
                 name=str(msg.author),
-                icon_url=msg.author.avatar.url if msg.author.avatar else None
+                icon_url=msg.author.avatar.url if msg.author.avatar else None,
             )
             if msg.guild and msg.guild.icon:
                 embed.set_thumbnail(url=msg.guild.icon.url)
             embed.set_footer(
                 text="Astra Development ©2025 • Mehr Infos auf unserem Support-Server",
-                icon_url=msg.guild.icon.url if msg.guild and msg.guild.icon else None
+                icon_url=msg.guild.icon.url if msg.guild and msg.guild.icon else None,
             )
 
             await msg.channel.send(embed=embed)
@@ -283,8 +295,19 @@ class Astra(commands.Bot):
                             content = f.read()
                             matches = string_regex.findall(content)
                             for match in matches:
-                                if any(word in match.lower() for word in
-                                       ["du", "bitte", "nicht", "kannst", "coin", "rolle", "hilfe", "server"]):
+                                if any(
+                                    word in match.lower()
+                                    for word in [
+                                        "du",
+                                        "bitte",
+                                        "nicht",
+                                        "kannst",
+                                        "coin",
+                                        "rolle",
+                                        "hilfe",
+                                        "server",
+                                    ]
+                                ):
                                     translatable.append(match)
 
         # main.py separat prüfen
@@ -294,8 +317,19 @@ class Astra(commands.Bot):
                 content = f.read()
                 matches = string_regex.findall(content)
                 for match in matches:
-                    if any(word in match.lower() for word in
-                           ["du", "bitte", "nicht", "kannst", "coin", "rolle", "hilfe", "server"]):
+                    if any(
+                        word in match.lower()
+                        for word in [
+                            "du",
+                            "bitte",
+                            "nicht",
+                            "kannst",
+                            "coin",
+                            "rolle",
+                            "hilfe",
+                            "server",
+                        ]
+                    ):
                         translatable.append(match)
 
         return translatable
@@ -303,9 +337,11 @@ class Astra(commands.Bot):
 
 bot = Astra()
 
+
 def all_app_commands(bot):
     global_commands = bot.tree.get_commands()
     from itertools import chain
+
     guild_commands = chain.from_iterable(bot.tree._guild_commands.values())
     all_commands = list(global_commands) + list(guild_commands)
     # Optional unique machen:
@@ -345,13 +381,13 @@ async def on_ready():
                 # Wenn nicht, initialen Datensatz anlegen
                 await cur.execute(
                     "INSERT INTO website_stats (id, servercount, usercount, commandCount, channelCount) VALUES (1, %s, %s, %s, %s)",
-                    (servercount, usercount, commandCount, channelCount)
+                    (servercount, usercount, commandCount, channelCount),
                 )
             else:
                 # Ansonsten updaten
                 await cur.execute(
                     "UPDATE website_stats SET servercount=%s, usercount=%s, commandCount=%s, channelCount=%s WHERE id=1",
-                    (servercount, usercount, commandCount, channelCount)
+                    (servercount, usercount, commandCount, channelCount),
                 )
             global bot_ready
             bot_ready = True
@@ -372,7 +408,9 @@ async def funktion2(user_id: int, when: datetime):
             # Falls der User inzwischen erneut gevotet hat und ein NEUER next_vote_epoch gesetzt wurde,
             # ist dieser Task veraltet und wird übersprungen.
             try:
-                await cur.execute("SELECT next_vote_epoch FROM topgg WHERE userID=%s", (user_id,))
+                await cur.execute(
+                    "SELECT next_vote_epoch FROM topgg WHERE userID=%s", (user_id,)
+                )
                 row = await cur.fetchone()
                 current_ts = row[0] if row else None
                 if current_ts is None:
@@ -380,7 +418,9 @@ async def funktion2(user_id: int, when: datetime):
                 if current_ts > int(when.timestamp()):
                     return
             except Exception as e:
-                logging.warning(f"[VoteReminder] Vorab-Check fehlgeschlagen ({user_id}): {e}")
+                logging.warning(
+                    f"[VoteReminder] Vorab-Check fehlgeschlagen ({user_id}): {e}"
+                )
 
             # --- DM senden ---
             try:
@@ -392,35 +432,45 @@ async def funktion2(user_id: int, when: datetime):
                         "Der Cooldown von 12h ist vorbei. Es wäre schön, wenn du wieder votest.\n"
                         "Als Belohnung erhältst du eine spezielle Rolle auf unserem Support-Server."
                     ),
-                    colour=discord.Colour.blue()
+                    colour=discord.Colour.blue(),
                 )
                 await user.send(embed=embed)
             except Exception as e:
-                logging.warning(f"[VoteReminder] ❌ DM an {user_id} fehlgeschlagen: {e}")
+                logging.warning(
+                    f"[VoteReminder] ❌ DM an {user_id} fehlgeschlagen: {e}"
+                )
 
             # --- Rolle entfernen (optional) ---
             guild = bot.get_guild(1141116981697859736)
             voterole = guild.get_role(1141116981756575875) if guild else None
             if guild and voterole:
                 try:
-                    member = guild.get_member(user_id) or await guild.fetch_member(user_id)
+                    member = guild.get_member(user_id) or await guild.fetch_member(
+                        user_id
+                    )
                 except Exception:
                     member = None
                 if member and voterole in getattr(member, "roles", []):
                     try:
-                        await member.remove_roles(voterole, reason="Voterole Cooldown abgelaufen")
+                        await member.remove_roles(
+                            voterole, reason="Voterole Cooldown abgelaufen"
+                        )
                     except Exception as e:
-                        logging.warning(f"[VoteReminder] Rolle entfernen fehlgeschlagen ({user_id}): {e}")
+                        logging.warning(
+                            f"[VoteReminder] Rolle entfernen fehlgeschlagen ({user_id}): {e}"
+                        )
 
             # --- Reminder verbrauchen (nur wenn noch derselbe fällig ist) ---
             try:
                 await cur.execute(
                     "UPDATE topgg SET next_vote_epoch=NULL "
                     "WHERE userID=%s AND next_vote_epoch <= %s",
-                    (user_id, int(when.timestamp()))
+                    (user_id, int(when.timestamp())),
                 )
             except Exception as e:
-                logging.error(f"[VoteReminder] DB-Update fehlgeschlagen ({user_id}): {e}")
+                logging.error(
+                    f"[VoteReminder] DB-Update fehlgeschlagen ({user_id}): {e}"
+                )
 
         try:
             await conn.commit()
@@ -437,12 +487,15 @@ setup_topgg_events(bot)
 @commands.guild_only()
 @commands.is_owner()
 async def advert(ctx):
-    embed = discord.Embed(title="`🎃` Astra x Astra Support",
-                          url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands",
-                          description="Astra ist der einzige Bot, den Sie zur Verwaltung Ihres gesamten Servers benötigen. Es gibt viele Server, die Astra verwenden. Vielleicht sind Sie der Nächste?\n\n> __**Was bieten wir an?**__\n・<:Astra_ticket:1141833836204937347> Öffentliches Ticketsystem für Ihren Server\n・<:Astra_time:1141303932061233202> Automatische Moderation\n・<:Astra_messages:1141303867850641488> Willkommen/Nachrichten hinterlassen\n・<:Astra_settings:1141303908778639490> Joinrole&Botrole\n・<:Astra_herz:1141303857855594527> Reaktionsrollen\n・<:Astra_global1:1141303843993436200> Globalchat\n\n\n> __**Nützliche Links:**__\n・[Astra einladen ➚](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n・[Support erhalten ➚](https://discord.gg/eatdJPfjWc)",
-                          colour=discord.Colour.blue())
+    embed = discord.Embed(
+        title="`🎃` Astra x Astra Support",
+        url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands",
+        description="Astra ist der einzige Bot, den Sie zur Verwaltung Ihres gesamten Servers benötigen. Es gibt viele Server, die Astra verwenden. Vielleicht sind Sie der Nächste?\n\n> __**Was bieten wir an?**__\n・<:Astra_ticket:1141833836204937347> Öffentliches Ticketsystem für Ihren Server\n・<:Astra_time:1141303932061233202> Automatische Moderation\n・<:Astra_messages:1141303867850641488> Willkommen/Nachrichten hinterlassen\n・<:Astra_settings:1141303908778639490> Joinrole&Botrole\n・<:Astra_herz:1141303857855594527> Reaktionsrollen\n・<:Astra_global1:1141303843993436200> Globalchat\n\n\n> __**Nützliche Links:**__\n・[Astra einladen ➚](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n・[Support erhalten ➚](https://discord.gg/eatdJPfjWc)",
+        colour=discord.Colour.blue(),
+    )
     embed.set_image(
-        url="https://cdn.discordapp.com/attachments/842039934142513152/879880068262940672/Astra-premium3.gif")
+        url="https://cdn.discordapp.com/attachments/842039934142513152/879880068262940672/Astra-premium3.gif"
+    )
     embed.set_thumbnail(url=ctx.guild.icon.url)
     msg = await ctx.send("https://discord.gg/eatdJPfjWc", embed=embed)
     await ctx.message.delete()
@@ -458,8 +511,11 @@ async def sync(ctx, serverid: int = None):
             a = 0
             for command in s:
                 a += 1
-            globalembed = discord.Embed(color=discord.Color.orange(), title="Synchronisierung",
-                                        description=f"Die Synchronisierung von `{a} Commands` wurde eingeleitet.\nEs wird ungefähr eine Stunde dauern, damit sie global angezeigt werden.")
+            globalembed = discord.Embed(
+                color=discord.Color.orange(),
+                title="Synchronisierung",
+                description=f"Die Synchronisierung von `{a} Commands` wurde eingeleitet.\nEs wird ungefähr eine Stunde dauern, damit sie global angezeigt werden.",
+            )
             await ctx.send(embed=globalembed)
         except Exception as e:
             await ctx.send(f"**❌ Synchronisierung fehlgeschlagen**\n```\n{e}```")
@@ -472,13 +528,18 @@ async def sync(ctx, serverid: int = None):
                 a = 0
                 for command in s:
                     a += 1
-                localembed = discord.Embed(color=discord.Color.orange(), title="Synchronisierung",
-                                           description=f"Die Synchronisierung von `{a} Commands` ist fertig.\nEs wird nur maximal eine Minute dauern, weil sie nur auf dem Server {guild.name} synchronisiert wurden.")
+                localembed = discord.Embed(
+                    color=discord.Color.orange(),
+                    title="Synchronisierung",
+                    description=f"Die Synchronisierung von `{a} Commands` ist fertig.\nEs wird nur maximal eine Minute dauern, weil sie nur auf dem Server {guild.name} synchronisiert wurden.",
+                )
                 await ctx.send(embed=localembed)
             except Exception as e:
                 await ctx.send(f"**❌ Synchronisierung fehlgeschlagen**\n```\n{e}```")
         if guild is None:
-            await ctx.send(f"❌ Der Server mit der ID `{serverid}` wurde nicht gefunden.")
+            await ctx.send(
+                f"❌ Der Server mit der ID `{serverid}` wurde nicht gefunden."
+            )
 
 
 def serialize_guild(guild: discord.Guild):
@@ -486,19 +547,19 @@ def serialize_guild(guild: discord.Guild):
         "id": str(guild.id).strip(),
         "name": guild.name,
         "icon": guild.icon.key if guild.icon else None,
-        "memberCount": guild.member_count
+        "memberCount": guild.member_count,
     }
 
 
 app = Flask(__name__)
 
 
-@app.route('/status')
+@app.route("/status")
 def status():
     return jsonify(online=True)
 
 
-@app.route('/servers')
+@app.route("/servers")
 def servers():
     if not bot.is_ready():
         return jsonify(success=False, error="Bot not ready"), 503
@@ -506,14 +567,10 @@ def servers():
     with guild_cache_lock:
         servers = [serialize_guild(g) for g in guild_cache.values()]
 
-    return jsonify(
-        success=True,
-        count=len(servers),
-        servers=servers
-    )
+    return jsonify(success=True, count=len(servers), servers=servers)
 
 
-@app.route('/servers/<int:guild_id>')
+@app.route("/servers/<int:guild_id>")
 def server_detail(guild_id):
     if not bot_ready:
         return jsonify(success=False, error="Bot not ready"), 503
@@ -521,10 +578,7 @@ def server_detail(guild_id):
         guild = guild_cache.get(guild_id)
 
     if not guild:
-        return jsonify(
-            success=False,
-            error="Server not found"
-        ), 404
+        return jsonify(success=False, error="Server not found"), 404
 
     return jsonify(
         success=True,
@@ -535,12 +589,12 @@ def server_detail(guild_id):
             "memberCount": guild.member_count,
             "channelCount": len(guild.channels),
             "roleCount": len(guild.roles),
-            "ownerId": str(guild.owner_id)
-        }
+            "ownerId": str(guild.owner_id),
+        },
     )
 
 
-@app.route('/servers/<int:guild_id>/roles')
+@app.route("/servers/<int:guild_id>/roles")
 def server_roles(guild_id):
     if not bot_ready:
         return jsonify(success=False, error="Bot not ready"), 503
@@ -552,19 +606,12 @@ def server_roles(guild_id):
         return jsonify(success=False, error="Server not found"), 404
 
     roles = [
-        {
-            "id": str(role.id),
-            "name": role.name
-        }
+        {"id": str(role.id), "name": role.name}
         for role in guild.roles
         if role.name != "@everyone"
     ]
 
-    return jsonify(
-        success=True,
-        count=len(roles),
-        roles=roles
-    )
+    return jsonify(success=True, count=len(roles), roles=roles)
 
 
 def run_flask():
