@@ -54,7 +54,7 @@ class Astra(commands.Bot):
             command_prefix="astra!",
             help_command=None,
             case_insensitive=True,
-            intents=discord.Intents.all(),
+            intents=intents,
         )
 
         pool: aiomysql.Pool
@@ -276,7 +276,6 @@ class Astra(commands.Bot):
             )
 
             await msg.channel.send(embed=embed)
-            await bot.process_commands(msg)
 
     @staticmethod
     def find_translatable_strings(path):

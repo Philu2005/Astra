@@ -11,12 +11,10 @@ from datetime import datetime, timezone, timedelta
 from discord import ui
 import logging
 
-
 # TODO(@Philu priority:high due:2026-04-15 category:Economy-System issue:refactor risk:medium): Economy-System refactoren und in mehrere Cogs aufteilen (Economy, Gambling, Jobs, Admin), um Struktur, Wartbarkeit und Erweiterbarkeit des Codes zu verbessern.
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
 logger = logging.getLogger(__name__)
@@ -32,27 +30,87 @@ SCAT = "🔔"
 # Reels: 1x ⭐ pro Reel, 1–2x 🔔, mehr Low/Mid, wenige Highs
 REEL_STRIPS = [
     # Reel 1
-    ["🍒","🍒","🍋","🍊","🍇","🍓","🍒","🍋","🍊","🍉",
-     "🍒","🍋","🍇","🍓","🍊","🍍", SCAT, "🍒", WILD, "🍋"],
+    [
+        "🍒",
+        "🍒",
+        "🍋",
+        "🍊",
+        "🍇",
+        "🍓",
+        "🍒",
+        "🍋",
+        "🍊",
+        "🍉",
+        "🍒",
+        "🍋",
+        "🍇",
+        "🍓",
+        "🍊",
+        "🍍",
+        SCAT,
+        "🍒",
+        WILD,
+        "🍋",
+    ],
     # Reel 2
-    ["🍒","🍋","🍊","🍇","🍓","🍉","🍒","🍋","🍊","🍇",
-     "🍓","🍒","🍋","🍊","🍍","🍉", WILD, SCAT, "🍇","🍋"],
+    [
+        "🍒",
+        "🍋",
+        "🍊",
+        "🍇",
+        "🍓",
+        "🍉",
+        "🍒",
+        "🍋",
+        "🍊",
+        "🍇",
+        "🍓",
+        "🍒",
+        "🍋",
+        "🍊",
+        "🍍",
+        "🍉",
+        WILD,
+        SCAT,
+        "🍇",
+        "🍋",
+    ],
     # Reel 3
-    ["🍒","🍋","🍊","🍇","🍓","🍉","🍒","🍋","🍊","🍇",
-     "🍓","🍒","🍋","🍊","🍍","🍉", SCAT, "🍇", WILD, "🍋"],
+    [
+        "🍒",
+        "🍋",
+        "🍊",
+        "🍇",
+        "🍓",
+        "🍉",
+        "🍒",
+        "🍋",
+        "🍊",
+        "🍇",
+        "🍓",
+        "🍒",
+        "🍋",
+        "🍊",
+        "🍍",
+        "🍉",
+        SCAT,
+        "🍇",
+        WILD,
+        "🍋",
+    ],
 ]
 
 # 9 Gewinnlinien
 PAYLINES = [
-    ([(0,0),(0,1),(0,2)], "Obere Reihe"),
-    ([(1,0),(1,1),(1,2)], "Mittlere Reihe"),
-    ([(2,0),(2,1),(2,2)], "Untere Reihe"),
-    ([(0,0),(1,0),(2,0)], "Linke Spalte"),
-    ([(0,1),(1,1),(2,1)], "Mittlere Spalte"),
-    ([(0,2),(1,2),(2,2)], "Rechte Spalte"),
-    ([(0,0),(1,1),(2,2)], "↘ Diagonale"),
-    ([(2,0),(1,1),(0,2)], "↗ Diagonale"),
-    ([(1,0),(1,1),(1,2)], "Mittellinie (Bonus)"),
+    ([(0, 0), (0, 1), (0, 2)], "Obere Reihe"),
+    ([(1, 0), (1, 1), (1, 2)], "Mittlere Reihe"),
+    ([(2, 0), (2, 1), (2, 2)], "Untere Reihe"),
+    ([(0, 0), (1, 0), (2, 0)], "Linke Spalte"),
+    ([(0, 1), (1, 1), (2, 1)], "Mittlere Spalte"),
+    ([(0, 2), (1, 2), (2, 2)], "Rechte Spalte"),
+    ([(0, 0), (1, 1), (2, 2)], "↘ Diagonale"),
+    ([(2, 0), (1, 1), (0, 2)], "↗ Diagonale"),
+    ([(1, 0), (1, 1), (1, 2)], "Mittellinie (Bonus)"),
 ]
 
 # Basis-Multis (größer als vorher, damit Treffer lohnen)
@@ -77,14 +135,15 @@ PURE_WILDS_MULTI = 20
 
 # Scatter zahlt + Freespins
 SCATTER_PAYS = {3: 2, 4: 4, 5: 8}  # => payout = bet * factor
-FREESPINS_FOR_3_SCAT = 6            # spürbarer Bonus
+FREESPINS_FOR_3_SCAT = 6  # spürbarer Bonus
 
 # Nudges etwas konservativer, damit „Rettungen“ selten bleiben
 NUDGE_SCATTER_CHANCE = 0.20
-NUDGE_LINE_CHANCE    = 0.10
+NUDGE_LINE_CHANCE = 0.10
 
 SPIN_FRAMES = 5
 FRAME_DELAY = 0.35
+
 
 def spin_reels():
     """Pro Spalte einen Startindex wählen und ein 3er-Fenster lesen (echtes Reel-Feeling)."""
@@ -96,10 +155,11 @@ def spin_reels():
     # Spalten → Zeilen transponieren: board[row][col]
     return [list(row) for row in zip(*cols)]
 
+
 def nudge_for_scatter(board):
     # Wenn genau 2 Scatter sichtbar, Chance eine Spalte zu nudgen -> 3. Scatter
-    flat = [(r,c) for r in range(3) for c in range(3)]
-    scs = [(r,c) for (r,c) in flat if board[r][c] == SCAT]
+    flat = [(r, c) for r in range(3) for c in range(3)]
+    scs = [(r, c) for (r, c) in flat if board[r][c] == SCAT]
     if len(scs) != 2 or random.random() > NUDGE_SCATTER_CHANCE:
         return board
     for col in range(3):
@@ -107,7 +167,11 @@ def nudge_for_scatter(board):
         strip = REEL_STRIPS[col]
         idx = strip.index(top)
         idx = (idx + 1) % len(strip)
-        new_col = [strip[idx % len(strip)], strip[(idx+1) % len(strip)], strip[(idx+2) % len(strip)]]
+        new_col = [
+            strip[idx % len(strip)],
+            strip[(idx + 1) % len(strip)],
+            strip[(idx + 2) % len(strip)],
+        ]
         new_board = [row[:] for row in board]
         for r in range(3):
             new_board[r][col] = new_col[r]
@@ -115,11 +179,13 @@ def nudge_for_scatter(board):
             return new_board
     return board
 
+
 # ========= zuverlässige Breitenmessung =========
 try:
     from wcwidth import wcswidth  # pip install wcwidth
 except ImportError:
     import unicodedata
+
     def wcswidth(s: str) -> int:
         w = 0
         for ch in s:
@@ -132,10 +198,12 @@ except ImportError:
                 w += 1
         return w
 
+
 # ========= Board-Renderer =========
-CELL_W = 7   # Breite jeder Zelle
-VERT   = "│"
-HOR    = "─"
+CELL_W = 7  # Breite jeder Zelle
+VERT = "│"
+HOR = "─"
+
 
 def _pad_center(s: str, width: int) -> str:
     w = max(0, wcswidth(s))
@@ -145,6 +213,7 @@ def _pad_center(s: str, width: int) -> str:
     right = width - w - left
     return " " * left + s + " " * right
 
+
 def render_board(board, winline_idxs=None, freespins_left=0):
     """
     Stabiles 3×3 Board (monospace), Emojis zentriert.
@@ -153,10 +222,10 @@ def render_board(board, winline_idxs=None, freespins_left=0):
     winline_idxs = set(winline_idxs or [])
 
     # Highlight-Zellen bestimmen
-    idx_to_coords = {i: coords for i,(coords,_name) in enumerate(PAYLINES)}
-    highlight = [[False]*3 for _ in range(3)]
+    idx_to_coords = {i: coords for i, (coords, _name) in enumerate(PAYLINES)}
+    highlight = [[False] * 3 for _ in range(3)]
     for i in winline_idxs:
-        for (r,c) in idx_to_coords.get(i, []):
+        for r, c in idx_to_coords.get(i, []):
             highlight[r][c] = True
 
     def fmt_cell(r, c):
@@ -170,15 +239,18 @@ def render_board(board, winline_idxs=None, freespins_left=0):
 
     # Rahmen
     bar = HOR * CELL_W
-    top    = f"┌{bar}┬{bar}┬{bar}┐"
-    mid    = f"├{bar}┼{bar}┼{bar}┤"
+    top = f"┌{bar}┬{bar}┬{bar}┐"
+    mid = f"├{bar}┼{bar}┼{bar}┤"
     bottom = f"└{bar}┴{bar}┴{bar}┘"
 
     # Pfeile für horizontale Gewinne
     arrows = [" ", " ", " "]
-    if 0 in winline_idxs: arrows[0] = "▶"
-    if 1 in winline_idxs: arrows[1] = "▶"
-    if 2 in winline_idxs: arrows[2] = "▶"
+    if 0 in winline_idxs:
+        arrows[0] = "▶"
+    if 1 in winline_idxs:
+        arrows[1] = "▶"
+    if 2 in winline_idxs:
+        arrows[2] = "▶"
 
     lines = [
         "```",
@@ -189,7 +261,7 @@ def render_board(board, winline_idxs=None, freespins_left=0):
         mid,
         f"{row_line(2)} {arrows[2]}",
         bottom,
-        "```"
+        "```",
     ]
 
     # Legende
@@ -205,15 +277,20 @@ def render_board(board, winline_idxs=None, freespins_left=0):
         txt += "\n" + "\n".join(extra)
     return txt
 
+
 def build_spin_frames(final_board, spin_frames=5):
     frames = [spin_reels() for _ in range(max(1, spin_frames))]
     last = [row[:] for row in frames[-1]]
     for col in range(3):
-        step = [[final_board[r][c] if c <= col else last[r][c] for c in range(3)] for r in range(3)]
+        step = [
+            [final_board[r][c] if c <= col else last[r][c] for c in range(3)]
+            for r in range(3)
+        ]
         frames.append(step)
         last = step
     frames.append(final_board)
     return frames
+
 
 def nudge_for_line(board):
     """Kleine Chance (NUDGE_LINE_CHANCE), eine 2/3-Linie zu 3/3 zu schieben."""
@@ -221,7 +298,7 @@ def nudge_for_line(board):
         return board
 
     for idx, (coords, _name) in enumerate(PAYLINES):
-        syms = [board[r][c] for (r,c) in coords]
+        syms = [board[r][c] for (r, c) in coords]
         if SCAT in syms:
             continue
         base = next((s for s in syms if s != WILD), WILD)
@@ -229,7 +306,7 @@ def nudge_for_line(board):
         if match != 2:
             continue
 
-        for k, (r,c) in enumerate(coords):
+        for k, (r, c) in enumerate(coords):
             if not (board[r][c] == base or board[r][c] == WILD):
                 strip = REEL_STRIPS[c]
                 top = board[0][c]
@@ -240,11 +317,12 @@ def nudge_for_line(board):
                     candidate = [row[:] for row in board]
                     for rr in range(3):
                         candidate[rr][c] = new_col[rr]
-                    vals = [candidate[rr][cc] for (rr,cc) in coords]
+                    vals = [candidate[rr][cc] for (rr, cc) in coords]
                     ok = all(v == base or v == WILD for v in vals)
                     if ok:
                         return candidate
     return board
+
 
 # ---------- ROBUSTE AUSZAHLUNGSLOGIK ----------
 def line_payout(coords, board, bet):
@@ -254,7 +332,7 @@ def line_payout(coords, board, bet):
     - 3×⭐ zahlt separat (PURE_WILDS_MULTI)
     - 1–2 ⭐ boosten die Linie (WILD_LINE_MULT)
     """
-    syms = [board[r][c] for r,c in coords]
+    syms = [board[r][c] for r, c in coords]
     if any(s == SCAT for s in syms):
         return 0, None
 
@@ -278,6 +356,7 @@ def line_payout(coords, board, bet):
 
     extra = WILD_LINE_MULT.get(wilds, 1)
     return bet * base_multi * extra, base
+
 
 def evaluate(board, bet):
     total = 0
@@ -320,7 +399,9 @@ class SlotView(ui.View):
 
     async def ensure_owner(self, interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("Nur der ursprüngliche Spieler kann hier interagieren.", ephemeral=True)
+            await interaction.response.send_message(
+                "Nur der ursprüngliche Spieler kann hier interagieren.", ephemeral=True
+            )
             return False
         return True
 
@@ -332,7 +413,7 @@ class SlotView(ui.View):
             if self.bet <= 0 or wallet < self.bet:
                 await interaction.followup.send(
                     "<:Astra_x:1141303954555289600> Zu wenig Coins oder ungültiger Einsatz.",
-                    ephemeral=True
+                    ephemeral=True,
                 )
                 return None, None, None, None
             await self.cog.update_balance(self.user_id, wallet_change=-self.bet)
@@ -351,9 +432,13 @@ class SlotView(ui.View):
             em = discord.Embed(
                 colour=discord.Colour.blurple(),
                 title="🎰 Slots",
-                description=f"Einsatz: **{self.bet}** <:Coin:1359178077011181811>{' (Freespin)' if self.freespins > 0 else ''}"
+                description=f"Einsatz: **{self.bet}** <:Coin:1359178077011181811>{' (Freespin)' if self.freespins > 0 else ''}",
             )
-            em.add_field(name="Walzen", value=render_board(b, freespins_left=self.freespins), inline=False)
+            em.add_field(
+                name="Walzen",
+                value=render_board(b, freespins_left=self.freespins),
+                inline=False,
+            )
             await self.msg.edit(embed=em)
 
         # --- Ergebnis ---
@@ -381,14 +466,19 @@ class SlotView(ui.View):
 
         # Anzeige
         board_text = render_board(final, winlines, self.freespins)
-        res = (f"<:Astra_gw1:1141303852889550928> Gewinn: **+{payout}** <:Coin:1359178077011181811>"
-               if payout > 0 else "Kein Gewinn.")
+        res = (
+            f"<:Astra_gw1:1141303852889550928> Gewinn: **+{payout}** <:Coin:1359178077011181811>"
+            if payout > 0
+            else "Kein Gewinn."
+        )
 
         details = "Keine Gewinnlinien."
         if breakdown:
             parts = []
             for name, sym, val in breakdown:
-                parts.append(f"• {name} {sym or ''} {'→ **+%s**' % val if val > 0 else ''}")
+                parts.append(
+                    f"• {name} {sym or ''} {'→ **+%s**' % val if val > 0 else ''}"
+                )
             details = "\n".join(parts)
 
         end = discord.Embed(colour=discord.Colour.blue(), title="🎰 Slots – Ergebnis ")
@@ -403,14 +493,16 @@ class SlotView(ui.View):
 
     @ui.button(label="▶️ Spin", style=discord.ButtonStyle.green)
     async def spin(self, interaction: discord.Interaction, button: ui.Button):
-        if not await self.ensure_owner(interaction): return
+        if not await self.ensure_owner(interaction):
+            return
         async with self.lock:
             await interaction.response.defer()
             await self.spin_once(interaction)
 
     @ui.button(label="🔁 Auto x5", style=discord.ButtonStyle.primary)
     async def auto(self, interaction: discord.Interaction, button: ui.Button):
-        if not await self.ensure_owner(interaction): return
+        if not await self.ensure_owner(interaction):
+            return
         async with self.lock:
             await interaction.response.defer()
             for _ in range(5):
@@ -423,171 +515,310 @@ class SlotView(ui.View):
 
     @ui.button(label="🎲 Gamble", style=discord.ButtonStyle.red)
     async def gamble(self, interaction: discord.Interaction, button: ui.Button):
-        if not await self.ensure_owner(interaction): return
+        if not await self.ensure_owner(interaction):
+            return
         async with self.lock:
             await interaction.response.defer(ephemeral=True)
             if self.last_win <= 0:
-                await interaction.followup.send("Kein Gewinn zum Verdoppeln.", ephemeral=True)
+                await interaction.followup.send(
+                    "Kein Gewinn zum Verdoppeln.", ephemeral=True
+                )
                 return
             # 48% Gewinnchance – house edge 😈
             if random.random() < 0.48:
                 await self.cog.update_balance(self.user_id, wallet_change=self.last_win)
                 self.last_win *= 2
-                await interaction.followup.send(f"🎉 Verdoppelt! Neuer Gewinn: **+{self.last_win}**", ephemeral=True)
+                await interaction.followup.send(
+                    f"🎉 Verdoppelt! Neuer Gewinn: **+{self.last_win}**", ephemeral=True
+                )
             else:
-                await self.cog.update_balance(self.user_id, wallet_change=-self.last_win)
+                await self.cog.update_balance(
+                    self.user_id, wallet_change=-self.last_win
+                )
                 self.last_win = 0
-                await interaction.followup.send("💥 Verloren – Gewinn futsch.", ephemeral=True)
+                await interaction.followup.send(
+                    "💥 Verloren – Gewinn futsch.", ephemeral=True
+                )
 
     @ui.button(label="➖", style=discord.ButtonStyle.secondary)
     async def bet_minus(self, interaction: discord.Interaction, button: ui.Button):
-        if not await self.ensure_owner(interaction): return
+        if not await self.ensure_owner(interaction):
+            return
         self.bet = max(10, int(self.bet * 0.5))
-        await interaction.response.send_message(f"Einsatz: **{self.bet}**", ephemeral=True)
+        await interaction.response.send_message(
+            f"Einsatz: **{self.bet}**", ephemeral=True
+        )
 
     @ui.button(label="➕", style=discord.ButtonStyle.secondary)
     async def bet_plus(self, interaction: discord.Interaction, button: ui.Button):
-        if not await self.ensure_owner(interaction): return
+        if not await self.ensure_owner(interaction):
+            return
         self.bet = min(MAX_BET, int(self.bet * 1.5) or self.bet + 10)
-        await interaction.response.send_message(f"Einsatz: **{self.bet}**", ephemeral=True)
+        await interaction.response.send_message(
+            f"Einsatz: **{self.bet}**", ephemeral=True
+        )
 
-JOBS = [{"name": "Küchenhilfe", "req": 0,
-         "desc": "\nVerdiene zwischen 20 und 30 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **0** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [20, 30]},
-        {"name": "Kassierer", "req": 5,
-         "desc": "\nVerdiene zwischen 30 und 40 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **5** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [30, 40]},
-        {"name": "Kebap-Mann", "req": 10,
-         "desc": "\nVerdiene zwischen 40 und 50 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **10** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [40, 50]},
-        {"name": "Elektroniker", "req": 15,
-         "desc": "\nVerdiene zwischen 50 und 60 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **15** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [50, 60]},
-        {"name": "Betreuer", "req": 20,
-         "desc": "\nVerdiene zwischen 60 und 70 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **20** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [60, 70]},
-        {"name": "Bäcker", "req": 25,
-         "desc": "\nVerdiene zwischen 70 und 80 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **25** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [70, 80]},
-        {"name": "Bauarbeiter", "req": 30,
-         "desc": "\nVerdiene zwischen 80 und 90 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **30** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [80, 90]},
-        {"name": "Gärtner", "req": 35,
-         "desc": "\nVerdiene zwischen 90 und 100 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **35** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [90, 100]},
-        {"name": "Lehrer", "req": 40,
-         "desc": "\nVerdiene zwischen 100 und 110 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **40** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [100, 110]},
-        {"name": "Koch", "req": 45,
-         "desc": "\nVerdiene zwischen 110 und 120 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **45** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [110, 120]},
-        {"name": "Sanitäter", "req": 50,
-         "desc": "\nVerdiene zwischen 120 und 130 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **50** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [120, 130]},
-        {"name": "TV-Moderator", "req": 60,
-         "desc": "\nVerdiene zwischen 130 und 140 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **60** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [130, 140]},
-        {"name": "Schauspieler", "req": 70,
-         "desc": "\nVerdiene zwischen 140 und 150 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **70** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [140, 150]},
-        {"name": "Ingenieur", "req": 80,
-         "desc": "\nVerdiene zwischen 140 und 150 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **80** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [150, 160]},
-        {"name": "Streamer", "req": 90,
-         "desc": "\nVerdiene zwischen 160 und 170 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **90** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [160, 170]},
-        {"name": "Athlet", "req": 100,
-         "desc": "\nVerdiene zwischen 170 und 180 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **100** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [170, 180]},
-        {"name": "Polizist", "req": 120,
-         "desc": "\nVerdiene zwischen 180 und 190 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **120** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [180, 190]},
-        {"name": "Programmierer", "req": 140,
-         "desc": "\nVerdiene zwischen 190 und 200 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **140** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [190, 200]},
-        {"name": "Chirurg", "req": 160,
-         "desc": "\nVerdiene zwischen 170 und 180 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **160** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [220, 240]},
-        {"name": "Chefarzt", "req": 180,
-         "desc": "\nVerdiene zwischen 240 und 250 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **180** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [240, 250]},
-        {"name": "Rechtsanwalt", "req": 200,
-         "desc": "\nVerdiene zwischen 250 und 260 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **200** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [250, 260]},
-        {"name": "Unternehmensleiter", "req": 250,
-         "desc": "\nVerdiene zwischen 260 und 270 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **250** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [260, 270]},
-        {"name": "Richter", "req": 300,
-         "desc": "\nVerdiene zwischen 270 und 280 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **300** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [270, 300]},
-        {"name": "Astronaut", "req": 350,
-         "desc": "\nVerdiene zwischen 300 und 310 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **400** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [300, 330]},
-        {"name": "Pilot", "req": 400,
-         "desc": "\nVerdiene zwischen 300 und 310 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **400** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-         "amt": [330, 400]}]
+
+JOBS = [
+    {
+        "name": "Küchenhilfe",
+        "req": 0,
+        "desc": "\nVerdiene zwischen 20 und 30 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **0** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [20, 30],
+    },
+    {
+        "name": "Kassierer",
+        "req": 5,
+        "desc": "\nVerdiene zwischen 30 und 40 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **5** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [30, 40],
+    },
+    {
+        "name": "Kebap-Mann",
+        "req": 10,
+        "desc": "\nVerdiene zwischen 40 und 50 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **10** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [40, 50],
+    },
+    {
+        "name": "Elektroniker",
+        "req": 15,
+        "desc": "\nVerdiene zwischen 50 und 60 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **15** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [50, 60],
+    },
+    {
+        "name": "Betreuer",
+        "req": 20,
+        "desc": "\nVerdiene zwischen 60 und 70 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **20** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [60, 70],
+    },
+    {
+        "name": "Bäcker",
+        "req": 25,
+        "desc": "\nVerdiene zwischen 70 und 80 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **25** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [70, 80],
+    },
+    {
+        "name": "Bauarbeiter",
+        "req": 30,
+        "desc": "\nVerdiene zwischen 80 und 90 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **30** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [80, 90],
+    },
+    {
+        "name": "Gärtner",
+        "req": 35,
+        "desc": "\nVerdiene zwischen 90 und 100 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **35** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [90, 100],
+    },
+    {
+        "name": "Lehrer",
+        "req": 40,
+        "desc": "\nVerdiene zwischen 100 und 110 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **40** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [100, 110],
+    },
+    {
+        "name": "Koch",
+        "req": 45,
+        "desc": "\nVerdiene zwischen 110 und 120 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **45** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [110, 120],
+    },
+    {
+        "name": "Sanitäter",
+        "req": 50,
+        "desc": "\nVerdiene zwischen 120 und 130 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **50** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [120, 130],
+    },
+    {
+        "name": "TV-Moderator",
+        "req": 60,
+        "desc": "\nVerdiene zwischen 130 und 140 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **60** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [130, 140],
+    },
+    {
+        "name": "Schauspieler",
+        "req": 70,
+        "desc": "\nVerdiene zwischen 140 und 150 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **70** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [140, 150],
+    },
+    {
+        "name": "Ingenieur",
+        "req": 80,
+        "desc": "\nVerdiene zwischen 140 und 150 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **80** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [150, 160],
+    },
+    {
+        "name": "Streamer",
+        "req": 90,
+        "desc": "\nVerdiene zwischen 160 und 170 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **90** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [160, 170],
+    },
+    {
+        "name": "Athlet",
+        "req": 100,
+        "desc": "\nVerdiene zwischen 170 und 180 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **100** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [170, 180],
+    },
+    {
+        "name": "Polizist",
+        "req": 120,
+        "desc": "\nVerdiene zwischen 180 und 190 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **120** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [180, 190],
+    },
+    {
+        "name": "Programmierer",
+        "req": 140,
+        "desc": "\nVerdiene zwischen 190 und 200 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **140** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [190, 200],
+    },
+    {
+        "name": "Chirurg",
+        "req": 160,
+        "desc": "\nVerdiene zwischen 170 und 180 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **160** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [220, 240],
+    },
+    {
+        "name": "Chefarzt",
+        "req": 180,
+        "desc": "\nVerdiene zwischen 240 und 250 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **180** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [240, 250],
+    },
+    {
+        "name": "Rechtsanwalt",
+        "req": 200,
+        "desc": "\nVerdiene zwischen 250 und 260 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **200** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [250, 260],
+    },
+    {
+        "name": "Unternehmensleiter",
+        "req": 250,
+        "desc": "\nVerdiene zwischen 260 und 270 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **250** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [260, 270],
+    },
+    {
+        "name": "Richter",
+        "req": 300,
+        "desc": "\nVerdiene zwischen 270 und 280 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **300** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [270, 300],
+    },
+    {
+        "name": "Astronaut",
+        "req": 350,
+        "desc": "\nVerdiene zwischen 300 und 310 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **400** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [300, 330],
+    },
+    {
+        "name": "Pilot",
+        "req": 400,
+        "desc": "\nVerdiene zwischen 300 und 310 <:Coin:1359178077011181811>  pro Stunde.\nDu musst mindestens **400** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [330, 400],
+    },
+]
 
 JOBS += [
-    {"name": "Wissenschaftler", "req": 450,
-     "desc": "\nVerdiene zwischen 410 und 430 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **450** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [410, 430]},
-    {"name": "Professor", "req": 500,
-     "desc": "\nVerdiene zwischen 440 und 460 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **500** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [440, 460]},
-    {"name": "Pharmaforscher", "req": 550,
-     "desc": "\nVerdiene zwischen 470 und 490 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **550** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [470, 490]},
-    {"name": "Bankmanager", "req": 600,
-     "desc": "\nVerdiene zwischen 500 und 530 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **600** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [500, 530]},
-    {"name": "Politiker", "req": 650,
-     "desc": "\nVerdiene zwischen 530 und 560 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **650** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [530, 560]},
-    {"name": "Unternehmensberater", "req": 700,
-     "desc": "\nVerdiene zwischen 560 und 590 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **700** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [560, 590]},
-    {"name": "Chefredakteur", "req": 750,
-     "desc": "\nVerdiene zwischen 590 und 620 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **750** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [590, 620]},
-    {"name": "Finanzanalyst", "req": 800,
-     "desc": "\nVerdiene zwischen 620 und 650 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **800** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [620, 650]},
-    {"name": "Medienproduzent", "req": 850,
-     "desc": "\nVerdiene zwischen 650 und 680 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **850** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [650, 680]},
-    {"name": "Entwicklungsleiter", "req": 900,
-     "desc": "\nVerdiene zwischen 680 und 710 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **900** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [680, 710]},
-    {"name": "Regierungsberater", "req": 1000,
-     "desc": "\nVerdiene zwischen 710 und 750 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **1000** Stunden gearbeitet haben, um diesen Job freizuschalten.",
-     "amt": [710, 750]}
+    {
+        "name": "Wissenschaftler",
+        "req": 450,
+        "desc": "\nVerdiene zwischen 410 und 430 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **450** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [410, 430],
+    },
+    {
+        "name": "Professor",
+        "req": 500,
+        "desc": "\nVerdiene zwischen 440 und 460 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **500** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [440, 460],
+    },
+    {
+        "name": "Pharmaforscher",
+        "req": 550,
+        "desc": "\nVerdiene zwischen 470 und 490 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **550** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [470, 490],
+    },
+    {
+        "name": "Bankmanager",
+        "req": 600,
+        "desc": "\nVerdiene zwischen 500 und 530 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **600** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [500, 530],
+    },
+    {
+        "name": "Politiker",
+        "req": 650,
+        "desc": "\nVerdiene zwischen 530 und 560 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **650** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [530, 560],
+    },
+    {
+        "name": "Unternehmensberater",
+        "req": 700,
+        "desc": "\nVerdiene zwischen 560 und 590 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **700** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [560, 590],
+    },
+    {
+        "name": "Chefredakteur",
+        "req": 750,
+        "desc": "\nVerdiene zwischen 590 und 620 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **750** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [590, 620],
+    },
+    {
+        "name": "Finanzanalyst",
+        "req": 800,
+        "desc": "\nVerdiene zwischen 620 und 650 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **800** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [620, 650],
+    },
+    {
+        "name": "Medienproduzent",
+        "req": 850,
+        "desc": "\nVerdiene zwischen 650 und 680 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **850** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [650, 680],
+    },
+    {
+        "name": "Entwicklungsleiter",
+        "req": 900,
+        "desc": "\nVerdiene zwischen 680 und 710 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **900** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [680, 710],
+    },
+    {
+        "name": "Regierungsberater",
+        "req": 1000,
+        "desc": "\nVerdiene zwischen 710 und 750 <:Coin:1359178077011181811> pro Stunde.\nDu musst mindestens **1000** Stunden gearbeitet haben, um diesen Job freizuschalten.",
+        "amt": [710, 750],
+    },
 ]
 
 # ---------------------- Blackjack ----------------------
 
 # Kartenwert berechnung
 CARD_VALUES = {
-    '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
-    '7': 7, '8': 8, '9': 9, '10': 10,
-    'J': 10, 'Q': 10, 'K': 10, 'A': 11
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9,
+    "10": 10,
+    "J": 10,
+    "Q": 10,
+    "K": 10,
+    "A": 11,
 }
+
 
 def render_cards(cards):
     return " ".join(cards)
+
 
 def calculate_hand_value(hand):
     value = 0
     aces = 0
     for card in hand:
-        rank = card[:-1] if card[:-1] != '' else card[0]
+        rank = card[:-1] if card[:-1] != "" else card[0]
         card_value = CARD_VALUES.get(rank, 0)
         value += card_value
-        if rank == 'A':
+        if rank == "A":
             aces += 1
     while value > 21 and aces:
         value -= 10
         aces -= 1
     return value
+
 
 class BlackjackView(discord.ui.View):
     def __init__(self, bot, interaction, bet, economy):
@@ -613,9 +844,9 @@ class BlackjackView(discord.ui.View):
         self.deal_initial_cards()
 
     def create_deck(self):
-        suits = ['♠', '♥', '♦', '♣']
-        ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-        deck = [f'{rank}{suit}' for suit in suits for rank in ranks]
+        suits = ["♠", "♥", "♦", "♣"]
+        ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+        deck = [f"{rank}{suit}" for suit in suits for rank in ranks]
         random.shuffle(deck)
         return deck
 
@@ -648,7 +879,7 @@ class BlackjackView(discord.ui.View):
         embed.add_field(
             name="<:Astra_user:1141303940365959241> Deine Karten:",
             value=f"```{player_cards}```\nWert: **{player_value}**",
-            inline=False
+            inline=False,
         )
 
         if self.split_mode and self.split_hand:
@@ -658,13 +889,13 @@ class BlackjackView(discord.ui.View):
             embed.add_field(
                 name="🂡 Zweite Hand:",
                 value=f"```{split_cards}```\nWert: **{split_value}**",
-                inline=False
+                inline=False,
             )
 
         embed.add_field(
             name="<:Astra_dev:1141303833407017001> Karten des Dealers:",
             value=f"```{dealer_cards_display}```\nWert: **{dealer_value_display}**",
-            inline=False
+            inline=False,
         )
 
         game_over = False
@@ -695,7 +926,7 @@ class BlackjackView(discord.ui.View):
             embed.add_field(
                 name="<:Astra_wichtig:1141303951862534224> Ergebnis",
                 value=result_text,
-                inline=False
+                inline=False,
             )
 
             for child in self.children:
@@ -705,18 +936,18 @@ class BlackjackView(discord.ui.View):
 
                 self.result_shown = True
 
-                if player_value <= 21 and (player_value > dealer_value or dealer_value > 21):
+                if player_value <= 21 and (
+                    player_value > dealer_value or dealer_value > 21
+                ):
 
                     await self.economy.update_balance(
-                        self.user_id,
-                        wallet_change=self.bet * 2
+                        self.user_id, wallet_change=self.bet * 2
                     )
 
                 elif player_value == dealer_value:
 
                     await self.economy.update_balance(
-                        self.user_id,
-                        wallet_change=self.bet
+                        self.user_id, wallet_change=self.bet
                     )
 
         if self.message is None:
@@ -777,8 +1008,7 @@ class BlackjackView(discord.ui.View):
         if wallet < self.bet:
 
             await interaction.followup.send(
-                "Du hast nicht genug Coins für Double Down.",
-                ephemeral=True
+                "Du hast nicht genug Coins für Double Down.", ephemeral=True
             )
             return
 
@@ -802,8 +1032,7 @@ class BlackjackView(discord.ui.View):
         if not self.can_split():
 
             await interaction.followup.send(
-                "Diese Karten können nicht gesplittet werden.",
-                ephemeral=True
+                "Diese Karten können nicht gesplittet werden.", ephemeral=True
             )
             return
 
@@ -813,8 +1042,7 @@ class BlackjackView(discord.ui.View):
         if wallet < self.bet:
 
             await interaction.followup.send(
-                "Nicht genug Coins zum Splitten.",
-                ephemeral=True
+                "Nicht genug Coins zum Splitten.", ephemeral=True
             )
             return
 
@@ -837,7 +1065,7 @@ class BlackjackView(discord.ui.View):
         embed = discord.Embed(
             title="Blackjack",
             description="🃏 Der Dealer deckt seine Karte auf...",
-            color=discord.Color.blue()
+            color=discord.Color.blue(),
         )
 
         await self.update_message()
@@ -852,7 +1080,7 @@ class BlackjackView(discord.ui.View):
             embed = discord.Embed(
                 title="Blackjack",
                 description="🎴 Dealer zieht eine Karte...",
-                color=discord.Color.blue()
+                color=discord.Color.blue(),
             )
 
             await self.message.edit(embed=embed, view=self)
@@ -870,7 +1098,9 @@ class BlackjackView(discord.ui.View):
         # finale Pause für Spannung
         await asyncio.sleep(0.6)
 
+
 # ---------------------- Jobliste & Economy ----------------------
+
 
 class JobListView(discord.ui.View):
     def __init__(self, jobs, user_hours):
@@ -883,7 +1113,7 @@ class JobListView(discord.ui.View):
     def generate_job_embed(self):
         embed = discord.Embed(
             title="<:Astra_file1:1141303837181886494> Jobliste",
-            color=discord.Color.blue()
+            color=discord.Color.blue(),
         )
         start_idx = self.page * self.items_per_page
         end_idx = start_idx + self.items_per_page
@@ -891,60 +1121,78 @@ class JobListView(discord.ui.View):
 
         for job in jobs_to_display:
             locked = self.user_hours < job["req"]
-            status = "<:Astra_locked:1141824745243942912> Gesperrt" if locked else "<:Astra_unlock:1141824750851731486> Verfügbar"
+            status = (
+                "<:Astra_locked:1141824745243942912> Gesperrt"
+                if locked
+                else "<:Astra_unlock:1141824750851731486> Verfügbar"
+            )
             embed.add_field(
                 name=f"{job['name']} ({status})",
                 value=f"{job['desc']}\nBenötigte Stunden: **{job['req']}**",
-                inline=False
+                inline=False,
             )
 
         total_pages = (len(self.jobs) + self.items_per_page - 1) // self.items_per_page
         embed.set_footer(text=f"Seite {self.page + 1} von {total_pages}")
         return embed
 
-    @discord.ui.button(label="Zurück", style=discord.ButtonStyle.primary, emoji="<:Astra_arrow_backwards:1392540551546671348>", row=0)
-    async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Zurück",
+        style=discord.ButtonStyle.primary,
+        emoji="<:Astra_arrow_backwards:1392540551546671348>",
+        row=0,
+    )
+    async def previous_page(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         if self.page > 0:
             self.page -= 1
             embed = self.generate_job_embed()
             await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Weiter", style=discord.ButtonStyle.primary, emoji="<:Astra_arrow:1141303823600717885>", row=0)
-    async def next_page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Weiter",
+        style=discord.ButtonStyle.primary,
+        emoji="<:Astra_arrow:1141303823600717885>",
+        row=0,
+    )
+    async def next_page_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         if (self.page + 1) * self.items_per_page < len(self.jobs):
             self.page += 1
             embed = self.generate_job_embed()
             await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="🏠", style=discord.ButtonStyle.secondary, row=0)
-    async def go_home(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def go_home(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         if self.page != 0:
             self.page = 0
             embed = self.generate_job_embed()
             await interaction.response.edit_message(embed=embed, view=self)
 
+
 @app_commands.guild_only()
 class EconomyClass(app_commands.Group):
     def __init__(self, bot):
         self.bot = bot
-        super().__init__(
-            name="eco",
-            description="Alles rund um Economy."
-        )
+        super().__init__(name="eco", description="Alles rund um Economy.")
 
     async def get_user(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     "SELECT wallet, bank, job, hours_worked, last_work, last_beg, last_rob FROM economy_users WHERE user_id = %s",
-                    (user_id,)
+                    (user_id,),
                 )
                 data = await cur.fetchone()
 
                 if not data:
                     await cur.execute(
                         "INSERT INTO economy_users (user_id, wallet, bank, job, hours_worked, last_work, last_beg, last_rob) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                        (user_id, 0, 0, None, 0, None, None, None)
+                        (user_id, 0, 0, None, 0, None, None, None),
                     )
                     return 0, 0, None, 0, None, None, None
 
@@ -955,16 +1203,21 @@ class EconomyClass(app_commands.Group):
             async with conn.cursor() as cur:
                 await cur.execute(
                     "UPDATE economy_users SET wallet = wallet + %s, bank = bank + %s WHERE user_id = %s",
-                    (wallet_change, bank_change, user_id)
+                    (wallet_change, bank_change, user_id),
                 )
 
     async def get_balance(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT wallet, bank FROM economy_users WHERE user_id = %s", (user_id,))
+                await cur.execute(
+                    "SELECT wallet, bank FROM economy_users WHERE user_id = %s",
+                    (user_id,),
+                )
                 return await cur.fetchone()
 
-    @app_commands.command(name="balance", description="Zeigt deinen aktuellen Kontostand an.")
+    @app_commands.command(
+        name="balance", description="Zeigt deinen aktuellen Kontostand an."
+    )
     @app_commands.guild_only()
     async def balance(self, interaction: discord.Interaction):
         user_id = interaction.user.id
@@ -973,44 +1226,80 @@ class EconomyClass(app_commands.Group):
         job_name = user_data[2]
         hours = user_data[3]
 
-        embed = discord.Embed(title=f"{interaction.user}'s Kontostand", description="> Erhalte Hier Infos über deinen Kontostand und über deinen aktuellen Beruf.", color=discord.Color.blue())
-        embed.add_field(name="Barvermögen", value=f"{wallet} <:Coin:1359178077011181811>", inline=True)
-        embed.add_field(name="Bank", value=f"{bank} <:Coin:1359178077011181811>", inline=True)
-        embed.add_field(name="Beruf", value=f"{job_name}, <:Astra_time:1141303932061233202> {hours} Stunden", inline=True)
+        embed = discord.Embed(
+            title=f"{interaction.user}'s Kontostand",
+            description="> Erhalte Hier Infos über deinen Kontostand und über deinen aktuellen Beruf.",
+            color=discord.Color.blue(),
+        )
+        embed.add_field(
+            name="Barvermögen",
+            value=f"{wallet} <:Coin:1359178077011181811>",
+            inline=True,
+        )
+        embed.add_field(
+            name="Bank", value=f"{bank} <:Coin:1359178077011181811>", inline=True
+        )
+        embed.add_field(
+            name="Beruf",
+            value=f"{job_name}, <:Astra_time:1141303932061233202> {hours} Stunden",
+            inline=True,
+        )
         embed.set_thumbnail(url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="deposit", description="Zahle Geld auf dein Bankkonto ein.")
+    @app_commands.command(
+        name="deposit", description="Zahle Geld auf dein Bankkonto ein."
+    )
     @app_commands.guild_only()
     @app_commands.describe(betrag="Der Betrag, den du einzahlen möchtest.")
     async def deposit(self, interaction: discord.Interaction, betrag: int):
         if betrag <= 0:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein.", ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein.",
+                ephemeral=True,
+            )
             return
 
         user_data = await self.get_user(interaction.user.id)
         if user_data[0] < betrag:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Du hast nicht genug Geld in deinem Wallet.", ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Du hast nicht genug Geld in deinem Wallet.",
+                ephemeral=True,
+            )
             return
 
         await self.update_balance(interaction.user.id, -betrag, betrag)
-        await interaction.response.send_message(f"Du hast {betrag} <:Coin:1359178077011181811> auf dein Bankkonto eingezahlt.", ephemeral=True)
+        await interaction.response.send_message(
+            f"Du hast {betrag} <:Coin:1359178077011181811> auf dein Bankkonto eingezahlt.",
+            ephemeral=True,
+        )
 
-    @app_commands.command(name="withdraw", description="Verschiebe Coins von deinem Konto in dein Inventar.")
+    @app_commands.command(
+        name="withdraw",
+        description="Verschiebe Coins von deinem Konto in dein Inventar.",
+    )
     @app_commands.guild_only()
     @app_commands.describe(betrag="Der Betrag, den du abheben möchtest.")
     async def withdraw(self, interaction: discord.Interaction, betrag: int):
         if betrag <= 0:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein.", ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein.",
+                ephemeral=True,
+            )
             return
 
         user_data = await self.get_user(interaction.user.id)
         if user_data[1] < betrag:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Du hast nicht genug Geld auf deinem Bankkonto.", ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Du hast nicht genug Geld auf deinem Bankkonto.",
+                ephemeral=True,
+            )
             return
 
         await self.update_balance(interaction.user.id, betrag, -betrag)
-        await interaction.response.send_message(f"Du hast {betrag} <:Coin:1359178077011181811> von deinem Bankkonto abgehoben.")
+        await interaction.response.send_message(
+            f"Du hast {betrag} <:Coin:1359178077011181811> von deinem Bankkonto abgehoben."
+        )
 
     @app_commands.command(name="beg", description="Bitte um ein kleines Trinkgeld.")
     @app_commands.guild_only()
@@ -1049,7 +1338,7 @@ class EconomyClass(app_commands.Group):
 
                 await interaction.response.send_message(
                     f"<:Astra_time:1141303932061233202> Du kannst in **{time_string}** wieder betteln.",
-                    ephemeral=True
+                    ephemeral=True,
                 )
                 return
 
@@ -1061,14 +1350,16 @@ class EconomyClass(app_commands.Group):
             async with conn.cursor() as cur:
                 await cur.execute(
                     "UPDATE economy_users SET last_beg = %s WHERE user_id = %s",
-                    (now, user_id)
+                    (now, user_id),
                 )
 
         await interaction.response.send_message(
             f"<:Astra_accept:1141303821176422460> Du hast {amount} <:Coin:1359178077011181811> von einem freundlichen Fremden erhalten!"
         )
 
-    @app_commands.command(name="slot", description="Spiele ein realistisches 3×3 Slot-Spiel.")
+    @app_commands.command(
+        name="slot", description="Spiele ein realistisches 3×3 Slot-Spiel."
+    )
     @app_commands.guild_only()
     @app_commands.describe(einsatz="Wie viele Coins willst du setzen?")
     async def slot(self, interaction: discord.Interaction, einsatz: int):
@@ -1078,22 +1369,21 @@ class EconomyClass(app_commands.Group):
 
         if einsatz <= 0:
             await interaction.response.send_message(
-                "<:Astra_x:1141303954555289600> Ungültiger Einsatz.",
-                ephemeral=True
+                "<:Astra_x:1141303954555289600> Ungültiger Einsatz.", ephemeral=True
             )
             return
 
         if einsatz > MAX_BET:
             await interaction.response.send_message(
                 f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
         if einsatz > wallet:
             await interaction.response.send_message(
                 "<:Astra_x:1141303954555289600> Du hast nicht genug Coins.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -1102,23 +1392,37 @@ class EconomyClass(app_commands.Group):
         em = discord.Embed(
             colour=discord.Colour.blurple(),
             title="🎰 Slots",
-            description=f"Einsatz: **{einsatz}** <:Coin:1359178077011181811>\nViel Glück, {interaction.user.mention}!"
+            description=f"Einsatz: **{einsatz}** <:Coin:1359178077011181811>\nViel Glück, {interaction.user.mention}!",
         )
         em.add_field(name="Walzen", value=render_board(spin_reels()), inline=False)
-        em.set_author(name=str(interaction.user),
-                      icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None)
+        em.set_author(
+            name=str(interaction.user),
+            icon_url=(
+                interaction.user.display_avatar.url
+                if interaction.user.display_avatar
+                else None
+            ),
+        )
 
         await interaction.response.send_message(embed=em, view=view)
         view.msg = await interaction.original_response()
 
-    @app_commands.command(name="rps", description="Spiele Schere, Stein, Papier gegen den Bot.")
+    @app_commands.command(
+        name="rps", description="Spiele Schere, Stein, Papier gegen den Bot."
+    )
     @app_commands.guild_only()
     @app_commands.describe(choice="Wähle 'Schere', 'Stein' oder 'Papier'.")
-    async def rps(self, interaction: discord.Interaction, choice: Literal['Stein', 'Schere', 'Papier']):
+    async def rps(
+        self,
+        interaction: discord.Interaction,
+        choice: Literal["Stein", "Schere", "Papier"],
+    ):
         choice = choice.lower()
         if choice not in ["schere", "stein", "papier"]:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte wähle entweder 'Schere', 'Stein' oder 'Papier'.",
-                                                    ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Bitte wähle entweder 'Schere', 'Stein' oder 'Papier'.",
+                ephemeral=True,
+            )
             return
 
         bot_choice = random.choice(["schere", "stein", "papier"])
@@ -1126,32 +1430,48 @@ class EconomyClass(app_commands.Group):
 
         if choice == bot_choice:
             result = "Unentschieden!"
-        elif (choice == "schere" and bot_choice == "papier") or \
-                (choice == "stein" and bot_choice == "schere") or \
-                (choice == "papier" and bot_choice == "stein"):
+        elif (
+            (choice == "schere" and bot_choice == "papier")
+            or (choice == "stein" and bot_choice == "schere")
+            or (choice == "papier" and bot_choice == "stein")
+        ):
             result = "<:Astra_gw1:1141303852889550928> Du hast gewonnen!"
         else:
             result = "<:Astra_x:1141303954555289600> Du hast verloren!"
 
         embed = discord.Embed(title="Schere, Stein, Papier", color=discord.Color.blue())
-        embed.add_field(name="Deine Wahl", value=f"**{choice.capitalize()}**", inline=False)
-        embed.add_field(name="Bot's Wahl", value=f"**{bot_choice.capitalize()}**", inline=False)
+        embed.add_field(
+            name="Deine Wahl", value=f"**{choice.capitalize()}**", inline=False
+        )
+        embed.add_field(
+            name="Bot's Wahl", value=f"**{bot_choice.capitalize()}**", inline=False
+        )
         embed.add_field(name="Ergebnis", value=result, inline=False)
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="coinflip", description="Münzwurf: Wähle Kopf oder Zahl und setze.")
+    @app_commands.command(
+        name="coinflip", description="Münzwurf: Wähle Kopf oder Zahl und setze."
+    )
     @app_commands.guild_only()
-    @app_commands.describe(wahl="Deine Wahl: 'Kopf' oder 'Zahl'", betrag="Der Betrag, den du setzen möchtest.")
+    @app_commands.describe(
+        wahl="Deine Wahl: 'Kopf' oder 'Zahl'",
+        betrag="Der Betrag, den du setzen möchtest.",
+    )
     async def coinflip(self, interaction: discord.Interaction, wahl: str, betrag: int):
         guess = wahl.lower()
         if guess not in ["kopf", "zahl"]:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte wähle entweder 'Kopf' oder 'Zahl'.", ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Bitte wähle entweder 'Kopf' oder 'Zahl'.",
+                ephemeral=True,
+            )
             return
 
         if betrag <= 0:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein, der größer als 0 ist.",
-                                                    ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Bitte gib einen gültigen Betrag ein, der größer als 0 ist.",
+                ephemeral=True,
+            )
             return
 
         user_data = await self.get_user(interaction.user.id)
@@ -1160,32 +1480,46 @@ class EconomyClass(app_commands.Group):
         if betrag > MAX_BET:
             await interaction.response.send_message(
                 f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
         if wallet < betrag:
             await interaction.response.send_message(
-                f"<:Astra_x:1141303954555289600> Du hast nicht genug Münzen. Dein aktueller Kontostand ist {wallet} <:Coin:1359178077011181811>.", ephemeral=True)
+                f"<:Astra_x:1141303954555289600> Du hast nicht genug Münzen. Dein aktueller Kontostand ist {wallet} <:Coin:1359178077011181811>.",
+                ephemeral=True,
+            )
             return
 
         result = random.choice(["Kopf", "Zahl"])
 
         embed = discord.Embed(title="Münzwurf", color=discord.Color.blue())
-        embed.add_field(name="Deine Wahl", value=f"**{guess.capitalize()}**", inline=False)
+        embed.add_field(
+            name="Deine Wahl", value=f"**{guess.capitalize()}**", inline=False
+        )
         embed.add_field(name="Ergebnis", value=f"**{result}**", inline=False)
 
         if guess == result.lower():
             gewonnen = betrag * 2
             await self.update_balance(interaction.user.id, gewonnen, 0)
-            embed.add_field(name="<:Astra_gw1:1141303852889550928> Glückwunsch!", value=f"Du hast gewonnen! Du erhältst {gewonnen} <:Coin:1359178077011181811>.", inline=False)
+            embed.add_field(
+                name="<:Astra_gw1:1141303852889550928> Glückwunsch!",
+                value=f"Du hast gewonnen! Du erhältst {gewonnen} <:Coin:1359178077011181811>.",
+                inline=False,
+            )
         else:
             await self.update_balance(interaction.user.id, -betrag, 0)
-            embed.add_field(name="<:Astra_x:1141303954555289600>  Leider verloren", value=f"Du hast verloren und {betrag} <:Coin:1359178077011181811> verloren.", inline=False)
+            embed.add_field(
+                name="<:Astra_x:1141303954555289600>  Leider verloren",
+                value=f"Du hast verloren und {betrag} <:Coin:1359178077011181811> verloren.",
+                inline=False,
+            )
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="rob", description="Versuche, einen anderen Nutzer auszurauben!")
+    @app_commands.command(
+        name="rob", description="Versuche, einen anderen Nutzer auszurauben!"
+    )
     @app_commands.guild_only()
     @app_commands.describe(ziel="Wen willst du ausrauben?")
     async def rob(self, interaction: discord.Interaction, ziel: discord.User):
@@ -1195,7 +1529,7 @@ class EconomyClass(app_commands.Group):
         if user_id == target_id:
             await interaction.response.send_message(
                 "<:Astra_x:1141303954555289600> Du kannst dich nicht selbst ausrauben.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -1228,14 +1562,14 @@ class EconomyClass(app_commands.Group):
 
             await interaction.response.send_message(
                 f"<:Astra_time:1141303932061233202> Du kannst in **{time_string}** wieder rauben.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
         if target_data[0] < 50:
             await interaction.response.send_message(
                 "<:Astra_x:1141303954555289600> Ziel hat zu wenig Geld zum Ausrauben.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -1260,18 +1594,20 @@ class EconomyClass(app_commands.Group):
             async with conn.cursor() as cur:
                 await cur.execute(
                     "UPDATE economy_users SET last_rob = %s WHERE user_id = %s",
-                    (now, user_id)
+                    (now, user_id),
                 )
 
         await interaction.response.send_message(msg)
 
-    @app_commands.command(name="leaderboard", description="Zeige die reichsten Spieler.")
+    @app_commands.command(
+        name="leaderboard", description="Zeige die reichsten Spieler."
+    )
     @app_commands.guild_only()
-    @app_commands.describe(scope="Wähle, ob die globale oder serverbezogene Rangliste angezeigt wird.")
+    @app_commands.describe(
+        scope="Wähle, ob die globale oder serverbezogene Rangliste angezeigt wird."
+    )
     async def leaderboard(
-            self,
-            interaction: discord.Interaction,
-            scope: Literal["global", "server"]
+        self, interaction: discord.Interaction, scope: Literal["global", "server"]
     ):
         try:
             async with self.bot.pool.acquire() as conn:
@@ -1288,10 +1624,16 @@ class EconomyClass(app_commands.Group):
 
                     else:  # server leaderboard
 
-                        member_ids = [member.id for member in interaction.guild.members if not member.bot]
+                        member_ids = [
+                            member.id
+                            for member in interaction.guild.members
+                            if not member.bot
+                        ]
 
                         if not member_ids:
-                            await interaction.response.send_message("Keine Benutzer gefunden.", ephemeral=True)
+                            await interaction.response.send_message(
+                                "Keine Benutzer gefunden.", ephemeral=True
+                            )
                             return
 
                         placeholders = ",".join(["%s"] * len(member_ids))
@@ -1314,10 +1656,12 @@ class EconomyClass(app_commands.Group):
                 return
 
             embed = discord.Embed(
-                title="<:Astra_users:1141303946602872872> Rangliste (Global)"
-                if scope == "global"
-                else f"<:Astra_users:1141303946602872872> Rangliste ({interaction.guild.name})",
-                color=discord.Color.blue()
+                title=(
+                    "<:Astra_users:1141303946602872872> Rangliste (Global)"
+                    if scope == "global"
+                    else f"<:Astra_users:1141303946602872872> Rangliste ({interaction.guild.name})"
+                ),
+                color=discord.Color.blue(),
             )
 
             for i, (user_id, gesamt) in enumerate(top_users, start=1):
@@ -1334,7 +1678,7 @@ class EconomyClass(app_commands.Group):
                 embed.add_field(
                     name=f"{i}. {name}",
                     value=f"{gesamt} <:Coin:1359178077011181811>",
-                    inline=False
+                    inline=False,
                 )
 
             await interaction.response.send_message(embed=embed)
@@ -1342,7 +1686,7 @@ class EconomyClass(app_commands.Group):
         except Exception as e:
             await interaction.response.send_message(
                 f"<:Astra_x:1141303954555289600> Fehler beim Abrufen der Rangliste: {e}",
-                ephemeral=True
+                ephemeral=True,
             )
             print(f"Leaderboard Error: {e}")
 
@@ -1356,18 +1700,22 @@ class EconomyClass(app_commands.Group):
         if einsatz > MAX_BET:
             await interaction.response.send_message(
                 f"<:Astra_x:1141303954555289600> Der maximale Einsatz beträgt **{MAX_BET}** <:Coin:1359178077011181811>.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
         if einsatz <= 0:
             await interaction.response.send_message(
-                "<:Astra_x:1141303954555289600> Bitte gib einen gültigen Einsatz an.", ephemeral=True)
+                "<:Astra_x:1141303954555289600> Bitte gib einen gültigen Einsatz an.",
+                ephemeral=True,
+            )
             return
 
         if wallet < einsatz:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> hast nicht genug Münzen.",
-                                                    ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> hast nicht genug Münzen.",
+                ephemeral=True,
+            )
             return
 
         await self.update_balance(interaction.user.id, wallet_change=-einsatz)
@@ -1377,36 +1725,36 @@ class EconomyClass(app_commands.Group):
         embed = discord.Embed(
             title="Blackjack wird gestartet!",
             description="Ziehe Karten mit `Hit` oder beende mit `Stand`. Ziel: So nah wie möglich an 21!",
-            color=discord.Color.blue()
+            color=discord.Color.blue(),
         )
-        embed.add_field(name="Einsatz", value=f"{einsatz} <:Coin:1359178077011181811>", inline=False)
+        embed.add_field(
+            name="Einsatz", value=f"{einsatz} <:Coin:1359178077011181811>", inline=False
+        )
 
         await interaction.response.send_message(embed=embed, view=view)
         view.message = await interaction.original_response()
         await view.update_message()
 
+
 @app_commands.guild_only()
 class Job(app_commands.Group):
     def __init__(self, bot):
         self.bot = bot
-        super().__init__(
-            name="job",
-            description="Alles rund um deinen Job"
-        )
+        super().__init__(name="job", description="Alles rund um deinen Job")
 
     async def get_user(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     "SELECT wallet, bank, job, hours_worked, last_work, last_beg, last_rob FROM economy_users WHERE user_id = %s",
-                    (user_id,)
+                    (user_id,),
                 )
                 data = await cur.fetchone()
 
                 if not data:
                     await cur.execute(
                         "INSERT INTO economy_users (user_id, wallet, bank, job, hours_worked, last_work, last_beg, last_rob) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                        (user_id, 0, 0, None, 0, None, None, None)
+                        (user_id, 0, 0, None, 0, None, None, None),
                     )
                     return 0, 0, None, 0, None, None, None
 
@@ -1421,7 +1769,7 @@ class Job(app_commands.Group):
 
         wallet = user_data[0]
         bank = user_data[1]
-        job_name= user_data[2]
+        job_name = user_data[2]
         hours = user_data[3]
         last_work = user_data[4]
         logging.info(f"RAW last_work from DB: {last_work}")
@@ -1429,7 +1777,7 @@ class Job(app_commands.Group):
         if not job_name:
             await interaction.response.send_message(
                 "<:Astra_x:1141303954555289600> Du hast keinen Job. Nutze `/job apply`, um einen Job zu wählen.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -1462,7 +1810,7 @@ class Job(app_commands.Group):
 
             await interaction.response.send_message(
                 f"<:Astra_time:1141303932061233202> Du musst noch **{time_string}** warten, bevor du wieder arbeiten kannst.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -1470,8 +1818,7 @@ class Job(app_commands.Group):
 
         if not job:
             await interaction.response.send_message(
-                "Fehler: Dein Job wurde nicht gefunden.",
-                ephemeral=True
+                "Fehler: Dein Job wurde nicht gefunden.", ephemeral=True
             )
             return
 
@@ -1482,7 +1829,7 @@ class Job(app_commands.Group):
             async with conn.cursor() as cur:
                 await cur.execute(
                     "UPDATE economy_users SET wallet = wallet + %s, hours_worked = hours_worked + 1, last_work = %s WHERE user_id = %s",
-                    (earned, now, user_id)
+                    (earned, now, user_id),
                 )
 
         await interaction.response.send_message(
@@ -1499,7 +1846,9 @@ class Job(app_commands.Group):
         embed = view.generate_job_embed()
         await interaction.response.send_message(embed=embed, view=view)
 
-    @app_commands.command(name="apply", description="Bewirb dich auf einen verfügbaren Job.")
+    @app_commands.command(
+        name="apply", description="Bewirb dich auf einen verfügbaren Job."
+    )
     @app_commands.guild_only()
     @app_commands.describe(name="Name des Jobs, den du annehmen möchtest.")
     async def job_apply(self, interaction: discord.Interaction, name: str):
@@ -1508,39 +1857,51 @@ class Job(app_commands.Group):
         job = next((j for j in JOBS if j["name"].lower() == name.lower()), None)
 
         if not job:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Dieser Job existiert nicht.",
-                                                    ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Dieser Job existiert nicht.",
+                ephemeral=True,
+            )
             return
 
         if user_hours < job["req"]:
             await interaction.response.send_message(
                 "<:Astra_x:1141303954555289600> Du hast noch nicht genug Stunden gearbeitet, um diesen Job zu bekommen.",
-                ephemeral=True)
+                ephemeral=True,
+            )
             return
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("UPDATE economy_users SET job = %s WHERE user_id = %s",
-                                  (job["name"], interaction.user.id))
+                await cur.execute(
+                    "UPDATE economy_users SET job = %s WHERE user_id = %s",
+                    (job["name"], interaction.user.id),
+                )
 
         await interaction.response.send_message(
-            f"<:Astra_accept:1141303821176422460> Du arbeitest jetzt als **{job['name']}**!")
+            f"<:Astra_accept:1141303821176422460> Du arbeitest jetzt als **{job['name']}**!"
+        )
 
     @app_commands.command(name="quit", description="Kündige deinen aktuellen Job.")
     @app_commands.guild_only()
     async def job_quit(self, interaction: discord.Interaction):
         user_data = await self.get_user(interaction.user.id)
         if not user_data[2]:
-            await interaction.response.send_message("<:Astra_x:1141303954555289600> Du hast momentan keinen Job.",
-                                                    ephemeral=True)
+            await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Du hast momentan keinen Job.",
+                ephemeral=True,
+            )
             return
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("UPDATE economy_users SET job = NULL WHERE user_id = %s", (interaction.user.id,))
+                await cur.execute(
+                    "UPDATE economy_users SET job = NULL WHERE user_id = %s",
+                    (interaction.user.id,),
+                )
 
         await interaction.response.send_message(
-            "<:Astra_accept:1141303821176422460> Du hast deinen Job erfolgreich gekündigt.")
+            "<:Astra_accept:1141303821176422460> Du hast deinen Job erfolgreich gekündigt."
+        )
 
 
 class Economy(commands.Cog):
@@ -1553,14 +1914,14 @@ class Economy(commands.Cog):
             async with conn.cursor() as cur:
                 await cur.execute(
                     "SELECT wallet, bank, job, hours_worked, last_work, last_beg, last_rob FROM economy_users WHERE user_id = %s",
-                    (user_id,)
+                    (user_id,),
                 )
                 data = await cur.fetchone()
 
                 if not data:
                     await cur.execute(
                         "INSERT INTO economy_users (user_id, wallet, bank, job, hours_worked, last_work, last_beg, last_rob) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                        (user_id, 0, 0, None, 0, None, None, None)
+                        (user_id, 0, 0, None, 0, None, None, None),
                     )
                     return 0, 0, None, 0, None, None, None
 
@@ -1571,13 +1932,16 @@ class Economy(commands.Cog):
             async with conn.cursor() as cur:
                 await cur.execute(
                     "UPDATE economy_users SET wallet = wallet + %s, bank = bank + %s WHERE user_id = %s",
-                    (wallet_change, bank_change, user_id)
+                    (wallet_change, bank_change, user_id),
                 )
 
     async def get_balance(self, user_id: int):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT wallet, bank FROM economy_users WHERE user_id = %s", (user_id,))
+                await cur.execute(
+                    "SELECT wallet, bank FROM economy_users WHERE user_id = %s",
+                    (user_id,),
+                )
                 return await cur.fetchone()
 
     @commands.command(name="unlockjobs")
@@ -1594,23 +1958,34 @@ class Economy(commands.Cog):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 # User anlegen falls nicht existiert
-                await cur.execute("SELECT * FROM economy_users WHERE user_id=%s", (user.id,))
+                await cur.execute(
+                    "SELECT * FROM economy_users WHERE user_id=%s", (user.id,)
+                )
                 row = await cur.fetchone()
                 if not row:
-                    await cur.execute("INSERT INTO economy_users (user_id, hours_worked) VALUES (%s, %s)",
-                                      (user.id, max_hours))
+                    await cur.execute(
+                        "INSERT INTO economy_users (user_id, hours_worked) VALUES (%s, %s)",
+                        (user.id, max_hours),
+                    )
                 else:
                     # Stunden hochsetzen
-                    await cur.execute("UPDATE economy_users SET hours_worked = %s WHERE user_id=%s",
-                                      (max_hours, user.id))
+                    await cur.execute(
+                        "UPDATE economy_users SET hours_worked = %s WHERE user_id=%s",
+                        (max_hours, user.id),
+                    )
 
         await ctx.send(
-            f"<:Astra_accept:1141303821176422460> {user.mention} wurden alle Jobs bis **{max_hours} Stunden** freigeschaltet!")
+            f"<:Astra_accept:1141303821176422460> {user.mention} wurden alle Jobs bis **{max_hours} Stunden** freigeschaltet!"
+        )
 
-    @commands.command(name="addcoins",
-                      description="Füge einem Nutzer <:Coin:1359178077011181811> hinzu (Nur für Botbesitzer).")
+    @commands.command(
+        name="addcoins",
+        description="Füge einem Nutzer <:Coin:1359178077011181811> hinzu (Nur für Botbesitzer).",
+    )
     @commands.is_owner()
-    async def addcoins(self, ctx, user: discord.User, betrag: int, balance_type: str = "wallet"):
+    async def addcoins(
+        self, ctx, user: discord.User, betrag: int, balance_type: str = "wallet"
+    ):
         """Fügt einem Nutzer Coins hinzu. Kann Bar- oder Bank-Balance verwenden."""
         if betrag <= 0:
             await ctx.channel.send("<:Astra_x:1141303954555289600> Ungültiger Betrag.")
@@ -1618,7 +1993,9 @@ class Economy(commands.Cog):
 
         # Überprüfen, ob balance_type korrekt ist (wallet oder bank)
         if balance_type not in ["wallet", "bank"]:
-            await ctx.channel.send("<:Astra_x:1141303954555289600> Ungültiger Balance-Typ. Verwende `wallet` oder `bank`.")
+            await ctx.channel.send(
+                "<:Astra_x:1141303954555289600> Ungültiger Balance-Typ. Verwende `wallet` oder `bank`."
+            )
             return
 
         # User Balance abrufen
@@ -1626,15 +2003,23 @@ class Economy(commands.Cog):
         current_balance = user_data[0] if balance_type == "wallet" else user_data[1]
 
         # Balance aktualisieren
-        await self.update_balance(user.id, wallet_change=betrag if balance_type == "wallet" else 0,
-                                  bank_change=betrag if balance_type == "bank" else 0)
+        await self.update_balance(
+            user.id,
+            wallet_change=betrag if balance_type == "wallet" else 0,
+            bank_change=betrag if balance_type == "bank" else 0,
+        )
         await ctx.channel.send(
-            f"<:Astra_accept:1141303821176422460> {betrag} <:Coin:1359178077011181811> wurden {user.mention} zu {balance_type} hinzugefügt.")
+            f"<:Astra_accept:1141303821176422460> {betrag} <:Coin:1359178077011181811> wurden {user.mention} zu {balance_type} hinzugefügt."
+        )
 
-    @commands.command(name="removecoins",
-                      description="Entferne einem Nutzer <:Coin:1359178077011181811> (Nur für Botbesitzer).")
+    @commands.command(
+        name="removecoins",
+        description="Entferne einem Nutzer <:Coin:1359178077011181811> (Nur für Botbesitzer).",
+    )
     @commands.is_owner()
-    async def removecoins(self, ctx, user: discord.User, betrag: int, balance_type: str = "wallet"):
+    async def removecoins(
+        self, ctx, user: discord.User, betrag: int, balance_type: str = "wallet"
+    ):
         """Entfernt einem Nutzer Coins. Kann Bar- oder Bank-Balance verwenden."""
         if betrag <= 0:
             await ctx.channel.send("<:Astra_x:1141303954555289600> Ungültiger Betrag.")
@@ -1642,7 +2027,9 @@ class Economy(commands.Cog):
 
         # Überprüfen, ob balance_type korrekt ist (wallet oder bank)
         if balance_type not in ["wallet", "bank"]:
-            await ctx.channel.send("<:Astra_x:1141303954555289600> Ungültiger Balance-Typ. Verwende `wallet` oder `bank`.")
+            await ctx.channel.send(
+                "<:Astra_x:1141303954555289600> Ungültiger Balance-Typ. Verwende `wallet` oder `bank`."
+            )
             return
 
         # User Balance abrufen
@@ -1651,14 +2038,20 @@ class Economy(commands.Cog):
 
         # Überprüfen, ob der Betrag entfernt werden kann
         if current_balance < betrag:
-            await ctx.channel.send(f"<:Astra_x:1141303954555289600> {user.mention} hat nicht genug {balance_type} um {betrag} zu entfernen.")
+            await ctx.channel.send(
+                f"<:Astra_x:1141303954555289600> {user.mention} hat nicht genug {balance_type} um {betrag} zu entfernen."
+            )
             return
 
         # Balance aktualisieren
-        await self.update_balance(user.id, wallet_change=-betrag if balance_type == "wallet" else 0,
-                                  bank_change=-betrag if balance_type == "bank" else 0)
+        await self.update_balance(
+            user.id,
+            wallet_change=-betrag if balance_type == "wallet" else 0,
+            bank_change=-betrag if balance_type == "bank" else 0,
+        )
         await ctx.channel.send(
-            f"<:Astra_accept:1141303821176422460> {betrag} <:Coin:1359178077011181811> wurden {user.mention} von {balance_type} entfernt.")
+            f"<:Astra_accept:1141303821176422460> {betrag} <:Coin:1359178077011181811> wurden {user.mention} von {balance_type} entfernt."
+        )
 
 
 async def setup(bot):
