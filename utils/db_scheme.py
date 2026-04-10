@@ -55,6 +55,21 @@ def split_sql_statements(sql: str):
     return statements
 
 
+async def column_exists(cur, table: str, column: str) -> bool:
+    await cur.execute("""SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s LIMIT 1""", (table, column))
+    return await cur.fetchone() is not None
+
+async def index_exists(cur, table: str, index: str) -> bool:
+    await cur.execute("""SELECT 1 FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s LIMIT 1""", (table, index))
+    return await cur.fetchone() is not None
+
+async def get_column_definition(cur, table: str, column: str) -> str:
+    await cur.execute("""SELECT COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s LIMIT 1""", (table, column))
+    return await cur.fetchone()
+
+def normalize(sql: str) -> str:
+    return " ".join(sql.upper().split())
+
 async def run_sql_file(pool):
     p = Path(SCHEMA_PATH)
     if not p.exists():
@@ -75,6 +90,7 @@ async def run_sql_file(pool):
             skipped_tables = 0
             skipped_inserts = 0
             executed = 0
+            skipped_alter = 0
 
             for stmt in statements:
                 stmt = stmt.strip()
@@ -83,6 +99,11 @@ async def run_sql_file(pool):
 
                 try:
                     stmt_upper = stmt.upper()
+
+                    if "ALTER TABLE" in stmt_upper and "," in stmt:
+                        await cur.execute(stmt)
+                        executed += 1
+                        continue
 
                     # ------------------------
                     # CREATE TABLE
@@ -123,6 +144,90 @@ async def run_sql_file(pool):
                                     skipped_inserts += 1
                                     continue
 
+                    elif "ALTER TABLE" in stmt_upper:
+                        table_name = extract_table_name(stmt, "ALTER TABLE")
+
+                        if not table_name:
+                            continue
+
+                        match = re.search(r"ADD COLUMN\s+`?(\w+)`?", stmt, re.IGNORECASE)
+                        if match:
+                            col = match.group(1)
+                            if await column_exists(cur, table_name, col):
+                                skipped_alter += 1
+                                continue
+
+                        match = re.search(r"DROP COLUMN\s+`?(\w+)`?", stmt, re.IGNORECASE)
+                        if match:
+                            col = match.group(1)
+                            if not await column_exists(cur, table_name, col):
+                                skipped_alter += 1
+                                continue
+
+                        match = re.search(r"ADD (?:INDEX|KEY)\s+`?(\w+)`?", stmt, re.IGNORECASE)
+                        if match:
+                            idx = match.group(1)
+                            if await index_exists(cur, table_name, idx):
+                                skipped_alter += 1
+                                continue
+
+                        match = re.search(r"ADD UNIQUE\s+`?(\w+)`?", stmt, re.IGNORECASE)
+                        if match:
+                            idx = match.group(1)
+                            if await index_exists(cur, table_name, idx):
+                                skipped_alter += 1
+                                continue
+
+                        match = re.search(r"DROP INDEX\s+`?(\w+)`?", stmt, re.IGNORECASE)
+                        if match:
+                            idx = match.group(1)
+                            if not await index_exists(cur, table_name, idx):
+                                skipped_alter += 1
+                                continue
+
+                        if "ADD PRIMARY KEY" in stmt_upper:
+                            await cur.execute("""SELECT 1 FROM information_schema.table_constraints WHERE table_schema = DATABASE() AND table_name = %s AND constraint_type = 'PRIMARY KEY' LIMIT 1""", (table_name,))
+                            if await cur.fetchone():
+                                skipped_alter += 1
+                                continue
+
+                        if "DROP PRIMARY KEY" in stmt_upper:
+                            await cur.execute("""SELECT 1 FROM information_schema.table_constraints WHERE table_schema = DATABASE() AND table_name = %s AND constraint_type = 'PRIMARY KEY' LIMIT 1""", (table_name,))
+                            if not await cur.fetchone():
+                                skipped_alter += 1
+                                continue
+
+                        match = re.search(r"MODIFY COLUMN\s+`?(\w+)`?\s+(.+)", stmt, re.IGNORECASE)
+                        if match:
+                            col = match.group(1)
+                            new_def = normalize(match.group(2))
+
+                            if not await column_exists(cur, table_name, col):
+                                skipped_alter += 1
+                                continue
+
+                            current = await get_column_definition(cur, table_name, col)
+
+                            if current:
+                                col_type, is_nullable, default, extra = current
+
+                                current_def = f"{col_type} {'NULL' if is_nullable == 'YES' else 'NOT NULL'}"
+
+                                if default is not None:
+                                    if isinstance(default, str) and not default.upper().startswith("CURRENT_"):
+                                        current_def += f" DEFAULT '{default}'"
+                                    else:
+                                        current_def += f" DEFAULT {default}"
+
+                                if extra:
+                                    current_def += f" {extra}"
+
+                                current_def = normalize(current_def).replace("INT(11)", "INT")
+
+                                if current_def == new_def:
+                                    skipped_alter += 1
+                                    continue
+
                     # ------------------------
                     # EXECUTE
                     # ------------------------
@@ -139,5 +244,6 @@ async def run_sql_file(pool):
         f"[DB] Done | Executed: {executed} | "
         f"Tables skipped: {skipped_tables} | "
         f"Inserts skipped: {skipped_inserts} | "
+        f"ALTER skipped: {skipped_alter} | "
         f"Total: {len(statements)}"
     )
