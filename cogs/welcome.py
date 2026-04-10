@@ -255,7 +255,44 @@ class welcome(commands.Cog):
                 .replace("%guild", member.guild.name)
                 .replace("%usercount", str(member.guild.member_count))
             )
-            await channel.send(embed=discord.Embed(description=text, colour=discord.Colour.blue()))
+
+            try:
+
+                await channel.send(embed=discord.Embed(description=text, colour=discord.Colour.blue()))
+
+            except discord.Forbidden:
+                owner = member.guild.owner
+
+                if owner:
+                    try:
+                        embed = discord.Embed(
+                            title="⚠️ Problem im Willkommen-System",
+                            description=(
+                                f"In deinem Server **{member.guild.name}** konnte ich keine Willkommensnachricht senden.\n\n"
+                                f"**Betroffener Channel:** <#{channel_id}>\n\n"
+                                f"Mir fehlen dort die nötigen Berechtigungen."
+                            ),
+                            color=discord.Color.blue()
+                        )
+
+                        embed.add_field(
+                            name="🔧 Benötigte Rechte",
+                            value=(
+                                "• Send Messages\n"
+                                "• Embed Links\n"
+                                "• Attach Files (für Banner)"
+                            ),
+                            inline=False
+                        )
+
+                        if member.guild.icon:
+                            embed.set_thumbnail(url=member.guild.icon.url)
+
+                        embed.set_footer(text="Bitte überprüfe die Channel- oder Rollenberechtigungen des Bots.")
+
+                        await owner.send(embed=embed)
+                    except discord.Forbidden:
+                        pass
 
     @app_commands.command(name="testjoin", description="Simuliert einen Member-Join für das Welcome-System")
     @app_commands.guild_only()
