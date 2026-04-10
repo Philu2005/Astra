@@ -450,10 +450,24 @@ class mod(commands.Cog):
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
 
         cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
         total_deleted = 0
+        status_embed = discord.Embed(
+            colour=discord.Colour.blue(),
+            title="Nachrichten werden gelöscht",
+            description=(
+                "<:Astra_time:1141303932061233202> Der Clear-Vorgang läuft.\n\n"
+                f"<:Astra_punkt:1141303896745201696> **Kanal:** {channel.mention}\n"
+                f"<:Astra_punkt:1141303896745201696> **Angefragt:** **{amount}** Nachrichten\n\n"
+                "<:Astra_light_on:1141303864134467675> Nachrichten werden geprüft und gelöscht."
+            )
+        )
+        status_embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
+        status_embed.set_footer(text="Astra Moderation")
+        status_message = await interaction.followup.send(embed=status_embed, wait=True)
+
         try:
             # 1) Bulk (≤14 Tage)
             deleted_bulk = await channel.purge(
@@ -461,7 +475,7 @@ class mod(commands.Cog):
                 after=cutoff,
                 bulk=True,
                 reason=f"/clear von {interaction.user} ({amount})",
-                check=lambda m: not m.pinned  # ⬅️ pinned Nachrichten werden übersprungen
+                check=lambda m: not m.pinned and m.id != status_message.id
             )
 
             total_deleted += len(deleted_bulk)
@@ -478,30 +492,40 @@ class mod(commands.Cog):
 
             # Antwort
             lines = [
-                "<:Astra_accept:1141303821176422460> **Clear abgeschlossen**",
+                "<:Astra_accept:1141303821176422460> Der Clear-Vorgang ist abgeschlossen.\n",
                 (
-                    f"<:Astra_punkt:1141303896745201696> Sofort gelöscht: "
+                    f"<:Astra_punkt:1141303896745201696> **Sofort gelöscht:** "
                     f"**{total_deleted}** Nachricht{'' if total_deleted == 1 else 'en'}"
                 ),
             ]
             if scheduled > 0:
                 lines.append(
-                    f"<:Astra_time:1141303932061233202> Im Hintergrund geplant: "
+                    f"<:Astra_time:1141303932061233202> **Im Hintergrund geplant:** "
                     f"**{scheduled}** alte Nachricht{'' if scheduled == 1 else 'en'}"
                 )
             elif remaining > 0:
-                lines.append("<:Astra_info:1141303860556738620> Keine weiteren alten Nachrichten gefunden.")
-            embed = discord.Embed(colour=discord.Colour.blue(), description="\n".join(lines))
+                lines.append("<:Astra_info:1141303860556738620> **Keine weiteren alten Nachrichten gefunden.**")
+            embed = discord.Embed(
+                colour=discord.Colour.green(),
+                title="Clear abgeschlossen",
+                description="\n".join(lines)
+            )
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            embed.set_footer(text="Astra Moderation")
+            await status_message.edit(embed=embed)
 
         except Exception as e:
             embed = discord.Embed(
                 colour=discord.Colour.red(),
-                description=f"<:Astra_x:1141303954555289600> Fehler beim Löschen: `{e}`"
+                title="Clear fehlgeschlagen",
+                description=(
+                    "<:Astra_x:1141303954555289600> Beim Löschen ist ein Fehler aufgetreten.\n\n"
+                    f"<:Astra_punkt:1141303896745201696> `{e}`"
+                )
             )
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            embed.set_footer(text="Astra Moderation")
+            await status_message.edit(embed=embed)
 
     @app_commands.command(name="embedfy", description="Erstelle ein schönes Embed.")
     @app_commands.describe(color="Optional: Farbnamen wie Rot, Orange, Gelb, Grün, Blau oder Blurple.")
