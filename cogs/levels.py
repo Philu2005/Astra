@@ -14,6 +14,7 @@ from PIL.Image import Resampling
 # ──────────────────────────────────────────────────────────────────────────────
 ASSETS_DIR = "cogs/assets/Levelcards"
 DEFAULT_STYLE = "standard"  # entspricht standard.png
+RANK_CARD_EDGE_CROP = 2
 
 
 def list_styles():
@@ -339,6 +340,25 @@ def _draw_left_in_box(draw: ImageDraw.ImageDraw, text: str, box: dict,
     draw.text((x0 + pad_x, cy - y_mid), text, font=font, fill=fill)
 
 
+def _circle_avatar(image: Image.Image, size: int) -> tuple[Image.Image, Image.Image]:
+    scale = 4
+    big_size = size * scale
+    avatar = image.resize((big_size, big_size), Resampling.LANCZOS)
+    mask = Image.new("L", (big_size, big_size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, big_size - 1, big_size - 1), fill=255)
+    avatar.putalpha(mask)
+    avatar = avatar.resize((size, size), Resampling.LANCZOS)
+    mask = mask.resize((size, size), Resampling.LANCZOS)
+    return avatar, mask
+
+
+def _crop_outer_edge(image: Image.Image) -> Image.Image:
+    crop = RANK_CARD_EDGE_CROP
+    if crop <= 0 or image.width <= crop * 2 or image.height <= crop * 2:
+        return image
+    return image.crop((crop, crop, image.width - crop, image.height - crop))
+
+
 def _draw_progressbar(background: Image.Image, lay: dict,
                       xp_start: int | float, xp_end: int | float,
                       style_key: str):
@@ -397,16 +417,14 @@ async def _render_rank_card(
     if av.get("draw_ring", False):
         ring_w = av.get("ring_width", 10)
         ImageDraw.Draw(background).ellipse(
-            (av_x, av_y, av_x + av_size, av_y + av_size),
+            (av_x, av_y, av_x + av_size - 1, av_y + av_size - 1),
             outline="white",
             width=ring_w
         )
         inset = max(inset, ring_w)
 
     inner_d = (av_size - 2 * inset, av_size - 2 * inset)
-    mask = Image.new("L", inner_d, 0)
-    ImageDraw.Draw(mask).ellipse((0, 0, inner_d[0], inner_d[1]), fill=255)
-    avatar_cropped = avatar_img.resize(inner_d, Resampling.LANCZOS)
+    avatar_cropped, mask = _circle_avatar(avatar_img, inner_d[0])
     background.paste(avatar_cropped, (av_x + inset, av_y + inset), mask)
 
     rank_box = lay["rank_box"]
@@ -449,6 +467,7 @@ async def _render_rank_card(
     )
 
     _draw_progressbar(background, lay, xp_start, xp_end, style_name)
+    background = _crop_outer_edge(background)
 
     buf = BytesIO()
     background.save(buf, "PNG")
