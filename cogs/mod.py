@@ -264,15 +264,18 @@ class mod(commands.Cog):
 
         while found < amount:
             scanned_any = False
+            # Wir fangen bei der aktuellsten Nachricht an, um nichts zu verpassen
             async for msg in channel.history(
                 limit=MAX_HISTORY_FETCH,
-                before=last_message or cutoff,
+                before=last_message,
                 oldest_first=False
             ):
                 scanned_any = True
                 last_message = msg
 
-                if msg.pinned or msg.created_at >= cutoff:
+                if msg.pinned:
+                    continue
+                if msg.created_at >= cutoff:
                     continue
 
                 found += 1
@@ -296,7 +299,7 @@ class mod(commands.Cog):
             scanned_any = False
             async for msg in channel.history(
                 limit=MAX_HISTORY_FETCH,
-                before=last_message or cutoff,
+                before=last_message,
                 oldest_first=False
             ):
                 scanned_any = True
@@ -485,11 +488,10 @@ class mod(commands.Cog):
         try:
             # 1) Bulk (≤14 Tage)
             deleted_bulk = await channel.purge(
-                limit=amount + 1,
-                after=cutoff,
+                limit=amount,
                 bulk=True,
                 reason=f"/clear von {interaction.user} ({amount})",
-                check=lambda m: not m.pinned and m.id != status_message.id
+                check=lambda m: not m.pinned and m.id != status_message.id and m.created_at >= cutoff
             )
 
             total_deleted += len(deleted_bulk)
@@ -498,6 +500,7 @@ class mod(commands.Cog):
             scheduled = 0
             if remaining > 0:
                 # 2) Nur tatsächlich vorhandene alte Nachrichten als Job persistieren.
+                # Wir suchen ab der Nachricht vor dem Cutoff (also ältere)
                 scheduled = await self._count_old_messages(channel, remaining)
                 if scheduled > 0:
                     job_id = await self._enqueue_job(channel.id, scheduled, str(interaction.user))
