@@ -68,8 +68,8 @@ async def generate_banner(member: discord.Member, subtitle: str | None) -> io.By
         async with session.get(member.display_avatar.url) as resp:
             avatar_buffer: io.BytesIO = io.BytesIO(await resp.read())
 
-    FINAL_SIZE = 304
     SCALE = 4
+    FINAL_SIZE = 304
     big_size = FINAL_SIZE * SCALE
 
     avatar = Image.open(avatar_buffer).convert("RGBA").resize(
