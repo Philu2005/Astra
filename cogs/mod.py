@@ -490,24 +490,37 @@ class mod(commands.Cog):
                     await self._ensure_worker(channel.id)
                     self._wake_events[channel.id].set()
 
-            # Antwort
-            lines = [
-                "<:Astra_accept:1141303821176422460> Der Clear-Vorgang ist abgeschlossen.\n",
-                (
-                    f"<:Astra_punkt:1141303896745201696> **Sofort gelöscht:** "
-                    f"**{total_deleted}** Nachricht{'' if total_deleted == 1 else 'en'}"
-                ),
-            ]
             if scheduled > 0:
-                lines.append(
-                    f"<:Astra_time:1141303932061233202> **Im Hintergrund geplant:** "
-                    f"**{scheduled}** alte Nachricht{'' if scheduled == 1 else 'en'}"
-                )
-            elif remaining > 0:
-                lines.append("<:Astra_info:1141303860556738620> **Keine weiteren alten Nachrichten gefunden.**")
+                title = "Clear läuft im Hintergrund weiter"
+                colour = discord.Colour.blue()
+                lines = [
+                    "<:Astra_time:1141303932061233202> Der schnelle Teil ist fertig. Alte Nachrichten werden weiter im Hintergrund gelöscht.\n",
+                    (
+                        f"<:Astra_punkt:1141303896745201696> **Sofort gelöscht:** "
+                        f"**{total_deleted}** Nachricht{'' if total_deleted == 1 else 'en'}"
+                    ),
+                    (
+                        f"<:Astra_punkt:1141303896745201696> **Im Hintergrund:** "
+                        f"**{scheduled}** alte Nachricht{'' if scheduled == 1 else 'en'}"
+                    ),
+                ]
+            else:
+                title = "Clear abgeschlossen"
+                colour = discord.Colour.green()
+                lines = [
+                    "<:Astra_accept:1141303821176422460> Der Clear-Vorgang ist abgeschlossen.\n",
+                    (
+                        f"<:Astra_punkt:1141303896745201696> **Gelöscht:** "
+                        f"**{total_deleted}** Nachricht{'' if total_deleted == 1 else 'en'}"
+                    ),
+                ]
+                if remaining > 0:
+                    lines.append(
+                        "<:Astra_info:1141303860556738620> **Keine weiteren alten Nachrichten gefunden.**"
+                    )
             embed = discord.Embed(
-                colour=discord.Colour.green(),
-                title="Clear abgeschlossen",
+                colour=colour,
+                title=title,
                 description="\n".join(lines)
             )
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
