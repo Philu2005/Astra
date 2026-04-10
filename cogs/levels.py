@@ -7,6 +7,7 @@ import discord
 from discord import app_commands, File
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageChops, ImageFont
+from PIL.Image import Resampling
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Assets & Styles
@@ -123,32 +124,31 @@ LAYOUTS = {
     # Alle anderen (1075 x 340)
     "new": {
         "avatar": {"x": 57, "y": 93, "size": 155, "inset": 8, "draw_ring": False, "ring_width": 0},
-        "rank": {"x": 393, "y": 157, "font": 53},
+        "rank_box": {"x0": 392, "y0": 158, "x1": 620, "y1": 222, "base_font": 53, "min_font": 24, "pad_x": 8,
+                     "pad_y": 6},
 
-        # Name-Box leicht nach rechts; zentriert im Balken
-        "name_box": {"x0": 252, "y0": 89, "x1": 818, "y1": 143, "base_font": 36, "min_font": 24, "pad_x": 22,
-                     "pad_y": 10},
+        "name_box": {"x0": 238, "y0": 89, "x1": 816, "y1": 144, "base_font": 36, "min_font": 18, "pad_x": 24,
+                     "pad_y": 8},
 
-        # Level/XP-Boxen – hohe Schrift möglich dank kleiner pad_y
-        "level_box": {"x0": 853, "y0": 89, "x1": 1021, "y1": 129, "base_font": 52, "min_font": 24, "pad_x": 10,
-                      "pad_y": 4},
-        "xp_box": {"x0": 853, "y0": 204, "x1": 1021, "y1": 244, "base_font": 40, "min_font": 20, "pad_x": 10,
-                   "pad_y": 6},
+        "level_box": {"x0": 853, "y0": 89, "x1": 1022, "y1": 130, "base_font": 50, "min_font": 18, "pad_x": 10,
+                      "pad_y": 3},
+        "xp_box": {"x0": 853, "y0": 205, "x1": 1022, "y1": 246, "base_font": 38, "min_font": 14, "pad_x": 10,
+                   "pad_y": 4},
     },
 
     # Standard (1064 x 339)
     "standard": {
         "avatar": {"x": 64, "y": 98, "size": 142, "inset": 0, "draw_ring": True, "ring_width": 12},
-        "rank": {"x": 393, "y": 157, "font": 53},
+        "rank_box": {"x0": 390, "y0": 158, "x1": 616, "y1": 222, "base_font": 53, "min_font": 24, "pad_x": 8,
+                     "pad_y": 6},
 
-        # Name-Box etwas nach rechts verschoben (vorher 232..808)
-        "name_box": {"x0": 246, "y0": 88, "x1": 813, "y1": 142, "base_font": 36, "min_font": 24, "pad_x": 22,
-                     "pad_y": 10},
+        "name_box": {"x0": 232, "y0": 88, "x1": 809, "y1": 144, "base_font": 36, "min_font": 18, "pad_x": 24,
+                     "pad_y": 8},
 
-        "level_box": {"x0": 847, "y0": 88, "x1": 1015, "y1": 128, "base_font": 52, "min_font": 24, "pad_x": 10,
-                      "pad_y": 4},
-        "xp_box": {"x0": 847, "y0": 205, "x1": 1015, "y1": 243, "base_font": 40, "min_font": 20, "pad_x": 10,
-                   "pad_y": 6},
+        "level_box": {"x0": 847, "y0": 88, "x1": 1017, "y1": 129, "base_font": 50, "min_font": 18, "pad_x": 10,
+                      "pad_y": 3},
+        "xp_box": {"x0": 847, "y0": 204, "x1": 1017, "y1": 245, "base_font": 38, "min_font": 14, "pad_x": 10,
+                   "pad_y": 4},
     }
 }
 
@@ -313,6 +313,32 @@ def _draw_centered_in_box(draw: ImageDraw.ImageDraw, text: str, box: dict,
     _center_text(draw, cx, cy, text, font, fill)
 
 
+def _draw_left_in_box(draw: ImageDraw.ImageDraw, text: str, box: dict,
+                      base_font: int, min_font: int, fill: str = "white", pad: int | None = None):
+    x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
+    pad_x = box.get("pad_x", pad if pad is not None else 0)
+    pad_y = box.get("pad_y", pad if pad is not None else 0)
+
+    max_w = max(1, (x1 - x0) - 2 * pad_x)
+    max_h = max(1, (y1 - y0) - 2 * pad_y)
+    size = int(base_font)
+    font = _mk_font(size)
+
+    while size > int(min_font):
+        w = draw.textlength(text, font=font)
+        bx0, by0, bx1, by1 = font.getbbox(text)
+        if w <= max_w and (by1 - by0) <= max_h:
+            break
+        size -= 1
+        font = _mk_font(size)
+
+    text = _truncate_to_width(draw, text, font, max_w)
+    bx0, by0, bx1, by1 = font.getbbox(text)
+    cy = (y0 + y1) / 2.0
+    y_mid = (by0 + by1) / 2.0
+    draw.text((x0 + pad_x, cy - y_mid), text, font=font, fill=fill)
+
+
 def _draw_progressbar(background: Image.Image, lay: dict,
                       xp_start: int | float, xp_end: int | float,
                       style_key: str):
@@ -340,6 +366,94 @@ def _draw_progressbar(background: Image.Image, lay: dict,
 
     fill_img = Image.new("RGBA", (img_w, img_h), bar_color_for(style_key))
     background.paste(fill_img, (0, 0), fill_mask)
+
+
+async def _render_rank_card(
+    user: discord.abc.User,
+    style_name: str,
+    bg_path: str,
+    rank_pos: int,
+    xp_start: int | float,
+    xp_end: int | float,
+    lvl_start: int,
+) -> BytesIO:
+    background = Image.open(bg_path).convert("RGBA")
+    draw = ImageDraw.Draw(background)
+    img_w, img_h = background.size
+    lay = _resolved_layout(style_name, img_w, img_h)
+
+    av = lay["avatar"]
+    av_size = av["size"]
+    av_x, av_y = av["x"], av["y"]
+
+    avatar_asset = user.display_avatar.replace(size=256)
+    avatar_bytes = await avatar_asset.read()
+    avatar_img = Image.open(BytesIO(avatar_bytes)).convert("RGBA").resize(
+        (av_size, av_size),
+        Resampling.LANCZOS
+    )
+
+    inset = av.get("inset", 0)
+    if av.get("draw_ring", False):
+        ring_w = av.get("ring_width", 10)
+        ImageDraw.Draw(background).ellipse(
+            (av_x, av_y, av_x + av_size, av_y + av_size),
+            outline="white",
+            width=ring_w
+        )
+        inset = max(inset, ring_w)
+
+    inner_d = (av_size - 2 * inset, av_size - 2 * inset)
+    mask = Image.new("L", inner_d, 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, inner_d[0], inner_d[1]), fill=255)
+    avatar_cropped = avatar_img.resize(inner_d, Resampling.LANCZOS)
+    background.paste(avatar_cropped, (av_x + inset, av_y + inset), mask)
+
+    rank_box = lay["rank_box"]
+    _draw_centered_in_box(
+        draw,
+        f"#{rank_pos or '—'}",
+        rank_box,
+        rank_box["base_font"],
+        rank_box["min_font"],
+        fill="white"
+    )
+
+    name_box = lay["name_box"]
+    _draw_left_in_box(
+        draw,
+        str(user.display_name),
+        name_box,
+        name_box["base_font"],
+        name_box["min_font"],
+        fill="white"
+    )
+
+    level_box = lay["level_box"]
+    xp_box = lay["xp_box"]
+    _draw_centered_in_box(
+        draw,
+        f"{lvl_start}",
+        level_box,
+        level_box["base_font"],
+        level_box["min_font"],
+        fill="white"
+    )
+    _draw_centered_in_box(
+        draw,
+        f"{xp_start}/{round(xp_end)}",
+        xp_box,
+        xp_box["base_font"],
+        xp_box["min_font"],
+        fill="white"
+    )
+
+    _draw_progressbar(background, lay, xp_start, xp_end, style_name)
+
+    buf = BytesIO()
+    background.save(buf, "PNG")
+    buf.seek(0)
+    return buf
 
 
 class LevelSystemConfigView(discord.ui.LayoutView):
@@ -844,58 +958,15 @@ class Level(app_commands.Group):
 
         await interaction.response.defer(thinking=True)
 
-        # Render
-        background = Image.open(bg_path).convert("RGBA")
-        draw = ImageDraw.Draw(background)
-        img_w, img_h = background.size
-        lay = _resolved_layout(style_name, img_w, img_h)
-
-        # Avatar
-        av = lay["avatar"]
-        av_size = av["size"]
-        av_x, av_y = av["x"], av["y"]
-
-        avatar_asset = user.display_avatar.replace(size=256)
-        avatar_bytes = await avatar_asset.read()
-        avatar_img = Image.open(BytesIO(avatar_bytes)).convert("RGBA").resize((av_size, av_size))
-
-        inset = av.get("inset", 0)
-        if av.get("draw_ring", False):
-            ring_w = av.get("ring_width", 10)
-            ImageDraw.Draw(background).ellipse((av_x, av_y, av_x + av_size, av_y + av_size), outline="white",
-                                               width=ring_w)
-            inset = max(inset, ring_w)
-
-        inner_d = (av_size - 2 * inset, av_size - 2 * inset)
-        mask = Image.new("L", inner_d, 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, inner_d[0], inner_d[1]), fill=255)
-        avatar_cropped = avatar_img.resize(inner_d)
-        background.paste(avatar_cropped, (av_x + inset, av_y + inset), mask)
-
-        # Rang
-        font_rank = _mk_font(lay["rank"]["font"])
-        rx, ry = lay["rank"]["x"], lay["rank"]["y"]
-        draw.text((rx, ry), f"#{rank_pos}", font=font_rank, fill="white")
-
-        # Name exakt in Name-Box
-        name_box = lay["name_box"]
-        _draw_centered_in_box(draw, str(user.display_name), name_box,
-                              name_box["base_font"], name_box["min_font"], fill="white")
-
-        # Level & XP — exakt zentriert, maximal groß
-        level_box = lay["level_box"]
-        xp_box = lay["xp_box"]
-        _draw_centered_in_box(draw, f"{lvl_start}", level_box,
-                              level_box["base_font"], level_box["min_font"], fill="white")
-        _draw_centered_in_box(draw, f"{xp_start}/{round(xp_end)}", xp_box,
-                              xp_box["base_font"], xp_box["min_font"], fill="white")
-
-        # Progressbar
-        _draw_progressbar(background, lay, xp_start, xp_end, style_name)
-
-        buf = BytesIO()
-        background.save(buf, "PNG")
-        buf.seek(0)
+        buf = await _render_rank_card(
+            user=user,
+            style_name=style_name,
+            bg_path=bg_path,
+            rank_pos=rank_pos,
+            xp_start=xp_start,
+            xp_end=xp_end,
+            lvl_start=lvl_start,
+        )
         await interaction.followup.send(file=File(buf, filename=f"rank_{style_name}.png"))
         return None
 
@@ -963,58 +1034,15 @@ class Level(app_commands.Group):
                             rank_pos = i
                             break
 
-        # Render
-        background = Image.open(bg_path).convert("RGBA")
-        draw = ImageDraw.Draw(background)
-        img_w, img_h = background.size
-        lay = _resolved_layout(internal_style, img_w, img_h)
-
-        # Avatar
-        av = lay["avatar"]
-        av_size = av["size"]
-        av_x, av_y = av["x"], av["y"]
-
-        avatar_asset = interaction.user.display_avatar.replace(size=256)
-        avatar_bytes = await avatar_asset.read()
-        avatar_img = Image.open(BytesIO(avatar_bytes)).convert("RGBA").resize((av_size, av_size))
-
-        inset = av.get("inset", 0)
-        if av.get("draw_ring", False):
-            ring_w = av.get("ring_width", 10)
-            ImageDraw.Draw(background).ellipse((av_x, av_y, av_x + av_size, av_y + av_size), outline="white",
-                                               width=ring_w)
-            inset = max(inset, ring_w)
-
-        inner_d = (av_size - 2 * inset, av_size - 2 * inset)
-        mask = Image.new("L", inner_d, 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, inner_d[0], inner_d[1]), fill=255)
-        avatar_cropped = avatar_img.resize(inner_d)
-        background.paste(avatar_cropped, (av_x + inset, av_y + inset), mask)
-
-        # Rang
-        font_rank = _mk_font(lay["rank"]["font"])
-        rx, ry = lay["rank"]["x"], lay["rank"]["y"]
-        draw.text((rx, ry), f"#{rank_pos or '—'}", font=font_rank, fill="white")
-
-        # Name in Name-Box
-        name_box = lay["name_box"]
-        _draw_centered_in_box(draw, str(interaction.user.display_name), name_box,
-                              name_box["base_font"], name_box["min_font"], fill="white")
-
-        # Level & XP – exakt zentriert
-        level_box = lay["level_box"]
-        xp_box = lay["xp_box"]
-        _draw_centered_in_box(draw, f"{lvl_start}", level_box,
-                              level_box["base_font"], level_box["min_font"], fill="white")
-        _draw_centered_in_box(draw, f"{xp_start}/{round(xp_end)}", xp_box,
-                              xp_box["base_font"], xp_box["min_font"], fill="white")
-
-        # Progressbar
-        _draw_progressbar(background, lay, xp_start, xp_end, internal_style)
-
-        buf = BytesIO()
-        background.save(buf, "PNG")
-        buf.seek(0)
+        buf = await _render_rank_card(
+            user=interaction.user,
+            style_name=internal_style,
+            bg_path=bg_path,
+            rank_pos=rank_pos,
+            xp_start=xp_start,
+            xp_end=xp_end,
+            lvl_start=lvl_start,
+        )
         await interaction.followup.send(
             content=f"**Preview:** {style}",
             file=File(buf, filename=f"preview_{internal_style}.png"),
