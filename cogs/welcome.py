@@ -58,35 +58,6 @@ def wrap_text(draw, text, font, max_width):
     return lines
 
 
-def fit_font(text: str, max_width: int, start_size: int, min_size: int) -> ImageFont.FreeTypeFont:
-    size = start_size
-    font = ImageFont.truetype(FONT_PATH, size)
-    while size > min_size and ImageDraw.Draw(Image.new("RGBA", (1, 1))).textlength(text, font=font) > max_width:
-        size -= 1
-        font = ImageFont.truetype(FONT_PATH, size)
-    return font
-
-
-def fit_text(draw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
-    if draw.textlength(text, font=font) <= max_width:
-        return text
-
-    ellipsis = "..."
-    while text and draw.textlength(text + ellipsis, font=font) > max_width:
-        text = text[:-1]
-    return text + ellipsis
-
-
-def circle_avatar(image: Image.Image, size: int) -> Image.Image:
-    scale = 4
-    big_size = size * scale
-    avatar = image.resize((big_size, big_size), Resampling.LANCZOS)
-    mask = Image.new("L", (big_size, big_size), 0)
-    ImageDraw.Draw(mask).ellipse((0, 0, big_size - 1, big_size - 1), fill=255)
-    avatar.putalpha(mask)
-    return avatar.resize((size, size), Resampling.LANCZOS)
-
-
 # ================== BANNER GENERATOR ==================
 
 async def generate_banner(member: discord.Member, subtitle: str | None) -> io.BytesIO:
@@ -98,10 +69,24 @@ async def generate_banner(member: discord.Member, subtitle: str | None) -> io.By
             avatar_buffer: io.BytesIO = io.BytesIO(await resp.read())
 
     FINAL_SIZE = 304
-    avatar = circle_avatar(Image.open(avatar_buffer).convert("RGBA"), FINAL_SIZE)
+    SCALE = 4
+    big_size = FINAL_SIZE * SCALE
+
+    avatar = Image.open(avatar_buffer).convert("RGBA").resize(
+        (big_size, big_size),
+        Resampling.LANCZOS
+    )
+
+    mask = Image.new("L", (big_size, big_size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, big_size, big_size), fill=255)
+    avatar.putalpha(mask)
+
+    avatar = avatar.resize((FINAL_SIZE, FINAL_SIZE), Resampling.LANCZOS)
     base.paste(avatar, (29, 31), avatar)
 
+    font_title = ImageFont.truetype(FONT_PATH, 30)
     font_desc = ImageFont.truetype(FONT_PATH, 22)
+    font_count = ImageFont.truetype(FONT_PATH, 30)
 
     guild_name = strip_emojis(member.guild.name)
 
@@ -117,8 +102,6 @@ async def generate_banner(member: discord.Member, subtitle: str | None) -> io.By
     TITLE_MARGIN = 12
 
     title_text = f"Willkommen auf {guild_name}"
-    font_title = fit_font(title_text, DESC_WIDTH, 30, 18)
-    title_text = fit_text(draw, title_text, font_title, DESC_WIDTH)
     title_width = draw.textlength(title_text, font=font_title)
 
     lines = wrap_text(draw, subtitle, font_desc, DESC_WIDTH)
@@ -136,7 +119,6 @@ async def generate_banner(member: discord.Member, subtitle: str | None) -> io.By
     )
 
     for i, line in enumerate(lines):
-        line = fit_text(draw, line, font_desc, DESC_WIDTH)
         line_width = draw.textlength(line, font=font_desc)
         draw.text(
             (
@@ -149,7 +131,6 @@ async def generate_banner(member: discord.Member, subtitle: str | None) -> io.By
         )
 
     count_text = f"#{member.guild.member_count}"
-    font_count = fit_font(count_text, 158, 30, 18)
     count_width = draw.textlength(count_text, font=font_count)
 
     COUNT_X = 832 + ((158 - count_width) // 2)

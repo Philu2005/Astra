@@ -14,7 +14,6 @@ from PIL.Image import Resampling
 # ──────────────────────────────────────────────────────────────────────────────
 ASSETS_DIR = "cogs/assets/Levelcards"
 DEFAULT_STYLE = "standard"  # entspricht standard.png
-RANK_CARD_EDGE_CROP = 2
 
 
 def list_styles():
@@ -124,15 +123,15 @@ def bar_color_for(style: str) -> str:
 LAYOUTS = {
     # Alle anderen (1075 x 340)
     "new": {
-        "avatar": {"x": 57, "y": 93, "size": 155, "inset": 8, "draw_ring": False, "ring_width": 0},
+        "avatar": {"x": 58, "y": 94, "size": 154, "inset": 0, "draw_ring": True, "ring_width": 5},
         "rank_box": {"x0": 392, "y0": 158, "x1": 620, "y1": 222, "base_font": 53, "min_font": 24, "pad_x": 8,
                      "pad_y": 6},
 
         "name_box": {"x0": 238, "y0": 89, "x1": 816, "y1": 144, "base_font": 36, "min_font": 18, "pad_x": 24,
                      "pad_y": 8},
 
-        "level_box": {"x0": 853, "y0": 89, "x1": 1022, "y1": 130, "base_font": 50, "min_font": 18, "pad_x": 10,
-                      "pad_y": 3},
+        "level_box": {"x0": 853, "y0": 89, "x1": 1022, "y1": 130, "base_font": 30, "min_font": 16, "pad_x": 10,
+                      "pad_y": 3, "grow": False},
         "xp_box": {"x0": 853, "y0": 205, "x1": 1022, "y1": 246, "base_font": 38, "min_font": 14, "pad_x": 10,
                    "pad_y": 4},
     },
@@ -146,8 +145,8 @@ LAYOUTS = {
         "name_box": {"x0": 232, "y0": 88, "x1": 809, "y1": 144, "base_font": 36, "min_font": 18, "pad_x": 24,
                      "pad_y": 8},
 
-        "level_box": {"x0": 847, "y0": 88, "x1": 1017, "y1": 129, "base_font": 50, "min_font": 18, "pad_x": 10,
-                      "pad_y": 3},
+        "level_box": {"x0": 847, "y0": 88, "x1": 1017, "y1": 129, "base_font": 30, "min_font": 16, "pad_x": 10,
+                      "pad_y": 3, "grow": False},
         "xp_box": {"x0": 847, "y0": 204, "x1": 1017, "y1": 245, "base_font": 38, "min_font": 14, "pad_x": 10,
                    "pad_y": 4},
     }
@@ -293,21 +292,22 @@ def _draw_centered_in_box(draw: ImageDraw.ImageDraw, text: str, box: dict,
             break
         font = _mk_font(size)
 
-    # so lange vergrößern, bis knapp vor Limit
-    while True:
-        w = draw.textlength(text, font=font)
-        bx0, by0, bx1, by1 = font.getbbox(text)
-        h = by1 - by0
-        if w >= max_w or h >= max_h:
-            break
-        test = _mk_font(size + 1)
-        w2 = draw.textlength(text, font=test)
-        bx0, by0, bx1, by1 = test.getbbox(text)
-        h2 = by1 - by0
-        if w2 > max_w or h2 > max_h:
-            break
-        size += 1
-        font = test
+    if box.get("grow", True):
+        # so lange vergrößern, bis knapp vor Limit
+        while True:
+            w = draw.textlength(text, font=font)
+            bx0, by0, bx1, by1 = font.getbbox(text)
+            h = by1 - by0
+            if w >= max_w or h >= max_h:
+                break
+            test = _mk_font(size + 1)
+            w2 = draw.textlength(text, font=test)
+            bx0, by0, bx1, by1 = test.getbbox(text)
+            h2 = by1 - by0
+            if w2 > max_w or h2 > max_h:
+                break
+            size += 1
+            font = test
 
     cx = (x0 + x1) // 2
     cy = (y0 + y1) // 2
@@ -350,13 +350,6 @@ def _circle_avatar(image: Image.Image, size: int) -> tuple[Image.Image, Image.Im
     avatar = avatar.resize((size, size), Resampling.LANCZOS)
     mask = mask.resize((size, size), Resampling.LANCZOS)
     return avatar, mask
-
-
-def _crop_outer_edge(image: Image.Image) -> Image.Image:
-    crop = RANK_CARD_EDGE_CROP
-    if crop <= 0 or image.width <= crop * 2 or image.height <= crop * 2:
-        return image
-    return image.crop((crop, crop, image.width - crop, image.height - crop))
 
 
 def _draw_progressbar(background: Image.Image, lay: dict,
@@ -414,6 +407,10 @@ async def _render_rank_card(
     )
 
     inset = av.get("inset", 0)
+    inner_d = (av_size - 2 * inset, av_size - 2 * inset)
+    avatar_cropped, mask = _circle_avatar(avatar_img, inner_d[0])
+    background.paste(avatar_cropped, (av_x + inset, av_y + inset), mask)
+
     if av.get("draw_ring", False):
         ring_w = av.get("ring_width", 10)
         ImageDraw.Draw(background).ellipse(
@@ -421,11 +418,6 @@ async def _render_rank_card(
             outline="white",
             width=ring_w
         )
-        inset = max(inset, ring_w)
-
-    inner_d = (av_size - 2 * inset, av_size - 2 * inset)
-    avatar_cropped, mask = _circle_avatar(avatar_img, inner_d[0])
-    background.paste(avatar_cropped, (av_x + inset, av_y + inset), mask)
 
     rank_box = lay["rank_box"]
     _draw_centered_in_box(
@@ -467,7 +459,6 @@ async def _render_rank_card(
     )
 
     _draw_progressbar(background, lay, xp_start, xp_end, style_name)
-    background = _crop_outer_edge(background)
 
     buf = BytesIO()
     background.save(buf, "PNG")
