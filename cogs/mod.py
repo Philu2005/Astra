@@ -112,6 +112,8 @@ class mod(commands.Cog):
         # pro Kanal: Worker + Wake-Event
         self._workers: dict[int, asyncio.Task] = {}
         self._wake_events: dict[int, asyncio.Event] = {}
+        self._clear_status_messages: dict[int, int] = {}
+        self._clear_bulk_deleted: dict[int, int] = {}
 
         # Kein cog_load -> Startup-Task
         self._startup_task = bot.loop.create_task(self._startup())
@@ -174,20 +176,33 @@ class mod(commands.Cog):
                     job_id=job.id
                 )
 
-                # Fertig-Meldung in den Kanal posten
-                embed = discord.Embed(
-                    colour=discord.Colour.green(),
-                    description=(
-                        f"<:Astra_accept:1141303821176422460> **Hintergrund-Löschung abgeschlossen**\n"
-                        f"<:Astra_punkt:1141303896745201696> {deleted_count} alte Nachricht"
-                        f"{'' if deleted_count == 1 else 'en'} {'wurde' if deleted_count == 1 else 'wurden'} entfernt."
+                status_message_id = self._clear_status_messages.pop(job.id, None)
+                bulk_deleted = self._clear_bulk_deleted.pop(job.id, 0)
+                if status_message_id:
+                    embed = discord.Embed(
+                        colour=discord.Colour.green(),
+                        title="Clear abgeschlossen",
+                        description=(
+                            "<:Astra_accept:1141303821176422460> Der Clear-Vorgang ist abgeschlossen.\n\n"
+                            f"<:Astra_punkt:1141303896745201696> **Kanal:** {channel.mention}\n"
+                            f"<:Astra_punkt:1141303896745201696> **Sofort gelöscht:** "
+                            f"**{bulk_deleted}** Nachricht{'' if bulk_deleted == 1 else 'en'}\n"
+                            f"<:Astra_punkt:1141303896745201696> **Im Hintergrund gelöscht:** "
+                            f"**{deleted_count}** alte Nachricht{'' if deleted_count == 1 else 'en'}\n\n"
+                            "<:Astra_light_on:1141303864134467675> Alle geplanten Nachrichten wurden verarbeitet."
+                        )
                     )
-                )
-                embed.set_author(name=job.requested_by)
-                await channel.send(embed=embed)
+                    embed.set_author(name=job.requested_by)
+                    try:
+                        status_message = await channel.fetch_message(status_message_id)
+                        await status_message.edit(embed=embed)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass
 
 
             except Exception as e:
+                self._clear_status_messages.pop(job.id, None)
+                self._clear_bulk_deleted.pop(job.id, None)
                 logging.exception(e)
 
             finally:
@@ -465,13 +480,12 @@ class mod(commands.Cog):
             )
         )
         status_embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
-        status_embed.set_footer(text="Astra Moderation")
         status_message = await interaction.followup.send(embed=status_embed, wait=True)
 
         try:
             # 1) Bulk (≤14 Tage)
             deleted_bulk = await channel.purge(
-                limit=amount,
+                limit=amount + 1,
                 after=cutoff,
                 bulk=True,
                 reason=f"/clear von {interaction.user} ({amount})",
@@ -486,7 +500,9 @@ class mod(commands.Cog):
                 # 2) Nur tatsächlich vorhandene alte Nachrichten als Job persistieren.
                 scheduled = await self._count_old_messages(channel, remaining)
                 if scheduled > 0:
-                    await self._enqueue_job(channel.id, scheduled, str(interaction.user))
+                    job_id = await self._enqueue_job(channel.id, scheduled, str(interaction.user))
+                    self._clear_status_messages[job_id] = status_message.id
+                    self._clear_bulk_deleted[job_id] = total_deleted
                     await self._ensure_worker(channel.id)
                     self._wake_events[channel.id].set()
 
@@ -524,7 +540,6 @@ class mod(commands.Cog):
                 description="\n".join(lines)
             )
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
-            embed.set_footer(text="Astra Moderation")
             await status_message.edit(embed=embed)
 
         except Exception as e:
@@ -537,7 +552,6 @@ class mod(commands.Cog):
                 )
             )
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
-            embed.set_footer(text="Astra Moderation")
             await status_message.edit(embed=embed)
 
     @app_commands.command(name="embedfy", description="Erstelle ein schönes Embed.")
