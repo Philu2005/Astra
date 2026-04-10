@@ -167,29 +167,20 @@ class mod(commands.Cog):
             deleted_count = 0
 
             try:
-                # Quick-Check: gibt es überhaupt alte, nicht gepinnte Nachrichten?
-                cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
-                has_old = False
-
-                async for msg in channel.history(limit=50):
-                    if not msg.pinned and msg.created_at < cutoff:
-                        has_old = True
-                        break
-
-                if has_old:
-                    deleted_count = await self._process_old_deletes(
-                        channel,
-                        job.amount,
-                        job_id=job.id
-                    )
+                # Alte Nachrichten liegen hinter der Bulk-Grenze und werden gedrosselt gelöscht.
+                deleted_count = await self._process_old_deletes(
+                    channel,
+                    job.amount,
+                    job_id=job.id
+                )
 
                 # Fertig-Meldung in den Kanal posten
                 embed = discord.Embed(
                     colour=discord.Colour.green(),
                     description=(
-                        f"✅ **Hintergrund-Löschung abgeschlossen** – "
-                        f"{deleted_count} alte Nachricht"
-                        f"{'' if deleted_count == 1 else 'en'} wurden entfernt."
+                        f"<:Astra_accept:1141303821176422460> **Hintergrund-Löschung abgeschlossen**\n"
+                        f"<:Astra_punkt:1141303896745201696> {deleted_count} alte Nachricht"
+                        f"{'' if deleted_count == 1 else 'en'} {'wurde' if deleted_count == 1 else 'wurden'} entfernt."
                     )
                 )
                 embed.set_author(name=job.requested_by)
@@ -251,6 +242,33 @@ class mod(commands.Cog):
                 await conn.commit()
                 return int(job_id)
 
+    async def _count_old_messages(self, channel: discord.TextChannel, amount: int) -> int:
+        cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
+        found = 0
+        last_message = None
+
+        while found < amount:
+            scanned_any = False
+            async for msg in channel.history(
+                limit=MAX_HISTORY_FETCH,
+                before=last_message or cutoff,
+                oldest_first=False
+            ):
+                scanned_any = True
+                last_message = msg
+
+                if msg.pinned or msg.created_at >= cutoff:
+                    continue
+
+                found += 1
+                if found >= amount:
+                    break
+
+            if not scanned_any:
+                break
+
+        return found
+
     # ---------------- Löschlogik (>14 Tage, gedrosselt) ----------------
     async def _process_old_deletes(self, channel: discord.TextChannel, amount: int, job_id: Optional[int] = None):
         cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
@@ -260,12 +278,13 @@ class mod(commands.Cog):
         checkpoint = 0  # seit letztem DB-Update gelöschte Anzahl
 
         while remaining > 0:
-            found_any = False
+            scanned_any = False
             async for msg in channel.history(
-                limit=min(remaining * 2, MAX_HISTORY_FETCH),
-                before=last_message,
+                limit=MAX_HISTORY_FETCH,
+                before=last_message or cutoff,
                 oldest_first=False
             ):
+                scanned_any = True
                 last_message = msg
                 if msg.pinned:
                     continue
@@ -273,7 +292,6 @@ class mod(commands.Cog):
                 if msg.created_at >= cutoff:
                     continue
 
-                found_any = True
                 try:
                     await msg.delete()  # kein reason bei PartialMessage
                     remaining -= 1
@@ -299,10 +317,8 @@ class mod(commands.Cog):
                     else:
                         await asyncio.sleep(0.9)
                     continue
-            if not found_any:
+            if not scanned_any:
                 # nichts mehr zu löschen → Job sauber beenden
-                if job_id and remaining > 0:
-                    await self._decrement_job_amount(job_id, remaining)
                 remaining = 0
                 break
 
@@ -420,11 +436,16 @@ class mod(commands.Cog):
     async def clear(self, interaction: discord.Interaction, channel: discord.TextChannel, amount: int):
         """Automatisch: Bulk für ≤14 Tage, ältere als persistente Jobs im Hintergrund."""
         if amount <= 0:
-            return await interaction.response.send_message("Die Anzahl muss > 0 sein.", ephemeral=True)
+            embed = discord.Embed(
+                colour=discord.Colour.red(),
+                description="<:Astra_x:1141303954555289600> Die Anzahl muss größer als **0** sein."
+            )
+            embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if amount > 300:
             embed = discord.Embed(
                 colour=discord.Colour.red(),
-                description="❌ Deine Zahl darf nicht größer als 300 sein."
+                description="<:Astra_x:1141303954555289600> Deine Zahl darf nicht größer als **300** sein."
             )
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
             return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -448,24 +469,39 @@ class mod(commands.Cog):
 
             scheduled = 0
             if remaining > 0:
-                # 2) Ältere Nachrichten als Job persistieren & Worker wecken
-                await self._enqueue_job(channel.id, remaining, str(interaction.user))
-                scheduled = remaining
-                await self._ensure_worker(channel.id)
-                self._wake_events[channel.id].set()
+                # 2) Nur tatsächlich vorhandene alte Nachrichten als Job persistieren.
+                scheduled = await self._count_old_messages(channel, remaining)
+                if scheduled > 0:
+                    await self._enqueue_job(channel.id, scheduled, str(interaction.user))
+                    await self._ensure_worker(channel.id)
+                    self._wake_events[channel.id].set()
 
             # Antwort
             lines = [
-                f"✅ {total_deleted} Nachricht{'' if total_deleted == 1 else 'en'} sofort gelöscht (≤14 Tage)."
+                "<:Astra_accept:1141303821176422460> **Clear abgeschlossen**",
+                (
+                    f"<:Astra_punkt:1141303896745201696> Sofort gelöscht: "
+                    f"**{total_deleted}** Nachricht{'' if total_deleted == 1 else 'en'}"
+                ),
             ]
             if scheduled > 0:
-                lines.append(f"🕒 {scheduled} weitere (älter als 14 Tage) werden im Hintergrund sicher gelöscht.")
-            embed = discord.Embed(colour=discord.Colour.green(), description="\n".join(lines))
+                lines.append(
+                    f"<:Astra_time:1141303932061233202> Im Hintergrund geplant: "
+                    f"**{scheduled}** alte Nachricht{'' if scheduled == 1 else 'en'}"
+                )
+            elif remaining > 0:
+                lines.append("<:Astra_info:1141303860556738620> Keine weiteren alten Nachrichten gefunden.")
+            embed = discord.Embed(colour=discord.Colour.blue(), description="\n".join(lines))
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
             await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
-            await interaction.followup.send(f"❌ Fehler beim Löschen: {e}", ephemeral=True)
+            embed = discord.Embed(
+                colour=discord.Colour.red(),
+                description=f"<:Astra_x:1141303954555289600> Fehler beim Löschen: `{e}`"
+            )
+            embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="embedfy", description="Erstelle ein schönes Embed.")
     @app_commands.describe(color="Optional: Farbnamen wie Rot, Orange, Gelb, Grün, Blau oder Blurple.")
