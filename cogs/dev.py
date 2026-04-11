@@ -735,7 +735,7 @@ class CmdLogDashboardView(discord.ui.LayoutView):
         self.clear_items()
 
         # Hauptcontainer für das Dashboard
-        container = discord.ui.Container(accent_color=discord.Color.blurple().value)
+        container = discord.ui.Container(accent_color=discord.Color.blue().value)
         
         # Header Section
         header_section = discord.ui.Section(
