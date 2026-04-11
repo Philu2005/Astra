@@ -3,7 +3,7 @@ import asyncio
 async def cleanup_logs_task(bot):
     while True:
         try:
-            async with bot.pool.acquire() as conn:
+            async with bot.pool.accquire() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
                         DELETE FROM bot_logs
