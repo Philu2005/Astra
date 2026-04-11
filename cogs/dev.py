@@ -809,7 +809,7 @@ class CmdLogDashboardView(discord.ui.LayoutView):
                 "# 📊 CmdLog Control Center\n"
                 "Verwalte und durchsuche die Command-Logs effizient mit modernen Filtern."
             ),
-            accessory=discord.ui.Thumbnail(url=self.ctx.bot.user.display_avatar.url)
+            accessory=discord.ui.Thumbnail(self.ctx.bot.user.display_avatar.url)
         )
         container.add_item(header_section)
         container.add_item(discord.ui.Separator())
