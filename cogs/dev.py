@@ -13,6 +13,8 @@ from typing import List, Optional
 import logging
 from pathlib import Path
 import re
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from utils.db_scheme import run_sql_file
 
 
@@ -26,13 +28,27 @@ def resolve_extension(name: str) -> str:
     return f"cogs.{name}"
 
 
+@dataclass
+class CmdLogFilters:
+    preset: str = "today"
+    custom_days: Optional[int] = None
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+    guild_id: Optional[int] = None
+    user_id: Optional[int] = None
+    command_query: Optional[str] = None
+    sort_by: str = "newest"
+    options: set[str] = field(default_factory=lambda: {"with_subcommands"})
+
+
 class CommandLogView(discord.ui.View):
-    def __init__(self, ctx, rows, pages):
+    def __init__(self, ctx, rows, pages, title: str):
         super().__init__(timeout=180)
         self.ctx = ctx
         self.rows = rows
         self.pages = pages
         self.page = 0
+        self.title = title
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not await interaction.client.is_owner(interaction.user):
@@ -48,10 +64,7 @@ class CommandLogView(discord.ui.View):
         end = start + PAGE_SIZE
         chunk = self.rows[start:end]
 
-        embed = discord.Embed(
-            title="📊 Command Usage (letzte 7 Tage)",
-            color=discord.Color.blurple()
-        )
+        embed = discord.Embed(title=self.title, color=discord.Color.blurple())
 
         for guild_id, user_id, cmd, sub, used_at in chunk:
             guild = self.ctx.bot.get_guild(guild_id)
@@ -99,11 +112,12 @@ class CommandLogView(discord.ui.View):
         self.stop()
 
 class CmdLogOverviewView(discord.ui.View):
-    def __init__(self, ctx, rows):
+    def __init__(self, ctx, rows, title: str):
         super().__init__(timeout=120)
         self.ctx = ctx
         self.rows = rows
         self.pages = ceil(len(rows) / PAGE_SIZE)
+        self.title = title
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.ctx.author.id:
@@ -119,7 +133,7 @@ class CmdLogOverviewView(discord.ui.View):
         style=discord.ButtonStyle.primary
     )
     async def show_full_log(self, interaction: discord.Interaction, _):
-        view = CommandLogView(self.ctx, self.rows, self.pages)
+        view = CommandLogView(self.ctx, self.rows, self.pages, self.title)
         embed = view.make_embed()
         await interaction.response.send_message(
             embed=embed,
@@ -316,6 +330,553 @@ def build_cmdlog_overview_embed(ctx, title: str, rows: list):
     )
 
     return embed
+
+
+def parse_cmdlog_datetime(value: str) -> Optional[datetime]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    formats = (
+        "%d.%m.%Y %H:%M",
+        "%d.%m.%Y",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y",
+    )
+
+    for fmt in formats:
+        try:
+            parsed = datetime.strptime(raw, fmt)
+            if fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+                parsed = parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+            return parsed
+        except ValueError:
+            continue
+
+    return None
+
+
+def build_cmdlog_query(filters: CmdLogFilters, default_guild_id: Optional[int] = None):
+    clauses = []
+    params = []
+    now = datetime.utcnow()
+
+    if filters.preset == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        clauses.append("used_at >= %s")
+        params.append(start)
+    elif filters.preset == "last7":
+        clauses.append("used_at >= %s")
+        params.append(now - timedelta(days=7))
+    elif filters.preset == "last30":
+        clauses.append("used_at >= %s")
+        params.append(now - timedelta(days=30))
+    elif filters.preset == "custom_days" and filters.custom_days:
+        clauses.append("used_at >= %s")
+        params.append(now - timedelta(days=filters.custom_days))
+    elif filters.preset == "custom_range":
+        if filters.start_at:
+            clauses.append("used_at >= %s")
+            params.append(filters.start_at)
+        if filters.end_at:
+            clauses.append("used_at <= %s")
+            params.append(filters.end_at)
+
+    guild_id = filters.guild_id
+    if guild_id is None and "only_current_guild" in filters.options:
+        guild_id = default_guild_id
+
+    if guild_id:
+        clauses.append("guild_id = %s")
+        params.append(guild_id)
+
+    if filters.user_id:
+        clauses.append("user_id = %s")
+        params.append(filters.user_id)
+
+    command_query = (filters.command_query or "").strip()
+    if command_query:
+        exact = "exact_command" in filters.options
+        include_subcommands = "with_subcommands" in filters.options
+
+        if exact:
+            if " " in command_query and include_subcommands:
+                base, _, sub = command_query.partition(" ")
+                clauses.append("command = %s")
+                params.append(base.strip().lower())
+                clauses.append("subcommand = %s")
+                params.append(sub.strip().lower())
+            elif include_subcommands:
+                clauses.append("(command = %s OR subcommand = %s)")
+                params.extend([command_query.lower(), command_query.lower()])
+            else:
+                clauses.append("command = %s")
+                params.append(command_query.lower())
+        else:
+            like_value = f"%{command_query.lower()}%"
+            if include_subcommands:
+                clauses.append("(LOWER(command) LIKE %s OR LOWER(COALESCE(subcommand, '')) LIKE %s)")
+                params.extend([like_value, like_value])
+            else:
+                clauses.append("LOWER(command) LIKE %s")
+                params.append(like_value)
+
+    where_sql = " AND ".join(clauses) if clauses else "1=1"
+
+    order_map = {
+        "newest": "used_at DESC",
+        "oldest": "used_at ASC",
+        "command": "command ASC, subcommand ASC, used_at DESC",
+        "guild": "guild_id ASC, used_at DESC",
+        "user": "user_id ASC, used_at DESC",
+    }
+    order_sql = order_map.get(filters.sort_by, order_map["newest"])
+
+    query = f"""
+        SELECT guild_id, user_id, command, subcommand, used_at
+        FROM command_usage
+        WHERE {where_sql}
+        ORDER BY {order_sql}
+    """
+    return query, params
+
+
+def build_cmdlog_title(filters: CmdLogFilters) -> str:
+    if filters.preset == "today":
+        return "📊 CmdLog • Heute"
+    if filters.preset == "last7":
+        return "📊 CmdLog • Letzte 7 Tage"
+    if filters.preset == "last30":
+        return "📊 CmdLog • Letzte 30 Tage"
+    if filters.preset == "custom_days" and filters.custom_days:
+        return f"📊 CmdLog • Letzte {filters.custom_days} Tage"
+    if filters.preset == "custom_range":
+        return "📊 CmdLog • Eigener Zeitraum"
+    return "📊 CmdLog • Gesamtes Log"
+
+
+def build_cmdlog_filter_summary(filters: CmdLogFilters, ctx: commands.Context) -> str:
+    lines = []
+
+    preset_map = {
+        "today": "Heute",
+        "last7": "Letzte 7 Tage",
+        "last30": "Letzte 30 Tage",
+        "custom_days": f"Letzte {filters.custom_days or '?'} Tage",
+        "custom_range": "Eigener Zeitraum",
+        "all": "Gesamtes Log",
+    }
+    lines.append(f"**Zeitraum:** {preset_map.get(filters.preset, 'Unbekannt')}")
+
+    if filters.start_at or filters.end_at:
+        start = filters.start_at.strftime("%d.%m.%Y %H:%M") if filters.start_at else "offen"
+        end = filters.end_at.strftime("%d.%m.%Y %H:%M") if filters.end_at else "jetzt"
+        lines.append(f"**Fenster:** `{start}` → `{end}`")
+
+    if filters.guild_id:
+        guild = ctx.bot.get_guild(filters.guild_id)
+        label = guild.name if guild else filters.guild_id
+        lines.append(f"**Server:** `{filters.guild_id}` ({label})")
+    elif "only_current_guild" in filters.options and ctx.guild:
+        lines.append(f"**Server:** Nur aktueller Server (`{ctx.guild.id}`)")
+    else:
+        lines.append("**Server:** Alle")
+
+    lines.append(f"**User:** `{filters.user_id}`" if filters.user_id else "**User:** Alle")
+    lines.append(f"**Command:** `{filters.command_query}`" if filters.command_query else "**Command:** Alle")
+
+    option_labels = []
+    if "with_subcommands" in filters.options:
+        option_labels.append("Subcommands einbeziehen")
+    if "exact_command" in filters.options:
+        option_labels.append("Exact Match")
+    if "compact_preview" in filters.options:
+        option_labels.append("Kompakte Vorschau")
+    if "only_current_guild" in filters.options and ctx.guild:
+        option_labels.append("Nur aktueller Server")
+    lines.append(f"**Optionen:** {', '.join(option_labels) if option_labels else 'Keine'}")
+
+    sort_map = {
+        "newest": "Neueste zuerst",
+        "oldest": "Älteste zuerst",
+        "command": "Nach Command",
+        "guild": "Nach Server",
+        "user": "Nach User",
+    }
+    lines.append(f"**Sortierung:** {sort_map.get(filters.sort_by, 'Neueste zuerst')}")
+    return "\n".join(lines)
+
+
+def build_cmdlog_result_summary(ctx: commands.Context, rows: list, filters: CmdLogFilters) -> str:
+    if not rows:
+        return (
+            "## Ergebnis\n"
+            "Keine Einträge für die aktuellen Filter gefunden.\n\n"
+            "Passe Zeitraum, IDs oder Command-Filter an und starte die Suche erneut."
+        )
+
+    total = len(rows)
+    commands_count = defaultdict(int)
+    users_count = defaultdict(int)
+    guilds_count = defaultdict(int)
+
+    for guild_id, user_id, cmd, sub, _used_at in rows:
+        commands_count[f"/{cmd}" + (f" {sub}" if sub else "")] += 1
+        users_count[user_id] += 1
+        guilds_count[guild_id] += 1
+
+    top_commands = sorted(commands_count.items(), key=lambda item: item[1], reverse=True)[:3]
+    top_users = sorted(users_count.items(), key=lambda item: item[1], reverse=True)[:3]
+    top_guilds = sorted(guilds_count.items(), key=lambda item: item[1], reverse=True)[:3]
+
+    preview_count = 3 if "compact_preview" in filters.options else 5
+    preview_rows = rows[:preview_count]
+    preview = []
+    for guild_id, user_id, cmd, sub, used_at in preview_rows:
+        guild = ctx.bot.get_guild(guild_id)
+        guild_label = guild.name if guild else str(guild_id)
+        cmd_label = f"/{cmd}" + (f" {sub}" if sub else "")
+        preview.append(
+            f"`{used_at.strftime('%d.%m.%Y %H:%M')}` • `{cmd_label}` • User `{user_id}` • {guild_label}"
+        )
+
+    return (
+        "## Ergebnis\n"
+        f"**Treffer:** `{total}`\n"
+        f"**Commands:** `{len(commands_count)}` • **User:** `{len(users_count)}` • **Server:** `{len(guilds_count)}`\n\n"
+        f"**Top Commands:** {', '.join(f'`{name}` ({count})' for name, count in top_commands) or '—'}\n"
+        f"**Top User:** {', '.join(f'`{uid}` ({count})' for uid, count in top_users) or '—'}\n"
+        f"**Top Server:** {', '.join(f'`{ctx.bot.get_guild(gid).name if ctx.bot.get_guild(gid) else gid}` ({count})' for gid, count in top_guilds) or '—'}\n\n"
+        "**Vorschau:**\n"
+        + ("\n".join(preview) if preview else "—")
+    )
+
+
+class CmdLogFiltersModal(discord.ui.Modal, title="CmdLog Filter"):
+    guild_id = discord.ui.TextInput(
+        label="Server ID",
+        required=False,
+        placeholder="leer = alle Server"
+    )
+    user_id = discord.ui.TextInput(
+        label="User ID",
+        required=False,
+        placeholder="leer = alle User"
+    )
+    command_name = discord.ui.TextInput(
+        label="Command / Suchbegriff",
+        required=False,
+        placeholder="z.B. levelsystem oder levelsystem rank"
+    )
+
+    def __init__(self, view: "CmdLogDashboardView"):
+        super().__init__()
+        self.view = view
+        self.guild_id.default = str(view.filters.guild_id or "")
+        self.user_id.default = str(view.filters.user_id or "")
+        self.command_name.default = view.filters.command_query or ""
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            guild_raw = self.guild_id.value.strip()
+            user_raw = self.user_id.value.strip()
+
+            self.view.filters.guild_id = int(guild_raw) if guild_raw else None
+            self.view.filters.user_id = int(user_raw) if user_raw else None
+        except ValueError:
+            await interaction.response.send_message(
+                "Server ID und User ID müssen numerisch sein.",
+                ephemeral=True
+            )
+            return
+
+        self.view.filters.command_query = self.command_name.value.strip() or None
+        self.view.status_message = "Filter aktualisiert. Starte jetzt die Suche."
+        self.view._build()
+        await interaction.response.edit_message(view=self.view)
+
+
+class CmdLogTimeModal(discord.ui.Modal, title="CmdLog Zeitraum"):
+    custom_days = discord.ui.TextInput(
+        label="Eigene Tage",
+        required=False,
+        placeholder="z.B. 14"
+    )
+    start_at = discord.ui.TextInput(
+        label="Start",
+        required=False,
+        placeholder="DD.MM.YYYY HH:MM oder YYYY-MM-DD"
+    )
+    end_at = discord.ui.TextInput(
+        label="Ende",
+        required=False,
+        placeholder="DD.MM.YYYY HH:MM oder YYYY-MM-DD"
+    )
+
+    def __init__(self, view: "CmdLogDashboardView"):
+        super().__init__()
+        self.view = view
+        self.custom_days.default = str(view.filters.custom_days or "")
+        self.start_at.default = view.filters.start_at.strftime("%d.%m.%Y %H:%M") if view.filters.start_at else ""
+        self.end_at.default = view.filters.end_at.strftime("%d.%m.%Y %H:%M") if view.filters.end_at else ""
+
+    async def on_submit(self, interaction: discord.Interaction):
+        days_raw = self.custom_days.value.strip()
+        start_raw = self.start_at.value.strip()
+        end_raw = self.end_at.value.strip()
+
+        if days_raw:
+            if not days_raw.isdigit() or int(days_raw) <= 0:
+                await interaction.response.send_message(
+                    "Die Tagesanzahl muss eine positive Zahl sein.",
+                    ephemeral=True
+                )
+                return
+            self.view.filters.preset = "custom_days"
+            self.view.filters.custom_days = int(days_raw)
+            self.view.filters.start_at = None
+            self.view.filters.end_at = None
+        elif start_raw or end_raw:
+            start_at = parse_cmdlog_datetime(start_raw)
+            end_at = parse_cmdlog_datetime(end_raw) if end_raw else datetime.utcnow()
+
+            if start_raw and not start_at:
+                await interaction.response.send_message(
+                    "Start konnte nicht gelesen werden.",
+                    ephemeral=True
+                )
+                return
+            if end_raw and not end_at:
+                await interaction.response.send_message(
+                    "Ende konnte nicht gelesen werden.",
+                    ephemeral=True
+                )
+                return
+            if not start_at:
+                await interaction.response.send_message(
+                    "Für einen freien Zeitraum brauchst du mindestens einen Startwert.",
+                    ephemeral=True
+                )
+                return
+            if end_at and end_at < start_at:
+                await interaction.response.send_message(
+                    "Das Ende darf nicht vor dem Start liegen.",
+                    ephemeral=True
+                )
+                return
+
+            self.view.filters.preset = "custom_range"
+            self.view.filters.custom_days = None
+            self.view.filters.start_at = start_at
+            self.view.filters.end_at = end_at
+        else:
+            self.view.filters.preset = "all"
+            self.view.filters.custom_days = None
+            self.view.filters.start_at = None
+            self.view.filters.end_at = None
+
+        self.view.status_message = "Zeitraum aktualisiert. Starte jetzt die Suche."
+        self.view._build()
+        await interaction.response.edit_message(view=self.view)
+
+
+class CmdLogPresetSelect(discord.ui.Select):
+    def __init__(self, view: "CmdLogDashboardView"):
+        options = [
+            discord.SelectOption(label="Heute", value="today", default=view.filters.preset == "today"),
+            discord.SelectOption(label="Letzte 7 Tage", value="last7", default=view.filters.preset == "last7"),
+            discord.SelectOption(label="Letzte 30 Tage", value="last30", default=view.filters.preset == "last30"),
+            discord.SelectOption(label="Gesamtes Log", value="all", default=view.filters.preset == "all"),
+        ]
+        super().__init__(placeholder="Zeitraum Preset", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: CmdLogDashboardView = self.view  # type: ignore
+        view.filters.preset = self.values[0]
+        if self.values[0] != "custom_days":
+            view.filters.custom_days = None
+        if self.values[0] != "custom_range":
+            view.filters.start_at = None
+            view.filters.end_at = None
+        view.status_message = "Preset geändert. Suche neu starten, um die Daten zu laden."
+        view._build()
+        await interaction.response.edit_message(view=view)
+
+
+class CmdLogSortSelect(discord.ui.Select):
+    def __init__(self, view: "CmdLogDashboardView"):
+        options = [
+            discord.SelectOption(label="Neueste zuerst", value="newest", default=view.filters.sort_by == "newest"),
+            discord.SelectOption(label="Älteste zuerst", value="oldest", default=view.filters.sort_by == "oldest"),
+            discord.SelectOption(label="Nach Command", value="command", default=view.filters.sort_by == "command"),
+            discord.SelectOption(label="Nach Server", value="guild", default=view.filters.sort_by == "guild"),
+            discord.SelectOption(label="Nach User", value="user", default=view.filters.sort_by == "user"),
+        ]
+        super().__init__(placeholder="Sortierung", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: CmdLogDashboardView = self.view  # type: ignore
+        view.filters.sort_by = self.values[0]
+        view.status_message = "Sortierung geändert. Suche neu starten, um die Reihenfolge zu sehen."
+        view._build()
+        await interaction.response.edit_message(view=view)
+
+
+class CmdLogOptionsSelect(discord.ui.Select):
+    OPTION_MAP = {
+        "with_subcommands": "Subcommands einbeziehen",
+        "exact_command": "Command exakt matchen",
+        "compact_preview": "Kompakte Vorschau",
+        "only_current_guild": "Nur aktueller Server",
+    }
+
+    def __init__(self, view: "CmdLogDashboardView"):
+        options = [
+            discord.SelectOption(
+                label=label,
+                value=value,
+                default=value in view.filters.options
+            )
+            for value, label in self.OPTION_MAP.items()
+            if value != "only_current_guild" or view.ctx.guild is not None
+        ]
+        super().__init__(
+            placeholder="Optionen (Checkbox-Stil)",
+            min_values=0,
+            max_values=len(options),
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        view: CmdLogDashboardView = self.view  # type: ignore
+        view.filters.options = set(self.values)
+        view.status_message = "Optionen aktualisiert. Suche neu starten, um das Ergebnis zu refreshen."
+        view._build()
+        await interaction.response.edit_message(view=view)
+
+
+class CmdLogDashboardView(discord.ui.LayoutView):
+    def __init__(self, ctx: commands.Context):
+        super().__init__(timeout=600)
+        self.ctx = ctx
+        self.filters = CmdLogFilters()
+        self.rows: list = []
+        self.title = build_cmdlog_title(self.filters)
+        self.status_message = "Wähle Filter, dann starte die Suche."
+        self._build()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("Nur der Bot-Owner darf das bedienen.", ephemeral=True)
+            return False
+        return True
+
+    async def run_search(self):
+        self.title = build_cmdlog_title(self.filters)
+        query, params = build_cmdlog_query(self.filters, self.ctx.guild.id if self.ctx.guild else None)
+        async with self.ctx.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, params)
+                self.rows = await cur.fetchall()
+
+    def _build(self):
+        self.clear_items()
+
+        container = discord.ui.Container(accent_color=discord.Colour.blue().value)
+        container.add_item(discord.ui.TextDisplay(
+            "# 📊 CmdLog Control Center\n"
+            "Interaktive Suche für Command-Logs mit Zeitraum, IDs, Sortierung und Drilldown."
+        ))
+        container.add_item(discord.ui.Separator())
+
+        search_button = discord.ui.Button(
+            label="Search",
+            emoji="🔎",
+            style=discord.ButtonStyle.success
+        )
+
+        async def search_callback(interaction: discord.Interaction):
+            await interaction.response.defer()
+            await self.run_search()
+            self.status_message = f"Suche abgeschlossen. Treffer: {len(self.rows)}."
+            self._build()
+            await interaction.edit_original_response(view=self)
+
+        search_button.callback = search_callback
+
+        filters_button = discord.ui.Button(
+            label="IDs & Command",
+            emoji="🧩",
+            style=discord.ButtonStyle.primary
+        )
+
+        async def filters_callback(interaction: discord.Interaction):
+            await interaction.response.send_modal(CmdLogFiltersModal(self))
+
+        filters_button.callback = filters_callback
+
+        time_button = discord.ui.Button(
+            label="Zeitraum Modal",
+            emoji="⏱️",
+            style=discord.ButtonStyle.primary
+        )
+
+        async def time_callback(interaction: discord.Interaction):
+            await interaction.response.send_modal(CmdLogTimeModal(self))
+
+        time_button.callback = time_callback
+
+        reset_button = discord.ui.Button(
+            label="Reset",
+            emoji="♻️",
+            style=discord.ButtonStyle.secondary
+        )
+
+        async def reset_callback(interaction: discord.Interaction):
+            self.filters = CmdLogFilters()
+            self.rows = []
+            self.title = build_cmdlog_title(self.filters)
+            self.status_message = "Alle Filter wurden zurückgesetzt."
+            self._build()
+            await interaction.response.edit_message(view=self)
+
+        reset_button.callback = reset_callback
+
+        full_log_button = discord.ui.Button(
+            label="Voll-Log",
+            emoji="📄",
+            style=discord.ButtonStyle.secondary,
+            disabled=not self.rows
+        )
+
+        async def full_log_callback(interaction: discord.Interaction):
+            view = CommandLogView(self.ctx, self.rows, ceil(len(self.rows) / PAGE_SIZE), self.title)
+            await interaction.response.send_message(embed=view.make_embed(), view=view, ephemeral=True)
+
+        full_log_button.callback = full_log_callback
+
+        container.add_item(discord.ui.Section(
+            discord.ui.TextDisplay(
+                "## Aktive Filter\n"
+                f"{build_cmdlog_filter_summary(self.filters, self.ctx)}"
+            ),
+            accessory=search_button
+        ))
+        container.add_item(discord.ui.TextDisplay(
+            f"## Status\n{self.status_message}"
+        ))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay("## Quick Controls"))
+        container.add_item(discord.ui.ActionRow(CmdLogPresetSelect(self)))
+        container.add_item(discord.ui.ActionRow(CmdLogSortSelect(self)))
+        container.add_item(discord.ui.ActionRow(CmdLogOptionsSelect(self)))
+        container.add_item(discord.ui.ActionRow(filters_button, time_button, reset_button, full_log_button))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(build_cmdlog_result_summary(self.ctx, self.rows, self.filters)))
+
+        self.add_item(container)
 
 
 
@@ -662,42 +1223,25 @@ class DevTools(commands.Cog):
     @commands.command(name="cmdlog")
     @commands.is_owner()
     async def cmdlog(self, ctx: commands.Context, period: str = "today"):
-        logging.info("TEST")
-        period = period.lower()
+        view = CmdLogDashboardView(ctx)
 
-        if period in ("week", "woche", "7"):
-            title = "📊 Command Usage – letzte 7 Tage"
-            where_clause = "used_at >= NOW() - INTERVAL 7 DAY"
+        legacy = (period or "").strip().lower()
+        if legacy in ("week", "woche", "7", "7d"):
+            view.filters.preset = "last7"
+            view.status_message = "Legacy-Parameter erkannt: letzte 7 Tage vorausgewählt."
+        elif legacy in ("30", "30d", "month", "monat"):
+            view.filters.preset = "last30"
+            view.status_message = "Legacy-Parameter erkannt: letzte 30 Tage vorausgewählt."
+        elif legacy.isdigit() and int(legacy) > 0:
+            view.filters.preset = "custom_days"
+            view.filters.custom_days = int(legacy)
+            view.status_message = f"Legacy-Parameter erkannt: letzte {legacy} Tage vorausgewählt."
+        elif legacy not in ("", "today", "heute"):
+            view.status_message = "Interaktive CmdLog-Ansicht geöffnet. Den alten Parameter ersetzst du jetzt über die Filter im Panel."
 
-        elif period.isdigit():
-            days = int(period)
-            title = f"📊 Command Usage – letzte {days} Tage"
-            where_clause = f"used_at >= NOW() - INTERVAL {days} DAY"
-
-        else:
-            title = "📊 Command Usage – heute"
-            where_clause = "DATE(used_at) = CURDATE()"
-
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT guild_id, user_id, command, subcommand, used_at
-                    FROM command_usage
-                    WHERE {where_clause}
-                    ORDER BY used_at DESC
-                    """
-                )
-                rows = await cur.fetchall()
-
-        if not rows:
-            await ctx.send("Keine Command-Daten für diesen Zeitraum gefunden.")
-            return
-
-        embed = build_cmdlog_overview_embed(ctx, title, rows)
-        view = CmdLogOverviewView(ctx, rows)
-
-        await ctx.send(embed=embed, view=view)
+        view.title = build_cmdlog_title(view.filters)
+        view._build()
+        await ctx.send(view=view)
 
     @commands.command(name="commandstats", aliases=["cmdstats"])
     @commands.is_owner()
