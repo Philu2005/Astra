@@ -737,11 +737,9 @@ class CmdLogSettingsModal(discord.ui.Modal, title="CmdLog Einstellungen"):
         )
         if view.ctx.guild is not None:
             self.options_select.add_option(
-                discord.SelectOption(
-                    label="Nur aktueller Server",
-                    value="only_current_guild",
-                    default="only_current_guild" in view.filters.options
-                )
+                label="Nur aktueller Server",
+                value="only_current_guild",
+                default="only_current_guild" in view.filters.options
             )
         self.add_item(self.options_select)
 
