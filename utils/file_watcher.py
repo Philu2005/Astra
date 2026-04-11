@@ -11,7 +11,7 @@ logger = logging.getLogger("watcher")
 class ReloadHandler(FileSystemEventHandler):
     def __init__(self, bot):
         self.bot = bot
-        self.last_event = 0
+        self.last_event = {}
         self.cooldown = 1.5
         self.file_cache = {}
 
@@ -30,11 +30,12 @@ class ReloadHandler(FileSystemEventHandler):
             return
 
         now = time.time()
-
-        if now - self.last_event < self.cooldown:
-            return
-
         path = event.src_path.replace("\\", "/")
+
+        last = self.last_event.get(path, 0)
+
+        if now - last < self.cooldown:
+            return
 
         # ❌ utils komplett ignorieren
         if "/utils/" in path:
@@ -43,7 +44,7 @@ class ReloadHandler(FileSystemEventHandler):
         if not self.has_changed(path):
             return
 
-        self.last_event = now
+        self.last_event[path] = now
 
         # 🔥 MAIN → Restart
         if path.endswith("main.py"):
@@ -55,7 +56,7 @@ class ReloadHandler(FileSystemEventHandler):
             rel_path = path.split("/cogs/")[1]
             parts = rel_path.split("/")
 
-            cog_name = f"cogs.{parts[0].replace('.py', '')}"
+            cog_name = "cogs." + ".".join(p.replace(".py", "") for p in parts)
 
             asyncio.run_coroutine_threadsafe(
                 self.safe_reload(cog_name),

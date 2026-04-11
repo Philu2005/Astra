@@ -170,8 +170,8 @@ def setup_topgg_events(bot):   # 👈 DAS IST DER FIX
                 await cur.execute(
                     """
                     INSERT INTO economy_users (user_id, wallet)
-                    VALUES (%s, %s)
-                    ON DUPLICATE KEY UPDATE wallet = wallet + VALUES(wallet)
+                        VALUES (%s, %s) AS new
+                    ON DUPLICATE KEY UPDATE wallet = wallet + new.wallet
                     """,
                     (user_id, total_amount)
                 )
