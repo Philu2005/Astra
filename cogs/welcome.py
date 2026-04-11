@@ -14,7 +14,7 @@ import re
 
 
 WELCOME_BANNER_PATH = "cogs/assets/Welcomecards/Willkommens_banner_fullsize.jpg"
-FONT_PATH = "cogs/fonts/Poppins-SemiBold.ttf"
+FONT_PATH = "cogs/fonts/Exo-Regular.ttf"
 
 
 # ================== UTILS ==================

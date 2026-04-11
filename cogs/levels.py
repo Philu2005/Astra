@@ -153,7 +153,7 @@ LAYOUTS = {
 }
 
 STYLE_OVERRIDES = {}
-FONT_PATH = "cogs/fonts/Poppins-SemiBold.ttf"
+FONT_PATH = "cogs/fonts/Exo-Regular.ttf"
 
 # -------------------------------------------
 # Pretty names -> interne Dateinamen (ohne .png)

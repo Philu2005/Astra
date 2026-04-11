@@ -67,7 +67,7 @@ def get_ram_usage() -> float:
 # ------------------------------------------------------------
 def generate_graph(cpu, ram, t):
     # 1)  Font registrieren
-    FONT_PATH = "cogs/fonts/Poppins-SemiBold.ttf"  # dein absoluter oder relativer Pfad
+    FONT_PATH = "cogs/fonts/Exo-Regular.ttf"  # dein absoluter oder relativer Pfad
     fm.fontManager.addfont(FONT_PATH)  # <‑ in den Matplotlib‑Cache eintragen
     # fm._rebuild()  # Font‑Datenbank neu aufbauen
 
