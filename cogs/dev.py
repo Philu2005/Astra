@@ -30,8 +30,8 @@ class AstraEmojis:
     RESET = "♻️"
     FILE = "<:Astra_file1:1141303837181886494>"
     CLOSE = "<:Astra_x:1141303954555289600>"
-    PREV = "<:Astra_arrow_backwards:1392540551546671348>"
-    NEXT = "<:Astra_arrow:1141303823600717885>"
+    PREV = "⬅️"
+    NEXT = "➡️"
     SUCCESS = "<:Astra_accept:1141303821176422460>"
     INFO = "<:Astra_support:1141303923752325210>"
 
