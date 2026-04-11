@@ -20,20 +20,20 @@ from utils.db_scheme import run_sql_file
 
 class AstraEmojis:
     TIME = "<:Astra_time:1141303932061233202>"
-    CALENDAR = "📅"
-    USER = "<:Astra_messages:1141303867850641470>"
-    GUILD = "🏠"
-    SEARCH = "🔎"
-    FILTER = "🧩"
-    TIMER = "⏱️"
-    SETTINGS = "<:Astra_settings:1061390649232322580>"
-    RESET = "♻️"
-    FILE = "<:Astra_file1:1141303837181886494>"
+    CALENDAR = "<:Astra_calender:1141303828625489940>"
+    USER = "<:Astra_user:1141303940365959241>"
+    GUILD = "<:Astra_file2:1141303839543279666>"
+    SEARCH = "<:Astra_support:1141303923752325210>"
+    FILTER = "<:Astra_pin:1141303893616250900>"
+    TIMER = "<:Astra_time:1141303932061233202>"
+    SETTINGS = "<:Astra_settings:1141303908778639490>"
+    RESET = "<:Astra_x:1141303954555289600>"
+    FILE = "<:Astra_url:1141303937056657458>"
     CLOSE = "<:Astra_x:1141303954555289600>"
-    PREV = "⬅️"
-    NEXT = "➡️"
+    PREV = "<:Astra_arrow_backwards:1392540551546671348>"
+    NEXT = "<:Astra_arrow:1141303823600717885>"
     SUCCESS = "<:Astra_accept:1141303821176422460>"
-    INFO = "<:Astra_support:1141303923752325210>"
+    INFO = "<:Astra_info:1141303860556738620>"
 
 
 def resolve_extension(name: str) -> str:
