@@ -18,6 +18,24 @@ from datetime import datetime, timedelta
 from utils.db_scheme import run_sql_file
 
 
+class AstraEmojis:
+    TIME = "<:Astra_time:1141303932061233202>"
+    CALENDAR = "📅"
+    USER = "<:Astra_messages:1141303867850641470>"
+    GUILD = "🏠"
+    SEARCH = "🔎"
+    FILTER = "🧩"
+    TIMER = "⏱️"
+    SETTINGS = "<:Astra_settings:1061390649232322580>"
+    RESET = "♻️"
+    FILE = "<:Astra_file1:1141303837181886494>"
+    CLOSE = "<:Astra_x:1141303954555289600>"
+    PREV = "<:Astra_arrow_backwards:1392540551546671348>"
+    NEXT = "<:Astra_arrow:1141303823600717885>"
+    SUCCESS = "<:Astra_accept:1141303821176422460>"
+    INFO = "<:Astra_support:1141303923752325210>"
+
+
 def resolve_extension(name: str) -> str:
     """
     dev        -> cogs.dev
@@ -73,20 +91,21 @@ class CommandLogView(discord.ui.View):
             cmd_name = f"/{cmd}" + (f" {sub}" if sub else "")
             time_str = used_at.strftime("%d.%m.%Y %H:%M:%S")
 
+            # Ein übersichtlicheres Feld mit Markdowns und Emojis
             embed.add_field(
-                name=cmd_name,
+                name=f"{AstraEmojis.TIME} {time_str}",
                 value=(
-                    f"👤 **User:** {user} (`{user_id}`)\n"
-                    f"🏠 **Server:** {guild.name if guild else guild_id}\n"
-                    f"🕒 **Zeit:** `{time_str}`"
+                    f"**Command:** `{cmd_name}`\n"
+                    f"**User:** {user.mention if user else f'`{user_id}`'} (`{user_id}`)\n"
+                    f"**Server:** {f'**{guild.name}**' if guild else f'`{guild_id}`'}"
                 ),
                 inline=False
             )
 
-        embed.set_footer(text=f"Seite {self.page + 1}/{self.pages}")
+        embed.set_footer(text=f"Seite {self.page + 1}/{self.pages} • {len(self.rows)} Gesamtergebnisse")
         return embed
 
-    @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji=AstraEmojis.PREV, style=discord.ButtonStyle.secondary)
     async def prev(self, interaction: discord.Interaction, _):
         if self.page > 0:
             self.page -= 1
@@ -96,7 +115,7 @@ class CommandLogView(discord.ui.View):
         else:
             await interaction.response.defer()
 
-    @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji=AstraEmojis.NEXT, style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, _):
         if self.page < self.pages - 1:
             self.page += 1
@@ -106,7 +125,7 @@ class CommandLogView(discord.ui.View):
         else:
             await interaction.response.defer()
 
-    @discord.ui.button(label="❌", style=discord.ButtonStyle.danger)
+    @discord.ui.button(emoji=AstraEmojis.CLOSE, style=discord.ButtonStyle.danger)
     async def close(self, interaction: discord.Interaction, _):
         await interaction.message.delete()
         self.stop()
@@ -184,7 +203,7 @@ class CommandStatsView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji=AstraEmojis.PREV, style=discord.ButtonStyle.secondary)
     async def prev(self, interaction: discord.Interaction, _):
         if self.index > 0:
             self.index -= 1
@@ -194,7 +213,7 @@ class CommandStatsView(discord.ui.View):
         else:
             await interaction.response.defer()
 
-    @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji=AstraEmojis.NEXT, style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, _):
         if self.index < len(self.pages) - 1:
             self.index += 1
@@ -536,21 +555,25 @@ def build_cmdlog_result_summary(ctx: commands.Context, rows: list, filters: CmdL
     preview = []
     for guild_id, user_id, cmd, sub, used_at in preview_rows:
         guild = ctx.bot.get_guild(guild_id)
-        guild_label = guild.name if guild else str(guild_id)
-        cmd_label = f"/{cmd}" + (f" {sub}" if sub else "")
+        guild_label = f"**{guild.name}**" if guild else f"`{guild_id}`"
+        cmd_label = f"`/{cmd}" + (f" {sub}`" if sub else "`")
+        time_str = used_at.strftime("%H:%M:%S")
+        date_str = used_at.strftime("%d.%m.%Y")
+        
         preview.append(
-            f"`{used_at.strftime('%d.%m.%Y %H:%M')}` • `{cmd_label}` • User `{user_id}` • {guild_label}"
+            f"{AstraEmojis.CALENDAR} `{date_str}` {AstraEmojis.TIME} `{time_str}`\n"
+            f"└ {cmd_label} • {AstraEmojis.USER} <@{user_id}> • {AstraEmojis.GUILD} {guild_label}"
         )
 
     return (
-        "## Ergebnis\n"
+        "## 🔍 Letzte Ergebnisse\n"
         f"**Treffer:** `{total}`\n"
         f"**Commands:** `{len(commands_count)}` • **User:** `{len(users_count)}` • **Server:** `{len(guilds_count)}`\n\n"
-        f"**Top Commands:** {', '.join(f'`{name}` ({count})' for name, count in top_commands) or '—'}\n"
-        f"**Top User:** {', '.join(f'`{uid}` ({count})' for uid, count in top_users) or '—'}\n"
-        f"**Top Server:** {', '.join(f'`{ctx.bot.get_guild(gid).name if ctx.bot.get_guild(gid) else gid}` ({count})' for gid, count in top_guilds) or '—'}\n\n"
+        f"**Top 3 Commands:** {', '.join(f'`{name}` ({count})' for name, count in top_commands) or '—'}\n"
+        f"**Top 3 User:** {', '.join(f'<@{uid}> ({count})' for uid, count in top_users) or '—'}\n"
+        f"**Top 3 Server:** {', '.join(f'**{ctx.bot.get_guild(gid).name if ctx.bot.get_guild(gid) else gid}** ({count})' for gid, count in top_guilds) or '—'}\n\n"
         "**Vorschau:**\n"
-        + ("\n".join(preview) if preview else "—")
+        + ("\n\n".join(preview) if preview else "—")
     )
 
 
@@ -687,86 +710,78 @@ class CmdLogSettingsModal(discord.ui.Modal, title="CmdLog Einstellungen"):
         super().__init__()
         self.view = view
 
-        # Checkbox Group für Optionen
-        options_label = discord.ui.Label(
-            label="Zusätzliche Optionen",
-            description="Wähle die gewünschten Anzeige- und Filtermodi",
-            component=discord.ui.CheckboxGroup(
-                custom_id="options_checkbox",
-                options=[
-                    discord.CheckboxGroupOption(
-                        label="Subcommands einbeziehen",
-                        value="with_subcommands",
-                        default="with_subcommands" in view.filters.options
-                    ),
-                    discord.CheckboxGroupOption(
-                        label="Command exakt matchen",
-                        value="exact_command",
-                        default="exact_command" in view.filters.options
-                    ),
-                    discord.CheckboxGroupOption(
-                        label="Kompakte Vorschau",
-                        value="compact_preview",
-                        default="compact_preview" in view.filters.options
-                    )
-                ]
-            )
+        # Da CheckboxGroup/RadioGroup in dieser discord.py-Version (2.7.0a) noch fehlen,
+        # nutzen wir Select-Menüs (Dropdowns), die in Modals gut funktionieren.
+        
+        self.options_select = discord.ui.Select(
+            placeholder="Wähle Anzeige-Optionen...",
+            min_values=0,
+            max_values=4,
+            options=[
+                discord.SelectOption(
+                    label="Subcommands einbeziehen",
+                    value="with_subcommands",
+                    default="with_subcommands" in view.filters.options
+                ),
+                discord.SelectOption(
+                    label="Command exakt matchen",
+                    value="exact_command",
+                    default="exact_command" in view.filters.options
+                ),
+                discord.SelectOption(
+                    label="Kompakte Vorschau",
+                    value="compact_preview",
+                    default="compact_preview" in view.filters.options
+                )
+            ]
         )
         if view.ctx.guild is not None:
-            options_label.component.options.append(
-                discord.CheckboxGroupOption(
+            self.options_select.add_option(
+                discord.SelectOption(
                     label="Nur aktueller Server",
                     value="only_current_guild",
                     default="only_current_guild" in view.filters.options
                 )
             )
-        self.add_item(options_label)
+        self.add_item(self.options_select)
 
-        # Radio Group für Sortierung
-        sort_label = discord.ui.Label(
-            label="Sortierung",
-            description="Wie sollen die Ergebnisse sortiert werden?",
-            component=discord.ui.RadioGroup(
-                custom_id="sort_radio",
-                options=[
-                    discord.RadioGroupOption(
-                        label="Neueste zuerst",
-                        value="newest",
-                        default=view.filters.sort_by == "newest"
-                    ),
-                    discord.RadioGroupOption(
-                        label="Älteste zuerst",
-                        value="oldest",
-                        default=view.filters.sort_by == "oldest"
-                    ),
-                    discord.RadioGroupOption(
-                        label="Nach Command",
-                        value="command",
-                        default=view.filters.sort_by == "command"
-                    ),
-                    discord.RadioGroupOption(
-                        label="Nach Server",
-                        value="guild",
-                        default=view.filters.sort_by == "guild"
-                    ),
-                    discord.RadioGroupOption(
-                        label="Nach User",
-                        value="user",
-                        default=view.filters.sort_by == "user"
-                    )
-                ]
-            )
+        self.sort_select = discord.ui.Select(
+            placeholder="Sortierung wählen...",
+            min_values=1,
+            max_values=1,
+            options=[
+                discord.SelectOption(
+                    label="Neueste zuerst",
+                    value="newest",
+                    default=view.filters.sort_by == "newest"
+                ),
+                discord.SelectOption(
+                    label="Älteste zuerst",
+                    value="oldest",
+                    default=view.filters.sort_by == "oldest"
+                ),
+                discord.SelectOption(
+                    label="Nach Command",
+                    value="command",
+                    default=view.filters.sort_by == "command"
+                ),
+                discord.SelectOption(
+                    label="Nach Server",
+                    value="guild",
+                    default=view.filters.sort_by == "guild"
+                ),
+                discord.SelectOption(
+                    label="Nach User",
+                    value="user",
+                    default=view.filters.sort_by == "user"
+                )
+            ]
         )
-        self.add_item(sort_label)
+        self.add_item(self.sort_select)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Werte aus den Komponenten extrahieren
-        # Hinweis: Da Label Container sind, müssen wir den inneren Komponenten-Wert abgreifen
-        options_comp = self.children[0].component # CheckboxGroup
-        sort_comp = self.children[1].component    # RadioGroup
-
-        self.view.filters.options = set(options_comp.values)
-        self.view.filters.sort_by = sort_comp.value
+        self.view.filters.options = set(self.options_select.values)
+        self.view.filters.sort_by = self.sort_select.values[0]
         
         self.view.status_message = "Einstellungen aktualisiert. Suche neu starten für Effekt."
         self.view._build()
@@ -817,14 +832,14 @@ class CmdLogDashboardView(discord.ui.LayoutView):
         # Suche & Status Section
         search_button = discord.ui.Button(
             label="Suche starten",
-            emoji="🔎",
+            emoji=AstraEmojis.SEARCH,
             style=discord.ButtonStyle.success
         )
 
         async def search_callback(interaction: discord.Interaction):
             await interaction.response.defer()
             await self.run_search()
-            self.status_message = f"✅ Suche abgeschlossen. Treffer: **{len(self.rows)}**."
+            self.status_message = f"{AstraEmojis.SUCCESS} Suche abgeschlossen. Treffer: **{len(self.rows)}**."
             self._build()
             await interaction.edit_original_response(view=self)
 
@@ -844,22 +859,22 @@ class CmdLogDashboardView(discord.ui.LayoutView):
         container.add_item(filter_display)
 
         # Buttons für Modals
-        filters_button = discord.ui.Button(label="IDs & Command", emoji="🧩", style=discord.ButtonStyle.primary)
+        filters_button = discord.ui.Button(label="IDs & Command", emoji=AstraEmojis.FILTER, style=discord.ButtonStyle.primary)
         async def filters_callback(interaction: discord.Interaction):
             await interaction.response.send_modal(CmdLogFiltersModal(self))
         filters_button.callback = filters_callback
 
-        time_button = discord.ui.Button(label="Zeitraum", emoji="⏱️", style=discord.ButtonStyle.primary)
+        time_button = discord.ui.Button(label="Zeitraum", emoji=AstraEmojis.TIMER, style=discord.ButtonStyle.primary)
         async def time_callback(interaction: discord.Interaction):
             await interaction.response.send_modal(CmdLogTimeModal(self))
         time_button.callback = time_callback
 
-        settings_button = discord.ui.Button(label="Einstellungen", emoji="⚙️", style=discord.ButtonStyle.primary)
+        settings_button = discord.ui.Button(label="Einstellungen", emoji=AstraEmojis.SETTINGS, style=discord.ButtonStyle.primary)
         async def settings_callback(interaction: discord.Interaction):
             await interaction.response.send_modal(CmdLogSettingsModal(self))
         settings_button.callback = settings_callback
 
-        reset_button = discord.ui.Button(label="Reset", emoji="♻️", style=discord.ButtonStyle.danger)
+        reset_button = discord.ui.Button(label="Reset", emoji=AstraEmojis.RESET, style=discord.ButtonStyle.danger)
         async def reset_callback(interaction: discord.Interaction):
             self.filters = CmdLogFilters()
             self.rows = []
@@ -871,7 +886,7 @@ class CmdLogDashboardView(discord.ui.LayoutView):
 
         full_log_button = discord.ui.Button(
             label="Vollständiges Log",
-            emoji="📄",
+            emoji=AstraEmojis.FILE,
             style=discord.ButtonStyle.secondary,
             disabled=not self.rows
         )
@@ -958,7 +973,7 @@ class CodeScroller(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.primary, custom_id="codescroller_prev")
+    @discord.ui.button(emoji=AstraEmojis.PREV, style=discord.ButtonStyle.primary, custom_id="codescroller_prev")
     async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current > 0:
             self.current -= 1
@@ -968,7 +983,7 @@ class CodeScroller(discord.ui.View):
         else:
             await interaction.response.defer()
 
-    @discord.ui.button(label="➡️", style=discord.ButtonStyle.primary, custom_id="codescroller_next")
+    @discord.ui.button(emoji=AstraEmojis.NEXT, style=discord.ButtonStyle.primary, custom_id="codescroller_next")
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current < len(self.code_chunks) - 1:
             self.current += 1
@@ -978,7 +993,7 @@ class CodeScroller(discord.ui.View):
         else:
             await interaction.response.defer()
 
-    @discord.ui.button(label="❌", style=discord.ButtonStyle.danger, row=0, custom_id="codescroller_delete")
+    @discord.ui.button(emoji=AstraEmojis.CLOSE, style=discord.ButtonStyle.danger, row=0, custom_id="codescroller_delete")
     async def delete(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.message.delete()
         self.stop()
@@ -1160,7 +1175,7 @@ class ServerListView(discord.ui.View):
         )
         self.add_item(page_label)
 
-    @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji=AstraEmojis.PREV, style=discord.ButtonStyle.secondary)
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.check_owner(interaction):
             return
@@ -1176,7 +1191,7 @@ class ServerListView(discord.ui.View):
         )
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji=AstraEmojis.NEXT, style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.check_owner(interaction):
             return
