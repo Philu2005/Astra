@@ -682,79 +682,95 @@ class CmdLogTimeModal(discord.ui.Modal, title="CmdLog Zeitraum"):
         await interaction.response.edit_message(view=self.view)
 
 
-class CmdLogPresetSelect(discord.ui.Select):
+class CmdLogSettingsModal(discord.ui.Modal, title="CmdLog Einstellungen"):
     def __init__(self, view: "CmdLogDashboardView"):
-        options = [
-            discord.SelectOption(label="Heute", value="today", default=view.filters.preset == "today"),
-            discord.SelectOption(label="Letzte 7 Tage", value="last7", default=view.filters.preset == "last7"),
-            discord.SelectOption(label="Letzte 30 Tage", value="last30", default=view.filters.preset == "last30"),
-            discord.SelectOption(label="Gesamtes Log", value="all", default=view.filters.preset == "all"),
-        ]
-        super().__init__(placeholder="Zeitraum Preset", min_values=1, max_values=1, options=options)
+        super().__init__()
+        self.view = view
 
-    async def callback(self, interaction: discord.Interaction):
-        view: CmdLogDashboardView = self.view  # type: ignore
-        view.filters.preset = self.values[0]
-        if self.values[0] != "custom_days":
-            view.filters.custom_days = None
-        if self.values[0] != "custom_range":
-            view.filters.start_at = None
-            view.filters.end_at = None
-        view.status_message = "Preset geändert. Suche neu starten, um die Daten zu laden."
-        view._build()
-        await interaction.response.edit_message(view=view)
-
-
-class CmdLogSortSelect(discord.ui.Select):
-    def __init__(self, view: "CmdLogDashboardView"):
-        options = [
-            discord.SelectOption(label="Neueste zuerst", value="newest", default=view.filters.sort_by == "newest"),
-            discord.SelectOption(label="Älteste zuerst", value="oldest", default=view.filters.sort_by == "oldest"),
-            discord.SelectOption(label="Nach Command", value="command", default=view.filters.sort_by == "command"),
-            discord.SelectOption(label="Nach Server", value="guild", default=view.filters.sort_by == "guild"),
-            discord.SelectOption(label="Nach User", value="user", default=view.filters.sort_by == "user"),
-        ]
-        super().__init__(placeholder="Sortierung", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        view: CmdLogDashboardView = self.view  # type: ignore
-        view.filters.sort_by = self.values[0]
-        view.status_message = "Sortierung geändert. Suche neu starten, um die Reihenfolge zu sehen."
-        view._build()
-        await interaction.response.edit_message(view=view)
-
-
-class CmdLogOptionsSelect(discord.ui.Select):
-    OPTION_MAP = {
-        "with_subcommands": "Subcommands einbeziehen",
-        "exact_command": "Command exakt matchen",
-        "compact_preview": "Kompakte Vorschau",
-        "only_current_guild": "Nur aktueller Server",
-    }
-
-    def __init__(self, view: "CmdLogDashboardView"):
-        options = [
-            discord.SelectOption(
-                label=label,
-                value=value,
-                default=value in view.filters.options
+        # Checkbox Group für Optionen
+        options_label = discord.ui.Label(
+            label="Zusätzliche Optionen",
+            description="Wähle die gewünschten Anzeige- und Filtermodi",
+            component=discord.ui.CheckboxGroup(
+                custom_id="options_checkbox",
+                options=[
+                    discord.CheckboxGroupOption(
+                        label="Subcommands einbeziehen",
+                        value="with_subcommands",
+                        default="with_subcommands" in view.filters.options
+                    ),
+                    discord.CheckboxGroupOption(
+                        label="Command exakt matchen",
+                        value="exact_command",
+                        default="exact_command" in view.filters.options
+                    ),
+                    discord.CheckboxGroupOption(
+                        label="Kompakte Vorschau",
+                        value="compact_preview",
+                        default="compact_preview" in view.filters.options
+                    )
+                ]
             )
-            for value, label in self.OPTION_MAP.items()
-            if value != "only_current_guild" or view.ctx.guild is not None
-        ]
-        super().__init__(
-            placeholder="Optionen (Checkbox-Stil)",
-            min_values=0,
-            max_values=len(options),
-            options=options
         )
+        if view.ctx.guild is not None:
+            options_label.component.options.append(
+                discord.CheckboxGroupOption(
+                    label="Nur aktueller Server",
+                    value="only_current_guild",
+                    default="only_current_guild" in view.filters.options
+                )
+            )
+        self.add_item(options_label)
 
-    async def callback(self, interaction: discord.Interaction):
-        view: CmdLogDashboardView = self.view  # type: ignore
-        view.filters.options = set(self.values)
-        view.status_message = "Optionen aktualisiert. Suche neu starten, um das Ergebnis zu refreshen."
-        view._build()
-        await interaction.response.edit_message(view=view)
+        # Radio Group für Sortierung
+        sort_label = discord.ui.Label(
+            label="Sortierung",
+            description="Wie sollen die Ergebnisse sortiert werden?",
+            component=discord.ui.RadioGroup(
+                custom_id="sort_radio",
+                options=[
+                    discord.RadioGroupOption(
+                        label="Neueste zuerst",
+                        value="newest",
+                        default=view.filters.sort_by == "newest"
+                    ),
+                    discord.RadioGroupOption(
+                        label="Älteste zuerst",
+                        value="oldest",
+                        default=view.filters.sort_by == "oldest"
+                    ),
+                    discord.RadioGroupOption(
+                        label="Nach Command",
+                        value="command",
+                        default=view.filters.sort_by == "command"
+                    ),
+                    discord.RadioGroupOption(
+                        label="Nach Server",
+                        value="guild",
+                        default=view.filters.sort_by == "guild"
+                    ),
+                    discord.RadioGroupOption(
+                        label="Nach User",
+                        value="user",
+                        default=view.filters.sort_by == "user"
+                    )
+                ]
+            )
+        )
+        self.add_item(sort_label)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Werte aus den Komponenten extrahieren
+        # Hinweis: Da Label Container sind, müssen wir den inneren Komponenten-Wert abgreifen
+        options_comp = self.children[0].component # CheckboxGroup
+        sort_comp = self.children[1].component    # RadioGroup
+
+        self.view.filters.options = set(options_comp.values)
+        self.view.filters.sort_by = sort_comp.value
+        
+        self.view.status_message = "Einstellungen aktualisiert. Suche neu starten für Effekt."
+        self.view._build()
+        await interaction.response.edit_message(view=self.view)
 
 
 class CmdLogDashboardView(discord.ui.LayoutView):
@@ -784,15 +800,23 @@ class CmdLogDashboardView(discord.ui.LayoutView):
     def _build(self):
         self.clear_items()
 
-        container = discord.ui.Container(accent_color=discord.Colour.blue().value)
-        container.add_item(discord.ui.TextDisplay(
-            "# 📊 CmdLog Control Center\n"
-            "Interaktive Suche für Command-Logs mit Zeitraum, IDs, Sortierung und Drilldown."
-        ))
+        # Hauptcontainer für das Dashboard
+        container = discord.ui.Container(accent_color=discord.Color.blurple().value)
+        
+        # Header Section
+        header_section = discord.ui.Section(
+            discord.ui.TextDisplay(
+                "# 📊 CmdLog Control Center\n"
+                "Verwalte und durchsuche die Command-Logs effizient mit modernen Filtern."
+            ),
+            accessory=discord.ui.Thumbnail(url=self.ctx.bot.user.display_avatar.url)
+        )
+        container.add_item(header_section)
         container.add_item(discord.ui.Separator())
 
+        # Suche & Status Section
         search_button = discord.ui.Button(
-            label="Search",
+            label="Suche starten",
             emoji="🔎",
             style=discord.ButtonStyle.success
         )
@@ -800,40 +824,42 @@ class CmdLogDashboardView(discord.ui.LayoutView):
         async def search_callback(interaction: discord.Interaction):
             await interaction.response.defer()
             await self.run_search()
-            self.status_message = f"Suche abgeschlossen. Treffer: {len(self.rows)}."
+            self.status_message = f"✅ Suche abgeschlossen. Treffer: **{len(self.rows)}**."
             self._build()
             await interaction.edit_original_response(view=self)
 
         search_button.callback = search_callback
 
-        filters_button = discord.ui.Button(
-            label="IDs & Command",
-            emoji="🧩",
-            style=discord.ButtonStyle.primary
+        status_display = discord.ui.TextDisplay(
+            f"### Status\n{self.status_message}"
         )
+        container.add_item(discord.ui.Section(status_display, accessory=search_button))
+        container.add_item(discord.ui.Separator())
 
+        # Filter Übersicht
+        filter_display = discord.ui.TextDisplay(
+            "## 🧩 Aktive Filter\n"
+            f"{build_cmdlog_filter_summary(self.filters, self.ctx)}"
+        )
+        container.add_item(filter_display)
+
+        # Buttons für Modals
+        filters_button = discord.ui.Button(label="IDs & Command", emoji="🧩", style=discord.ButtonStyle.primary)
         async def filters_callback(interaction: discord.Interaction):
             await interaction.response.send_modal(CmdLogFiltersModal(self))
-
         filters_button.callback = filters_callback
 
-        time_button = discord.ui.Button(
-            label="Zeitraum Modal",
-            emoji="⏱️",
-            style=discord.ButtonStyle.primary
-        )
-
+        time_button = discord.ui.Button(label="Zeitraum", emoji="⏱️", style=discord.ButtonStyle.primary)
         async def time_callback(interaction: discord.Interaction):
             await interaction.response.send_modal(CmdLogTimeModal(self))
-
         time_button.callback = time_callback
 
-        reset_button = discord.ui.Button(
-            label="Reset",
-            emoji="♻️",
-            style=discord.ButtonStyle.secondary
-        )
+        settings_button = discord.ui.Button(label="Einstellungen", emoji="⚙️", style=discord.ButtonStyle.primary)
+        async def settings_callback(interaction: discord.Interaction):
+            await interaction.response.send_modal(CmdLogSettingsModal(self))
+        settings_button.callback = settings_callback
 
+        reset_button = discord.ui.Button(label="Reset", emoji="♻️", style=discord.ButtonStyle.danger)
         async def reset_callback(interaction: discord.Interaction):
             self.filters = CmdLogFilters()
             self.rows = []
@@ -841,42 +867,60 @@ class CmdLogDashboardView(discord.ui.LayoutView):
             self.status_message = "Alle Filter wurden zurückgesetzt."
             self._build()
             await interaction.response.edit_message(view=self)
-
         reset_button.callback = reset_callback
 
         full_log_button = discord.ui.Button(
-            label="Voll-Log",
+            label="Vollständiges Log",
             emoji="📄",
             style=discord.ButtonStyle.secondary,
             disabled=not self.rows
         )
-
         async def full_log_callback(interaction: discord.Interaction):
             view = CommandLogView(self.ctx, self.rows, ceil(len(self.rows) / PAGE_SIZE), self.title)
             await interaction.response.send_message(embed=view.make_embed(), view=view, ephemeral=True)
-
         full_log_button.callback = full_log_callback
 
-        container.add_item(discord.ui.Section(
-            discord.ui.TextDisplay(
-                "## Aktive Filter\n"
-                f"{build_cmdlog_filter_summary(self.filters, self.ctx)}"
-            ),
-            accessory=search_button
-        ))
-        container.add_item(discord.ui.TextDisplay(
-            f"## Status\n{self.status_message}"
-        ))
+        # ActionRows für die Buttons
+        container.add_item(discord.ui.ActionRow(filters_button, time_button, settings_button, reset_button))
+        
+        # Preset Select bleibt für schnellen Zugriff
+        container.add_item(discord.ui.ActionRow(CmdLogPresetQuickSelect(self)))
+        
         container.add_item(discord.ui.Separator())
-        container.add_item(discord.ui.TextDisplay("## Quick Controls"))
-        container.add_item(discord.ui.ActionRow(CmdLogPresetSelect(self)))
-        container.add_item(discord.ui.ActionRow(CmdLogSortSelect(self)))
-        container.add_item(discord.ui.ActionRow(CmdLogOptionsSelect(self)))
-        container.add_item(discord.ui.ActionRow(filters_button, time_button, reset_button, full_log_button))
-        container.add_item(discord.ui.Separator())
-        container.add_item(discord.ui.TextDisplay(build_cmdlog_result_summary(self.ctx, self.rows, self.filters)))
+
+        # Ergebnis Zusammenfassung
+        if self.rows:
+            container.add_item(discord.ui.Section(
+                discord.ui.TextDisplay(build_cmdlog_result_summary(self.ctx, self.rows, self.filters)),
+                accessory=full_log_button
+            ))
+        else:
+            container.add_item(discord.ui.TextDisplay("*Noch keine Ergebnisse geladen. Nutze die Filter und drücke auf Suche.*"))
 
         self.add_item(container)
+
+
+class CmdLogPresetQuickSelect(discord.ui.Select):
+    def __init__(self, view: "CmdLogDashboardView"):
+        options = [
+            discord.SelectOption(label="Heute", value="today", default=view.filters.preset == "today"),
+            discord.SelectOption(label="Letzte 7 Tage", value="last7", default=view.filters.preset == "last7"),
+            discord.SelectOption(label="Letzte 30 Tage", value="last30", default=view.filters.preset == "last30"),
+            discord.SelectOption(label="Gesamtes Log", value="all", default=view.filters.preset == "all"),
+        ]
+        super().__init__(placeholder="Schnellwahl: Zeitraum", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: CmdLogDashboardView = self.view  # type: ignore
+        view.filters.preset = self.values[0]
+        if self.values[0] != "custom_days":
+            view.filters.custom_days = None
+        if self.values[0] != "custom_range":
+            view.filters.start_at = None
+            view.filters.end_at = None
+        view.status_message = f"Zeitraum-Preset auf **{self.values[0]}** gesetzt."
+        view._build()
+        await interaction.response.edit_message(view=view)
 
 
 
