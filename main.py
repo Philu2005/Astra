@@ -21,6 +21,7 @@ from utils.logger import setup_logging
 from utils.presence import rotating_presence
 from utils.file_watcher import Watcher
 from events.topgg import setup_topgg_events
+from utils.cleanup import cleanup_logs_task
 
 guild_cache = {}
 guild_cache_lock = Lock()
@@ -106,6 +107,7 @@ class Astra(commands.Bot):
                 "/webhook/7d9f1c0a-topgg-astrabot", str(dbl_password)
             )
             await bot.topgg_webhook.run(int(dbl_port))
+            self.loop.create_task(cleanup_logs_task(self))
             await self.connect_db()
             await self.init_tables()
             await self.load_cogs()

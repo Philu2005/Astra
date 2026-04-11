@@ -82,7 +82,7 @@ class CommandLogView(discord.ui.View):
         end = start + PAGE_SIZE
         chunk = self.rows[start:end]
 
-        embed = discord.Embed(title=self.title, color=discord.Color.blurple())
+        embed = discord.Embed(title=self.title, color=discord.Color.blue())
 
         for guild_id, user_id, cmd, sub, used_at in chunk:
             guild = self.ctx.bot.get_guild(guild_id)
@@ -293,7 +293,7 @@ def build_cmdlog_overview_embed(ctx, title: str, rows: list):
 
     embed = discord.Embed(
         title=title,
-        color=discord.Color.blurple()
+        color=discord.Color.blue()
     )
 
     embed.add_field(
@@ -1024,7 +1024,7 @@ def build_guild_embed(guild: discord.Guild, requester: discord.abc.User) -> disc
     e = discord.Embed(
         title=f"Server: {guild.name}",
         description=f"**ID:** `{guild.id}`",
-        color=discord.Color.blurple()
+        color=discord.Color.blue()
     )
     if guild.icon:
         e.set_thumbnail(url=guild.icon.url)
@@ -1220,7 +1220,7 @@ class ServerListView(discord.ui.View):
                 )
                 await interaction.followup.send(embed=new_embed, ephemeral=True)
 
-                msg_embed = discord.Embed(title="Kein Server ausgewählt", color=discord.Color.blurple())
+                msg_embed = discord.Embed(title="Kein Server ausgewählt", color=discord.Color.blue())
                 if self.current_guild_id:
                     current = self.bot.get_guild(self.current_guild_id)
                     if current:
@@ -1319,7 +1319,7 @@ class DevTools(commands.Cog):
                     f"**Uptime:** `{int((time.time() - self.start_time) // 60)} min`\n\n"
                     "_Automatisch getrackt (Slash Commands + Subcommands)_"
                 ),
-                color=discord.Color.blurple()
+                color=discord.Color.blue()
             )
 
             for command, data in items[i:i + PAGE_SIZE]:
@@ -1557,7 +1557,7 @@ class DevTools(commands.Cog):
         """Zeigt ein paar Bot-Statistiken."""
         self.commands_run += 1
         uptime = time.time() - self.start_time
-        embed = discord.Embed(title="Bot Statistiken", color=discord.Color.blurple())
+        embed = discord.Embed(title="Bot Statistiken", color=discord.Color.blue())
         embed.add_field(name="Uptime", value=f"{uptime/60:.2f} Minuten")
         embed.add_field(name="Server (Guilds)", value=str(len(self.bot.guilds)))
         embed.add_field(name="Benutzer", value=str(len(self.bot.users)))
