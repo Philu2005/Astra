@@ -705,85 +705,6 @@ class CmdLogTimeModal(discord.ui.Modal, title="CmdLog Zeitraum"):
         await interaction.response.edit_message(view=self.view)
 
 
-class CmdLogSettingsModal(discord.ui.Modal, title="CmdLog Einstellungen"):
-    def __init__(self, view: "CmdLogDashboardView"):
-        super().__init__()
-        self.view = view
-
-        # Da CheckboxGroup/RadioGroup in dieser discord.py-Version (2.7.0a) noch fehlen,
-        # nutzen wir Select-Menüs (Dropdowns), die in Modals gut funktionieren.
-        
-        self.options_select = discord.ui.Select(
-            placeholder="Wähle Anzeige-Optionen...",
-            min_values=0,
-            max_values=4,
-            options=[
-                discord.SelectOption(
-                    label="Subcommands einbeziehen",
-                    value="with_subcommands",
-                    default="with_subcommands" in view.filters.options
-                ),
-                discord.SelectOption(
-                    label="Command exakt matchen",
-                    value="exact_command",
-                    default="exact_command" in view.filters.options
-                ),
-                discord.SelectOption(
-                    label="Kompakte Vorschau",
-                    value="compact_preview",
-                    default="compact_preview" in view.filters.options
-                )
-            ]
-        )
-        if view.ctx.guild is not None:
-            self.options_select.add_option(
-                label="Nur aktueller Server",
-                value="only_current_guild",
-                default="only_current_guild" in view.filters.options
-            )
-        self.add_item(self.options_select)
-
-        self.sort_select = discord.ui.Select(
-            placeholder="Sortierung wählen...",
-            min_values=1,
-            max_values=1,
-            options=[
-                discord.SelectOption(
-                    label="Neueste zuerst",
-                    value="newest",
-                    default=view.filters.sort_by == "newest"
-                ),
-                discord.SelectOption(
-                    label="Älteste zuerst",
-                    value="oldest",
-                    default=view.filters.sort_by == "oldest"
-                ),
-                discord.SelectOption(
-                    label="Nach Command",
-                    value="command",
-                    default=view.filters.sort_by == "command"
-                ),
-                discord.SelectOption(
-                    label="Nach Server",
-                    value="guild",
-                    default=view.filters.sort_by == "guild"
-                ),
-                discord.SelectOption(
-                    label="Nach User",
-                    value="user",
-                    default=view.filters.sort_by == "user"
-                )
-            ]
-        )
-        self.add_item(self.sort_select)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        self.view.filters.options = set(self.options_select.values)
-        self.view.filters.sort_by = self.sort_select.values[0]
-        
-        self.view.status_message = "Einstellungen aktualisiert. Suche neu starten für Effekt."
-        self.view._build()
-        await interaction.response.edit_message(view=self.view)
 
 
 class CmdLogDashboardView(discord.ui.LayoutView):
@@ -867,11 +788,6 @@ class CmdLogDashboardView(discord.ui.LayoutView):
             await interaction.response.send_modal(CmdLogTimeModal(self))
         time_button.callback = time_callback
 
-        settings_button = discord.ui.Button(label="Einstellungen", emoji=AstraEmojis.SETTINGS, style=discord.ButtonStyle.primary)
-        async def settings_callback(interaction: discord.Interaction):
-            await interaction.response.send_modal(CmdLogSettingsModal(self))
-        settings_button.callback = settings_callback
-
         reset_button = discord.ui.Button(label="Reset", emoji=AstraEmojis.RESET, style=discord.ButtonStyle.danger)
         async def reset_callback(interaction: discord.Interaction):
             self.filters = CmdLogFilters()
@@ -894,7 +810,67 @@ class CmdLogDashboardView(discord.ui.LayoutView):
         full_log_button.callback = full_log_callback
 
         # ActionRows für die Buttons
-        container.add_item(discord.ui.ActionRow(filters_button, time_button, settings_button, reset_button))
+        container.add_item(discord.ui.ActionRow(filters_button, time_button, reset_button))
+        
+        # Einstellungen (Selects) direkt in die View integrieren, da Modals keine Selects unterstützen
+        options_select = discord.ui.Select(
+            placeholder="Wähle Anzeige-Optionen...",
+            min_values=0,
+            max_values=4,
+            options=[
+                discord.SelectOption(
+                    label="Subcommands einbeziehen",
+                    value="with_subcommands",
+                    default="with_subcommands" in self.filters.options
+                ),
+                discord.SelectOption(
+                    label="Command exakt matchen",
+                    value="exact_command",
+                    default="exact_command" in self.filters.options
+                ),
+                discord.SelectOption(
+                    label="Kompakte Vorschau",
+                    value="compact_preview",
+                    default="compact_preview" in self.filters.options
+                )
+            ]
+        )
+        if self.ctx.guild is not None:
+            options_select.add_option(
+                label="Nur aktueller Server",
+                value="only_current_guild",
+                default="only_current_guild" in self.filters.options
+            )
+
+        async def options_callback(interaction: discord.Interaction):
+            self.filters.options = set(options_select.values)
+            self.status_message = f"{AstraEmojis.INFO} Anzeige-Optionen aktualisiert."
+            self._build()
+            await interaction.response.edit_message(view=self)
+        options_select.callback = options_callback
+
+        sort_select = discord.ui.Select(
+            placeholder="Sortierung wählen...",
+            min_values=1,
+            max_values=1,
+            options=[
+                discord.SelectOption(label="Neueste zuerst", value="newest", default=self.filters.sort_by == "newest"),
+                discord.SelectOption(label="Älteste zuerst", value="oldest", default=self.filters.sort_by == "oldest"),
+                discord.SelectOption(label="Nach Command", value="command", default=self.filters.sort_by == "command"),
+                discord.SelectOption(label="Nach Server", value="guild", default=self.filters.sort_by == "guild"),
+                discord.SelectOption(label="Nach User", value="user", default=self.filters.sort_by == "user")
+            ]
+        )
+
+        async def sort_callback(interaction: discord.Interaction):
+            self.filters.sort_by = sort_select.values[0]
+            self.status_message = f"{AstraEmojis.INFO} Sortierung auf **{self.filters.sort_by}** gesetzt."
+            self._build()
+            await interaction.response.edit_message(view=self)
+        sort_select.callback = sort_callback
+
+        container.add_item(discord.ui.ActionRow(options_select))
+        container.add_item(discord.ui.ActionRow(sort_select))
         
         # Preset Select bleibt für schnellen Zugriff
         container.add_item(discord.ui.ActionRow(CmdLogPresetQuickSelect(self)))
