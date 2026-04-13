@@ -171,7 +171,7 @@ def setup_topgg_events(bot):   # 👈 DAS IST DER FIX
                     """
                     INSERT INTO economy_users (user_id, wallet)
                         VALUES (%s, %s) AS new
-                    ON DUPLICATE KEY UPDATE wallet = wallet + new.wallet
+                    ON DUPLICATE KEY UPDATE wallet = economy_users.wallet + new.wallet
                     """,
                     (user_id, total_amount)
                 )
