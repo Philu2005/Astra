@@ -49,7 +49,7 @@ class ReloadHandler(FileSystemEventHandler):
         # 🔥 MAIN → Restart
         if path.endswith("main.py"):
             logger.warning("Main geändert → Restart via systemd")
-            os.system("sudo systemctl restart astrabot.service")
+            os.system("systemctl restart astrabot.service")
 
         # 🔥 COG → Reload
         if "/cogs/" in path:
