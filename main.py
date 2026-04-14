@@ -279,59 +279,6 @@ class Astra(commands.Bot):
 
             await msg.channel.send(embed=embed)
 
-    @staticmethod
-    def find_translatable_strings(path):
-        string_regex = re.compile(r'["\'](.*?)["\']')
-        translatable = []
-
-        # Ordner cogs durchsuchen
-        cogs_path = os.path.join(path, "cogs")
-        if os.path.exists(cogs_path):
-            for root, dirs, files in os.walk(cogs_path):
-                for file in files:
-                    if file.endswith(".py"):
-                        with open(os.path.join(root, file), "r", encoding="utf-8") as f:
-                            content = f.read()
-                            matches = string_regex.findall(content)
-                            for match in matches:
-                                if any(
-                                    word in match.lower()
-                                    for word in [
-                                        "du",
-                                        "bitte",
-                                        "nicht",
-                                        "kannst",
-                                        "coin",
-                                        "rolle",
-                                        "hilfe",
-                                        "server",
-                                    ]
-                                ):
-                                    translatable.append(match)
-
-        # main.py separat prüfen
-        main_py_path = os.path.join(path, "main.py")
-        if os.path.isfile(main_py_path):
-            with open(main_py_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                matches = string_regex.findall(content)
-                for match in matches:
-                    if any(
-                        word in match.lower()
-                        for word in [
-                            "du",
-                            "bitte",
-                            "nicht",
-                            "kannst",
-                            "coin",
-                            "rolle",
-                            "hilfe",
-                            "server",
-                        ]
-                    ):
-                        translatable.append(match)
-
-        return translatable
 
 
 bot = Astra()
