@@ -273,7 +273,7 @@ class Astra(commands.Bot):
             if msg.guild and msg.guild.icon:
                 embed.set_thumbnail(url=msg.guild.icon.url)
             embed.set_footer(
-                text="Astra Development ©2025 • Mehr Infos auf unserem Support-Server",
+                text="Astra Development ©2025 • Mehr Infos auf unserem Support-Server.",
                 icon_url=msg.guild.icon.url if msg.guild and msg.guild.icon else None,
             )
 
