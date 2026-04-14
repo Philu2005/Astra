@@ -1305,7 +1305,7 @@ class Warn(commands.Cog):
                 # ================= CAPS FILTER =======================
                 # =====================================================
 
-                if msg.author.id != msg.guild.owner.id:
+                if msg.author.id != msg.guild.owner_id:
 
                     await cursor.execute(
                         "SELECT percent FROM capslock WHERE guildID = (%s)",
