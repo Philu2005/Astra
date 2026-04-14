@@ -33,11 +33,8 @@ class Economy(commands.Cog):
                 )
 
     async def get_balance(self, user_id: int):
-        """Holt das Wallet- und Bankguthaben des Benutzers."""
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT wallet, bank FROM economy_users WHERE user_id = %s", (user_id,))
-                return await cur.fetchone()
+        user = await self.get_user(user_id)
+        return user[1], user[2]  # wallet, bank
 
 
 class buttons_emj(discord.ui.View):
