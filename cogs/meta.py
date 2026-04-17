@@ -10,11 +10,9 @@ import requests
 import asyncio
 from collections import deque
 from datetime import timezone
-
-from falcon.bench.nuts.config import logging
-
-from utils import logger
-
+import logging
+from utils.logger import setup_logging
+setup_logging()
 
 def convert(time):
     pos = ["s", "m", "h", "d"]
