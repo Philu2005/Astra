@@ -70,8 +70,12 @@ class InfoGroup(app_commands.Group):
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def userinfo(self, interaction: discord.Interaction, member: discord.Member = None):
 
+        # ✅ FIX 1: richtig setzen
         if member is None:
             member = interaction.user
+
+        # ✅ FIX 2: IMMER fetchen für Presence
+        member = await interaction.guild.fetch_member(member.id)
 
         banneruser = await interaction.client.fetch_user(member.id)
 
@@ -106,16 +110,14 @@ class InfoGroup(app_commands.Group):
         if hasattr(flags, "moderator_performance_curriculum") and flags.moderator_performance_curriculum:
             badges.append("<:moderatorprogram:1494714464161894551>")
 
-        # ================= BOOST (FIXED) =================
+        # ================= BOOST =================
         if member.premium_since:
-            now = discord.utils.utcnow().replace(tzinfo=timezone.utc)
+            now = discord.utils.utcnow()
             diff = now - member.premium_since
             days = diff.days
 
-            # OPTIONAL: einfach EIN Nitro Badge
             badges.append("<:nitro1:1494713979401011271>")
 
-            # NEUE BOOST BADGES (FIXED ORDER)
             if days >= 730:
                 badges.append("<:boost9:1494714456226402416>")
             elif days >= 540:
@@ -135,14 +137,20 @@ class InfoGroup(app_commands.Group):
             else:
                 badges.append("<:boost1:1494714465684291745>")
 
-        # Custom Badge
         if member.id == 1141303828625489940:
             badges.append("<:LastMeadows:1494713907749716008>")
 
         badge_text = ", ".join(badges) if badges else "—"
 
-        # ================= STATUS (FIXED) =================
-        activity = "—"
+        # ================= STATUS FIX =================
+        status_map = {
+            discord.Status.online: "Online",
+            discord.Status.idle: "Idle",
+            discord.Status.dnd: "DND",
+            discord.Status.offline: "Offline"
+        }
+
+        activity = status_map.get(member.status, "Unbekannt")
 
         if member.activities:
             for act in member.activities:
@@ -167,10 +175,7 @@ class InfoGroup(app_commands.Group):
             icon_url=member.display_avatar.url
         )
 
-        embed.description = (
-            f"Account erstellt {created}\n"
-            f"Beigetreten {joined}"
-        )
+        embed.description = f"Account erstellt {created}\nBeigetreten {joined}"
 
         embed.set_thumbnail(url=member.display_avatar.url)
 
