@@ -222,7 +222,7 @@ class InfoGroup(app_commands.Group):
             activity = f"Keine Aktivität ({user_status})"
 
         # ================= EMBED =================
-        embed = discord.Embed(color=discord.Color.orange())
+        embed = discord.Embed(color=discord.Color.blue())
 
         embed.set_author(
             name=str(member),
