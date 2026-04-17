@@ -327,10 +327,10 @@ class HelpCog(commands.Cog):
         embed.add_field(
             name="⚡ Quick Actions (NEU!)",
             value=(
-                "> Du kannst Moderation direkt per Rechtsklick nutzen:\n\n"
+                "> Du kannst Moderation direkt per Rechtsklick nutzen:\n"
                 "> <:Astra_punkt:1141303896745201696> Rechtsklick auf User → **Apps → Warn**\n"
                 "> <:Astra_punkt:1141303896745201696> Kein Command nötig\n"
-                "> <:Astra_punkt:1141303896745201696> Schneller Workflow\n\n"
+                "> <:Astra_punkt:1141303896745201696> Schneller Workflow\n"
                 "> 🔥 Besonders praktisch für Moderatoren"
             ),
             inline=False
