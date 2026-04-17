@@ -64,85 +64,132 @@ class InfoGroup(app_commands.Group):
             await interaction.response.send_message(embed=embed)
             return
 
-    @app_commands.command(name="user", description="Zeigt einige Informationen über einen Nutzer.")
-    @app_commands.describe(member="Optional: Das Mitglied, über das Infos angezeigt werden sollen. Standard: du selbst.")
+    @app_commands.command(name="user", description="Zeigt Informationen über einen Nutzer.")
+    @app_commands.describe(member="Optional: Das Mitglied, über das Infos angezeigt werden sollen.")
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def userinfo(self, interaction: discord.Interaction, member: discord.Member = None):
-        """Zeigt einige Infos über einen User."""
+
         if member is None:
             member = interaction.user
-        user = interaction.guild.get_member(member.id)
+
         banneruser = await interaction.client.fetch_user(member.id)
-        if member.top_role.is_default():
-            topRole = 'everyone'  # to prevent @everyone spam
-            topRoleColour = '#000000'
-        else:
-            topRole = member.top_role
-            topRoleColour = member.top_role.colour
-        if member is not None:
-            memberacc = str(discord.utils.format_dt(member.created_at, 'R'))
-            joined = str(discord.utils.format_dt(member.joined_at, 'R'))
-            embed = discord.Embed(color=0x3498db)
-            embed.set_thumbnail(url=member.avatar)
-            if banneruser.banner:
-                banner_url = banneruser.banner.url
-                embed.set_image(url=banner_url)
+
+        created = discord.utils.format_dt(member.created_at, "R")
+        joined = discord.utils.format_dt(member.joined_at, "R")
+
+        top_role = member.top_role if not member.top_role.is_default() else None
+
+        # ================= BADGES =================
+        badges = []
+        flags = member.public_flags
+
+        BADGE_MAP = {
+            "staff": "<:discordemployee:1494713034793553931>",
+            "partner": "<:partner:1494713075960647710>",
+            "hypesquad": "<:hypesquad:1494712603673493565>",
+            "hypesquad_balance": "<:balance:1494713178183962724>",
+            "hypesquad_bravery": "<:bravery:1494712600817307659>",
+            "hypesquad_brilliance": "<:brillance:1494712602360680560>",
+            "bug_hunter": "<:bughunterlv1:1494713049783996619>",
+            "bug_hunter_level_2": "<:bughunterlv2:1494713060076556542>",
+            "early_supporter": "<:earlysupporter:1494712935463780502>",
+            "verified_bot_developer": "<:earlyverifiedbotdeveloper:1494714480704360548>",
+            "active_developer": "<:quest:1494714496571281448>",
+            "discord_certified_moderator": "<:certifiedmoderator:1494714457274847424>",
+        }
+
+        for attr, emoji in BADGE_MAP.items():
+            if getattr(flags, attr, False):
+                badges.append(emoji)
+
+        if hasattr(flags, "moderator_performance_curriculum") and flags.moderator_performance_curriculum:
+            badges.append("<:moderatorprogram:1494714464161894551>")
+
+        # ================= BOOST (FIXED) =================
+        if member.premium_since:
+            now = discord.utils.utcnow().replace(tzinfo=timezone.utc)
+            diff = now - member.premium_since
+            days = diff.days
+
+            # Nitro (nur wenn boost vorhanden → best guess)
+            badges.append("<:nitro1:1494713979401011271>")
+
+            if days >= 730:
+                badges.append("<:boost10:1494714456226402416>")
+            elif days >= 540:
+                badges.append("<:boost9:1494714493413101639>")
+            elif days >= 450:
+                badges.append("<:boost8:1494714462375248213>")
+            elif days >= 365:
+                badges.append("<:boost7:1494714475188584668>")
+            elif days >= 270:
+                badges.append("<:boost6:1494714476509794314>")
+            elif days >= 180:
+                badges.append("<:boost5:1494714485095534763>")
+            elif days >= 90:
+                badges.append("<:boost4:1494714494624989195>")
+            elif days >= 60:
+                badges.append("<:boost3:1494714467550892102>")
             else:
-                pass
-            embed.add_field(name=f"<:Astra_user2:1141303942324699206> Name", value=f"{member.name}", inline=False)
-            embed.add_field(name="🆔 ID", value=member.id, inline=False)
-            if member.bot:
-                embed.add_field(name="🤖 Bot", value="Ja", inline=False)
-            else:
-                embed.add_field(name="🤖 Bot", value="Nein", inline=False)
-            if member.public_flags.hypesquad_balance:
-                embed.add_field(name='🥇 Badges', value="<:Balance:1141837380144353401>", inline=False)
-            elif member.public_flags.hypesquad_bravery:
-                embed.add_field(name='🥇 Badges', value="<:Bravery:1141837378252705842>", inline=False)
-            elif member.public_flags.hypesquad_brilliance:
-                embed.add_field(name='🥇 Badges', value="<:Brillance:1141837375354454056>", inline=False)
-            else:
-                embed.add_field(name='🥇 Badges', value="Keine Badges", inline=False)
-            embed.add_field(name='<:Astra_calender:1141303828625489940> Account erstellt', value=memberacc, inline=False)
-            embed.add_field(name='<:Astra_time:1141303932061233202> Server beigetreten', value=joined, inline=False)
-            embed.add_field(name='<:Astra_stift:1141825585836998716> Höchste Rolle', value=topRole.mention, inline=True)
-            custom = discord.utils.get(user.activities, type=discord.ActivityType.custom)
-            playing = discord.utils.get(user.activities, type=discord.ActivityType.playing)
-            listening = discord.utils.get(user.activities, type=discord.ActivityType.listening)
-            watching = discord.utils.get(user.activities, type=discord.ActivityType.watching)
-            streaming = discord.utils.get(user.activities, type=discord.ActivityType.streaming)
-            if custom and listening:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{custom.name}, {listening}", inline=False)
-            elif custom and playing:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{custom.name}, {playing.name}", inline=False)
-            elif custom and watching:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{custom.name}, {watching}", inline=False)
-            elif custom and streaming:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{custom.name}, {streaming}", inline=False)
-            elif playing and listening:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{custom.name}, {playing.name}", inline=False)
-            elif playing and watching:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{custom.name}, {playing.name}", inline=False)
-            elif playing and streaming:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{custom.name}, {playing.name}", inline=False)
-            elif listening and watching:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{listening}, {watching}", inline=False)
-            elif listening and streaming:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{listening}, {streaming}", inline=False)
-            elif watching and streaming:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{watching}, {streaming}", inline=False)
-            elif listening:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{listening}", inline=False)
-            elif watching:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{watching}", inline=False)
-            elif custom:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{custom.name}", inline=False)
-            elif playing:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"{playing.name}", inline=False)
-            else:
-                embed.add_field(name='<:Astra_stream:1141303918949838929> Status', value=f"No Status", inline=False)
-            embed.add_field(name='<:Astra_user:1141303940365959241> Avatar link', value=f"[Klick hier]({member.avatar})", inline=False)
-            await interaction.response.send_message(embed=embed)
+                badges.append("<:boost1:1494714465684291745>")
+
+        # Custom Badge
+        if member.id == 1141303828625489940:
+            badges.append("<:LastMeadows:1494713907749716008>")
+
+        badge_text = ", ".join(badges) if badges else "—"
+
+        # ================= STATUS (FIXED) =================
+        activity = "—"
+
+        if member.activities:
+            for act in member.activities:
+                if isinstance(act, discord.CustomActivity):
+                    activity = act.name
+                    break
+                elif isinstance(act, discord.Spotify):
+                    activity = f"🎧 {act.title}"
+                    break
+                elif isinstance(act, discord.Game):
+                    activity = f"🎮 {act.name}"
+                    break
+                elif isinstance(act, discord.Streaming):
+                    activity = f"📺 {act.name}"
+                    break
+
+        # ================= EMBED =================
+        embed = discord.Embed(color=discord.Color.orange())
+
+        embed.set_author(
+            name=str(member),
+            icon_url=member.display_avatar.url
+        )
+
+        embed.description = (
+            f"Account erstellt {created}\n"
+            f"Beigetreten {joined}"
+        )
+
+        embed.set_thumbnail(url=member.display_avatar.url)
+
+        if banneruser.banner:
+            embed.set_image(url=banneruser.banner.url)
+
+        embed.add_field(
+            name="Info",
+            value=(
+                f"ID: `{member.id}`\n"
+                f"Bot: {'Ja' if member.bot else 'Nein'}\n"
+                f"Rolle: {top_role.mention if top_role else '@everyone'}"
+            ),
+            inline=False
+        )
+
+        embed.add_field(name="Badges", value=badge_text, inline=False)
+        embed.add_field(name="Status", value=activity, inline=False)
+        embed.add_field(name="Avatar", value=f"[Link]({member.display_avatar.url})", inline=False)
+
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="server", description="Zeigt Informationen über den Server.")
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
