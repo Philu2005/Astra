@@ -1283,6 +1283,59 @@ class Automod(app_commands.Group):
 # ===================== AUTOMOD COG =======================
 # =========================================================
 
+@app_commands.context_menu(name="Warn")
+async def warn_user_context(interaction: discord.Interaction, member: discord.Member):
+
+    # Permission Check
+    if not interaction.user.guild_permissions.moderate_members:
+        return await interaction.response.send_message(
+            "❌ Keine Rechte.",
+            ephemeral=True
+        )
+
+    # Modal für Grund (weil Context Menu keine Argumente hat)
+    class WarnModal(discord.ui.Modal, title="User verwarnen"):
+
+        reason = discord.ui.TextInput(
+            label="Grund",
+            placeholder="Warum wird der User verwarnt?",
+            required=True
+        )
+
+        async def on_submit(self, inter: discord.Interaction):
+
+            async with interaction.client.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+
+                    # Warn Count
+                    await cursor.execute(
+                        "SELECT COUNT(*) FROM warns WHERE userID=%s AND guildID=%s",
+                        (member.id, interaction.guild.id)
+                    )
+                    count_row = await cursor.fetchone()
+                    current_warns = count_row[0] if count_row else 0
+
+                    warnid = current_warns + 1
+
+                    # Insert Warn
+                    await cursor.execute(
+                        "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s,%s,%s,%s)",
+                        (interaction.guild.id, member.id, self.reason.value, warnid)
+                    )
+
+            embed = discord.Embed(
+                title="⚠️ Verwarnung",
+                description=(
+                    f"{member.mention} wurde verwarnt.\n\n"
+                    f"📄 Grund: `{self.reason.value}`\n"
+                    f"📊 Warn-ID: `{warnid}`"
+                ),
+                colour=discord.Colour.red()
+            )
+
+            await inter.response.send_message(embed=embed)
+
+    await interaction.response.send_modal(WarnModal())
 
 
 class Warn(commands.Cog):
@@ -1696,3 +1749,4 @@ class Warn(commands.Cog):
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Warn(bot))
     bot.tree.add_command(Automod(bot))
+    bot.tree.add_command(warn_user_context)
