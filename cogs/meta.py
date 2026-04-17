@@ -128,32 +128,32 @@ async def userinfo_context(interaction: discord.Interaction, member: discord.Mem
                     activities_list.append(content)
 
             elif isinstance(act, discord.Spotify):
-                activities_list.append(f"Spotify: {act.title} - {act.artist}")
+                activities_list.append(f"**Spotify:** {act.title} - {act.artist}")
 
             elif isinstance(act, discord.Game):
                 start_time = ""
                 if act.start:
                     start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
-                activities_list.append(f"Spielt: {act.name}{start_time}")
+                activities_list.append(f"**Spielt:** {act.name}{start_time}")
 
             elif isinstance(act, discord.Streaming):
-                activities_list.append(f"Streamt: {act.name}")
+                activities_list.append(f"**Streamt:** {act.name}")
 
             elif isinstance(act, discord.Activity):
                 prefix = ""
                 if act.type == discord.ActivityType.watching:
-                    prefix = "Schaut: "
+                    prefix = "**Schaut**: "
                 elif act.type == discord.ActivityType.listening:
-                    prefix = "Hört: "
+                    prefix = "**Hört**: "
                 elif act.type == discord.ActivityType.competing:
-                    prefix = "Tritt an in: "
+                    prefix = "**Tritt an in**: "
 
                 start_time = ""
                 if act.start:
                     start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
 
                 if not prefix:
-                    activities_list.append(f"{act.name}{start_time}")
+                    activities_list.append(f"**{act.name}**{start_time}")
                 else:
                     activities_list.append(f"{prefix}{act.name}{start_time}")
 
