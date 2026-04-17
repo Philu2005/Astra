@@ -76,12 +76,20 @@ class InfoGroup(app_commands.Group):
         if member is None:
             member = interaction.user
 
-        # ✅ FIX 2: IMMER fetchen für Presence
-        member = await interaction.guild.fetch_member(member.id)
-        logging.info(member.status)
-        logging.info(member.activities)
-
         banneruser = await interaction.client.fetch_user(member.id)
+
+        # Wir holen das Member-Objekt direkt von der aktuellen Guild
+        # interaction.user ist oft nur ein Member-Objekt mit eingeschränkten Daten
+        # Daher suchen wir ihn spezifisch in der Guild.
+        guild = interaction.guild
+        member = guild.get_member(member.id)
+        
+        # Falls er nicht im Cache ist (was bei aktiven Intents unwahrscheinlich ist, aber vorkommen kann)
+        if member is None:
+            try:
+                member = await guild.fetch_member(banneruser.id) 
+            except:
+                member = interaction.user
 
         created = discord.utils.format_dt(member.created_at, "R")
         joined = discord.utils.format_dt(member.joined_at, "R")
