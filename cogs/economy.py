@@ -11,7 +11,6 @@ from datetime import datetime, timezone, timedelta
 from discord import ui
 import logging
 
-# TODO(@Philu priority:high due:2026-04-15 category:Economy-System issue:refactor risk:medium): Economy-System refactoren und in mehrere Cogs aufteilen (Economy, Gambling, Jobs, Admin), um Struktur, Wartbarkeit und Erweiterbarkeit des Codes zu verbessern.
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"

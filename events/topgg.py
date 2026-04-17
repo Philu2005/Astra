@@ -156,16 +156,11 @@ def setup_topgg_events(bot):   # 👈 DAS IST DER FIX
                     )
 
                 # =============================
-                # ECONOMY-REWARD (MIT MULTIPLIER)
+                # ECONOMY-REWARD (FESTE BASE + STREAK NUR BEI ERHÖHUNG)
                 # =============================
-                base_amount = random.randint(15, 25)
-
-                if streak_increased_today:
-                    multiplier = min(1 + (streak - 1) * 0.05, 2.5)
-                else:
-                    multiplier = 1
-
-                total_amount = round(base_amount * multiplier)
+                base_amount = 20
+                streak_bonus = streak if streak_increased_today else 0
+                total_amount = base_amount + streak_bonus
 
                 await cur.execute(
                     """
@@ -208,7 +203,12 @@ def setup_topgg_events(bot):   # 👈 DAS IST DER FIX
         )
 
         # --- BELohnungstext für Nachricht ---
-        streak_bonus = total_amount - base_amount
+        # Wir müssen streak_bonus hier nochmal berechnen oder aus der logik oben übergeben.
+        # Da wir im globalen Scope von on_dbl_vote sind, definieren wir es basierend auf der Variable von oben.
+        # Da streak_increased_today oben gesetzt wurde, nutzen wir es hier.
+        
+        # Hinweis: streak_bonus und base_amount müssen hier verfügbar sein.
+        # streak_bonus wurde oben berechnet.
 
         if streak_bonus > 0:
             reward_text = (
@@ -217,7 +217,7 @@ def setup_topgg_events(bot):   # 👈 DAS IST DER FIX
             )
         else:
             reward_text = (
-                f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {total_amount} Coins "
+                f"<:Astra_gw1:1141303852889550928> **Deine Belohnung:** {base_amount} Coins "
                 f"(Streak {streak}) <:Coin:1359178077011181811>"
             )
 
