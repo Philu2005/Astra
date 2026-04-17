@@ -337,7 +337,7 @@ class HelpCog(commands.Cog):
         )
 
         embed.add_field(
-            name="`🆕` Letzte Updates",
+            name="`✨` Letzte Updates",
             value=(
                 "> <:Astra_punkt:1141303896745201696> Levelsystem (UI, XP, Struktur)\n"
                 "> <:Astra_punkt:1141303896745201696> Help-System überarbeitet\n"
