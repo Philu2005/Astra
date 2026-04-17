@@ -9,6 +9,7 @@ from discord.ui.view import View
 import requests
 import asyncio
 from collections import deque
+from datetime import timezone
 
 
 def convert(time):
