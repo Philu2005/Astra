@@ -112,14 +112,13 @@ class InfoGroup(app_commands.Group):
             diff = now - member.premium_since
             days = diff.days
 
-            # Nitro (nur wenn boost vorhanden → best guess)
+            # OPTIONAL: einfach EIN Nitro Badge
             badges.append("<:nitro1:1494713979401011271>")
 
+            # NEUE BOOST BADGES (FIXED ORDER)
             if days >= 730:
-                badges.append("<:boost10:1494714456226402416>")
+                badges.append("<:boost9:1494714456226402416>")
             elif days >= 540:
-                badges.append("<:boost9:1494714493413101639>")
-            elif days >= 450:
                 badges.append("<:boost8:1494714462375248213>")
             elif days >= 365:
                 badges.append("<:boost7:1494714475188584668>")
@@ -131,6 +130,8 @@ class InfoGroup(app_commands.Group):
                 badges.append("<:boost4:1494714494624989195>")
             elif days >= 60:
                 badges.append("<:boost3:1494714467550892102>")
+            elif days >= 30:
+                badges.append("<:boost2:1494714493413101639>")
             else:
                 badges.append("<:boost1:1494714465684291745>")
 
