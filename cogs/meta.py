@@ -167,20 +167,34 @@ class InfoGroup(app_commands.Group):
 
         # Aktivitäten sammeln
         activities_list = []
+
         if member.activities:
             for act in member.activities:
                 if isinstance(act, discord.CustomActivity):
                     # Custom Status (der Text unter dem Namen)
-                    activities_list.append(f"💬 {act.name}")
+                    content = ""
+                    if act.emoji:
+                        content += f"{act.emoji} "
+                    if act.name:
+                        content += act.name
+                    if content:
+                        activities_list.append(f"💬 {content}")
+
                 elif isinstance(act, discord.Spotify):
                     # Spotify (Liedtitel)
-                    activities_list.append(f"🎧 {act.title}")
+                    activities_list.append(f"🎧 **Spotify**: {act.title} - {act.artist}")
+
                 elif isinstance(act, discord.Game):
                     # Einfaches Spiel
-                    activities_list.append(f"🎮 {act.name}")
+                    start_time = ""
+                    if act.start:
+                        start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
+                    activities_list.append(f"🎮 **Spielt**: {act.name}{start_time}")
+
                 elif isinstance(act, discord.Streaming):
                     # Stream
-                    activities_list.append(f"📺 {act.name}")
+                    activities_list.append(f"📺 **Streamt**: [{act.name}]({act.url})")
+
                 elif isinstance(act, discord.Activity):
                     # Rich Presence (z.B. PyCharm, VS Code, Discord RPC)
                     prefix = "🕹️"
@@ -190,13 +204,18 @@ class InfoGroup(app_commands.Group):
                         prefix = "👂"
                     elif act.type == discord.ActivityType.competing:
                         prefix = "🏆"
-                    activities_list.append(f"{prefix} {act.name}")
+                    
+                    start_time = ""
+                    if act.start:
+                        start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
+                    
+                    activities_list.append(f"{prefix} **{act.name}**{start_time}")
 
-        # Finale Anzeige: Nur Aktivitäten, falls vorhanden, sonst nur der Status
+        # Finale Anzeige
         if activities_list:
-            activity = " | ".join(activities_list)
+            activity = "\n" + "\n".join(activities_list)
         else:
-            activity = user_status
+            activity = f"Keine Aktivität ({user_status})"
 
         # ================= EMBED =================
         embed = discord.Embed(color=discord.Color.orange())
