@@ -315,7 +315,7 @@ class HelpCog(commands.Cog):
         )
 
         embed.add_field(
-            name="Über Astra",
+            name="`🧩` Über Astra",
             value=(
                 "> <:Astra_support:1141303923752325210> Astra ist ein leistungsstarker Discord-Bot für **Moderation und Sicherheit**. "
                 "Mit Automod, Logs und **Server-Backups** behältst du jederzeit die Kontrolle – "
@@ -337,7 +337,7 @@ class HelpCog(commands.Cog):
         )
 
         embed.add_field(
-            name="Letzte Updates",
+            name="`🆕` Letzte Updates",
             value=(
                 "> <:Astra_punkt:1141303896745201696> Levelsystem (UI, XP, Struktur)\n"
                 "> <:Astra_punkt:1141303896745201696> Help-System überarbeitet\n"
