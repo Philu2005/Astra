@@ -11,6 +11,10 @@ import asyncio
 from collections import deque
 from datetime import timezone
 
+from falcon.bench.nuts.config import logging
+
+from utils import logger
+
 
 def convert(time):
     pos = ["s", "m", "h", "d"]
@@ -76,6 +80,8 @@ class InfoGroup(app_commands.Group):
 
         # ✅ FIX 2: IMMER fetchen für Presence
         member = await interaction.guild.fetch_member(member.id)
+        logging.info(member.status)
+        logging.info(member.activities)
 
         banneruser = await interaction.client.fetch_user(member.id)
 
