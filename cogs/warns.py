@@ -1407,14 +1407,14 @@ async def warn_user_context(interaction: discord.Interaction, member: discord.Me
 async def unwarn_user_context(interaction: discord.Interaction, member: discord.Member):
 
     if not interaction.user.guild_permissions.moderate_members:
-        return await interaction.response.send_message("❌ Keine Rechte.", ephemeral=True)
+        await interaction.response.send_message("❌ Keine Rechte.", ephemeral=True)
+        return
 
     class UnwarnModal(discord.ui.Modal, title="Warn entfernen"):
 
         warnid = discord.ui.TextInput(label="Warn ID", required=True)
 
         async def on_submit(self, inter: discord.Interaction):
-
             async with interaction.client.pool.acquire() as conn:
                 async with conn.cursor() as cursor:
 
@@ -1444,6 +1444,7 @@ async def unwarn_user_context(interaction: discord.Interaction, member: discord.
 
                     await inter.response.send_message(embed=embed)
 
+    # ⚠️ DIREKT reagieren – nichts davor!
     await interaction.response.send_modal(UnwarnModal())
 
 
