@@ -178,38 +178,42 @@ class InfoGroup(app_commands.Group):
                     if act.name:
                         content += act.name
                     if content:
-                        activities_list.append(f"💬 {content}")
+                        activities_list.append(content)
 
                 elif isinstance(act, discord.Spotify):
                     # Spotify (Liedtitel)
-                    activities_list.append(f"🎧 **Spotify**: {act.title} - {act.artist}")
+                    activities_list.append(f"**Spotify**: {act.title} - {act.artist}")
 
                 elif isinstance(act, discord.Game):
                     # Einfaches Spiel
                     start_time = ""
                     if act.start:
                         start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
-                    activities_list.append(f"🎮 **Spielt**: {act.name}{start_time}")
+                    activities_list.append(f"**Spielt**: {act.name}{start_time}")
 
                 elif isinstance(act, discord.Streaming):
                     # Stream
-                    activities_list.append(f"📺 **Streamt**: [{act.name}]({act.url})")
+                    activities_list.append(f"**Streamt**: [{act.name}]({act.url})")
 
                 elif isinstance(act, discord.Activity):
                     # Rich Presence (z.B. PyCharm, VS Code, Discord RPC)
-                    prefix = "🕹️"
+                    prefix = ""
                     if act.type == discord.ActivityType.watching:
-                        prefix = "👁️"
+                        prefix = "**Schaut**: "
                     elif act.type == discord.ActivityType.listening:
-                        prefix = "👂"
+                        prefix = "**Hört**: "
                     elif act.type == discord.ActivityType.competing:
-                        prefix = "🏆"
+                        prefix = "**Tritt an in**: "
                     
                     start_time = ""
                     if act.start:
                         start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
                     
-                    activities_list.append(f"{prefix} **{act.name}**{start_time}")
+                    # Wenn es kein spezieller Typ ist, einfach nur den Namen fett anzeigen
+                    if not prefix:
+                        activities_list.append(f"**{act.name}**{start_time}")
+                    else:
+                        activities_list.append(f"{prefix}{act.name}{start_time}")
 
         # Finale Anzeige
         if activities_list:
