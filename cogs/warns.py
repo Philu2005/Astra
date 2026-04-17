@@ -1286,28 +1286,19 @@ class Automod(app_commands.Group):
 @app_commands.context_menu(name="Warn")
 async def warn_user_context(interaction: discord.Interaction, member: discord.Member):
 
-    # Permission Check
     if not interaction.user.guild_permissions.moderate_members:
-        return await interaction.response.send_message(
-            "❌ Keine Rechte.",
-            ephemeral=True
-        )
+        return await interaction.response.send_message("❌ Keine Rechte.", ephemeral=True)
 
-    # Modal für Grund (weil Context Menu keine Argumente hat)
     class WarnModal(discord.ui.Modal, title="User verwarnen"):
 
-        reason = discord.ui.TextInput(
-            label="Grund",
-            placeholder="Warum wird der User verwarnt?",
-            required=True
-        )
+        reason = discord.ui.TextInput(label="Grund", required=True)
 
         async def on_submit(self, inter: discord.Interaction):
 
             async with interaction.client.pool.acquire() as conn:
                 async with conn.cursor() as cursor:
 
-                    # Warn Count
+                    # WARN COUNT
                     await cursor.execute(
                         "SELECT COUNT(*) FROM warns WHERE userID=%s AND guildID=%s",
                         (member.id, interaction.guild.id)
@@ -1317,25 +1308,143 @@ async def warn_user_context(interaction: discord.Interaction, member: discord.Me
 
                     warnid = current_warns + 1
 
-                    # Insert Warn
                     await cursor.execute(
                         "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s,%s,%s,%s)",
                         (interaction.guild.id, member.id, self.reason.value, warnid)
                     )
 
-            embed = discord.Embed(
-                title="⚠️ Verwarnung",
-                description=(
-                    f"{member.mention} wurde verwarnt.\n\n"
-                    f"📄 Grund: `{self.reason.value}`\n"
-                    f"📊 Warn-ID: `{warnid}`"
-                ),
-                colour=discord.Colour.red()
-            )
+                    # RESPONSE (IDENTISCH)
+                    title = "Neue Verwarnung" if warnid == 1 else "Verwarnung hinzugefügt"
 
-            await inter.response.send_message(embed=embed)
+                    embed = discord.Embed(
+                        title=title,
+                        description=(
+                            f"Der User {member.mention} wurde mit der Warn-ID ``{warnid}``\n\n"
+                            f"📄 **Grund:** `{self.reason.value}`\n\n"
+                            f"Nutze `/warn`, um weitere Verwarnungen zu vergeben."
+                        ),
+                        color=discord.Color.red()
+                    )
+
+                    await inter.response.send_message(embed=embed)
+
+                    # MODLOG (IDENTISCH)
+                    await cursor.execute(
+                        "SELECT channelID FROM modlog WHERE serverID=%s",
+                        (interaction.guild.id,)
+                    )
+                    modlog = await cursor.fetchone()
+
+                    if modlog:
+                        channel = interaction.guild.get_channel(int(modlog[0]))
+                        if channel:
+                            log_embed = discord.Embed(
+                                colour=discord.Colour.orange(),
+                                description=f"{member} (`{member.id}`) wurde verwarnt."
+                            )
+                            log_embed.add_field(name="👤 Member", value=member.mention, inline=False)
+                            log_embed.add_field(
+                                name="👮 Moderator",
+                                value=f"{interaction.user} (`{interaction.user.id}`)",
+                                inline=False
+                            )
+                            log_embed.add_field(name="📄 Grund", value=self.reason.value, inline=False)
+                            log_embed.set_author(name=member, icon_url=member.avatar)
+                            await channel.send(embed=log_embed)
+
+                    # AUTOMOD (IDENTISCH)
+                    await cursor.execute(
+                        "SELECT action, warns, timeout_seconds FROM automod WHERE guildID=%s",
+                        (interaction.guild.id,)
+                    )
+                    rules = await cursor.fetchall()
+
+                    if not rules:
+                        return
+
+                    rules = sorted(rules, key=lambda x: int(x[1]), reverse=True)
+
+                    for action, warn_limit, timeout_seconds in rules:
+                        if warnid >= int(warn_limit):
+
+                            if modlog:
+                                channel = interaction.guild.get_channel(int(modlog[0]))
+                                if channel:
+                                    auto_embed = discord.Embed(
+                                        title="🤖 Automod ausgelöst",
+                                        colour=discord.Colour.dark_orange(),
+                                        timestamp=discord.utils.utcnow()
+                                    )
+                                    auto_embed.add_field(name="👤 Member", value=member.mention, inline=False)
+                                    auto_embed.add_field(
+                                        name="📊 Verwarnungen",
+                                        value=f"{warnid} / {warn_limit}",
+                                        inline=True
+                                    )
+                                    auto_embed.add_field(name="⚙️ Aktion", value=action, inline=True)
+                                    auto_embed.add_field(name="🔔 Auslöser", value="Warn-System", inline=False)
+                                    await channel.send(embed=auto_embed)
+
+                            if action == "Kick":
+                                await member.kick(reason="Automod")
+
+                            elif action == "Ban":
+                                await member.ban(reason="Automod")
+
+                            elif action == "Timeout":
+                                duration = timeout_seconds if timeout_seconds else 30
+                                await member.timeout(
+                                    timedelta(seconds=int(duration)),
+                                    reason="Automod"
+                                )
+
+                            break
 
     await interaction.response.send_modal(WarnModal())
+
+
+@app_commands.context_menu(name="Unwarn")
+async def unwarn_user_context(interaction: discord.Interaction, member: discord.Member):
+
+    if not interaction.user.guild_permissions.moderate_members:
+        return await interaction.response.send_message("❌ Keine Rechte.", ephemeral=True)
+
+    class UnwarnModal(discord.ui.Modal, title="Warn entfernen"):
+
+        warnid = discord.ui.TextInput(label="Warn ID", required=True)
+
+        async def on_submit(self, inter: discord.Interaction):
+
+            async with interaction.client.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+
+                    await cursor.execute(
+                        "DELETE FROM warns WHERE guildID=%s AND warnID=%s AND userID=%s",
+                        (interaction.guild.id, self.warnid.value, member.id)
+                    )
+
+                    if cursor.rowcount > 0:
+                        embed = discord.Embed(
+                            title="Verwarnung gelöscht",
+                            description=(
+                                f"Die Verwarnung des Users {member.mention} mit der ID: ``{self.warnid.value}`` "
+                                f"wurde gelöscht.\nUm jemanden zu warnen nutze `/warn`."
+                            ),
+                            color=discord.Color.green()
+                        )
+                    else:
+                        embed = discord.Embed(
+                            title="Keine Aktuellen erwarnungen",
+                            description=(
+                                f"Es gibt aktuell keine Verwarnungen für den User {member.mention} "
+                                f"mit der WarnID: ``{self.warnid.value}``!\nUm jemanden zu warnen nutze `/warn`."
+                            ),
+                            color=discord.Color.green()
+                        )
+
+                    await inter.response.send_message(embed=embed)
+
+    await interaction.response.send_modal(UnwarnModal())
 
 
 class Warn(commands.Cog):
@@ -1750,3 +1859,4 @@ async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Warn(bot))
     bot.tree.add_command(Automod(bot))
     bot.tree.add_command(warn_user_context)
+    bot.tree.add_command(unwarn_user_context)
