@@ -154,22 +154,41 @@ class InfoGroup(app_commands.Group):
             discord.Status.offline: "Offline"
         }
 
-        activity = status_map.get(member.status, "Unbekannt")
+        # Status aus member.status ermitteln
+        user_status = status_map.get(member.status, "Offline")
 
+        # Aktivitäten sammeln
+        activities_list = []
         if member.activities:
             for act in member.activities:
                 if isinstance(act, discord.CustomActivity):
-                    activity = act.name
-                    break
+                    # Custom Status (der Text unter dem Namen)
+                    activities_list.append(f"💬 {act.name}")
                 elif isinstance(act, discord.Spotify):
-                    activity = f"🎧 {act.title}"
-                    break
+                    # Spotify (Liedtitel)
+                    activities_list.append(f"🎧 {act.title}")
                 elif isinstance(act, discord.Game):
-                    activity = f"🎮 {act.name}"
-                    break
+                    # Einfaches Spiel
+                    activities_list.append(f"🎮 {act.name}")
                 elif isinstance(act, discord.Streaming):
-                    activity = f"📺 {act.name}"
-                    break
+                    # Stream
+                    activities_list.append(f"📺 {act.name}")
+                elif isinstance(act, discord.Activity):
+                    # Rich Presence (z.B. PyCharm, VS Code, Discord RPC)
+                    prefix = "🕹️"
+                    if act.type == discord.ActivityType.watching:
+                        prefix = "👁️"
+                    elif act.type == discord.ActivityType.listening:
+                        prefix = "👂"
+                    elif act.type == discord.ActivityType.competing:
+                        prefix = "🏆"
+                    activities_list.append(f"{prefix} {act.name}")
+
+        # Finale Anzeige: Nur Aktivitäten, falls vorhanden, sonst nur der Status
+        if activities_list:
+            activity = " | ".join(activities_list)
+        else:
+            activity = user_status
 
         # ================= EMBED =================
         embed = discord.Embed(color=discord.Color.orange())
