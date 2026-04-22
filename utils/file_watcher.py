@@ -41,6 +41,10 @@ class ReloadHandler(FileSystemEventHandler):
         if "/utils/" in path:
             return
 
+        # ❌ events komplett ignorieren
+        if "/events/" in path:
+            return
+
         if not self.has_changed(path):
             return
 

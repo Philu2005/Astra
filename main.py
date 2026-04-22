@@ -2,9 +2,7 @@ import discord
 from waitress import serve
 import threading
 from discord.ext import commands
-from discord import app_commands
 from flask import Flask, jsonify
-import math
 import traceback
 import asyncio
 import topgg
@@ -12,8 +10,6 @@ import aiomysql
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timezone
-from typing import Literal
-import re
 import logging
 from threading import Lock
 from utils.db_scheme import run_sql_file
