@@ -61,6 +61,7 @@ class Astra(commands.Bot):
         self.task2 = False
         self.watcher = None
         self.pool = None  # Pool-Objekt hier zentral gespeichert
+        self.is_connecting = False
         self.initial_extensions = [
             "cogs.reminder",
             "cogs.stats",
@@ -276,6 +277,48 @@ class Astra(commands.Bot):
 
             await msg.channel.send(embed=embed)
 
+    async def on_connect(self):
+        self.is_connecting = True
+        logging.info("🌐 Bot verbindet sich mit Discord...")
+
+    async def on_resumed(self):
+        self.is_connecting = False
+        logging.info("♻️ WebSocket-Sitzung erfolgreich fortgesetzt.")
+
+    async def on_ready(self):
+        self.is_connecting = False
+        if self.pool is None:
+            return
+        with guild_cache_lock:
+            guild_cache.clear()
+            for g in self.guilds:
+                guild_cache[g.id] = g
+
+        servercount = len(self.guilds)
+        usercount = sum(guild.member_count for guild in self.guilds)
+        commandCount = len(all_app_commands(self))
+        channelCount = sum(len(guild.channels) for guild in self.guilds)
+
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # Prüfen, ob Zeile mit id=1 existiert
+                await cur.execute("SELECT id FROM website_stats WHERE id=1")
+                result = await cur.fetchone()
+
+                if result is None:
+                    # Wenn nicht, initialen Datensatz anlegen
+                    await cur.execute(
+                        "INSERT INTO website_stats (id, servercount, usercount, commandCount, channelCount) VALUES (1, %s, %s, %s, %s)",
+                        (servercount, usercount, commandCount, channelCount),
+                    )
+                else:
+                    # Ansonsten updaten
+                    await cur.execute(
+                        "UPDATE website_stats SET servercount=%s, usercount=%s, commandCount=%s, channelCount=%s WHERE id=1",
+                        (servercount, usercount, commandCount, channelCount),
+                    )
+                global bot_ready
+                bot_ready = True
 
 
 bot = Astra()
@@ -296,44 +339,6 @@ def all_app_commands(bot):
             seen.add(sig)
             unique.append(cmd)
     return unique
-
-
-@bot.event
-async def on_ready():
-    if bot.pool is None:
-        return
-    with guild_cache_lock:
-        guild_cache.clear()
-        for g in bot.guilds:
-            guild_cache[g.id] = g
-
-    servercount = len(bot.guilds)
-    usercount = sum(guild.member_count for guild in bot.guilds)
-    commandCount = len(all_app_commands(bot))
-    channelCount = sum(len(guild.channels) for guild in bot.guilds)
-
-    async with bot.pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            # Tabelle erstellen, falls sie noch nicht existiert
-
-            # Prüfen, ob Zeile mit id=1 existiert
-            await cur.execute("SELECT id FROM website_stats WHERE id=1")
-            result = await cur.fetchone()
-
-            if result is None:
-                # Wenn nicht, initialen Datensatz anlegen
-                await cur.execute(
-                    "INSERT INTO website_stats (id, servercount, usercount, commandCount, channelCount) VALUES (1, %s, %s, %s, %s)",
-                    (servercount, usercount, commandCount, channelCount),
-                )
-            else:
-                # Ansonsten updaten
-                await cur.execute(
-                    "UPDATE website_stats SET servercount=%s, usercount=%s, commandCount=%s, channelCount=%s WHERE id=1",
-                    (servercount, usercount, commandCount, channelCount),
-                )
-            global bot_ready
-            bot_ready = True
 
 
 async def funktion2(user_id: int, when: datetime):
