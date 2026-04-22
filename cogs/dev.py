@@ -1628,21 +1628,42 @@ class DevTools(commands.Cog):
         """Führt git pull im /root/Astra Verzeichnis aus."""
         await ctx.send("Ziehe Updates vom Git-Repo in /root/Astra...")
 
-        proc = await asyncio.to_thread(
-            subprocess.run,
-            ["/usr/bin/git", "-C", "/root/Astra", "pull"],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+        try:
+            # Nutze create_subprocess_exec für asynchrone Prozesssteuerung
+            proc = await asyncio.create_subprocess_exec(
+                "/usr/bin/git", "-C", "/root/Astra", "pull",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
 
-        output = proc.stdout + proc.stderr
-        if len(output) > 1900:
-            output = output[:1900] + "\n... (gekürzt)"
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+                output = (stdout.decode() + stderr.decode()).strip()
+            except asyncio.TimeoutExpired:
+                proc.kill()
+                return await ctx.send("❌ Zeitüberschreitung beim Git Pull.")
 
-        await ctx.send(f"```bash\n{output}```")
+            if not output:
+                output = "Keine Ausgabe vom Git-Befehl."
 
-        await run_sql_file(self.bot.pool)
+            if len(output) > 1900:
+                output = output[:1900] + "\n... (gekürzt)"
+
+            await ctx.send(f"```bash\n{output}```")
+        except Exception as e:
+            logging.error(f"Git Pull Error: {e}", exc_info=True)
+            return await ctx.send(f"❌ Fehler beim Git Pull: `{e}`")
+
+        await ctx.send("Führe SQL-Migrationen aus...")
+        try:
+            if self.bot.pool:
+                await run_sql_file(self.bot.pool)
+                await ctx.send("✅ SQL-Migrationen erfolgreich abgeschlossen.")
+            else:
+                await ctx.send("⚠️ DB-Pool nicht verfügbar, SQL-Migration übersprungen.")
+        except Exception as e:
+            await ctx.send(f"❌ Fehler bei der SQL-Migration: `{e}`")
+            logging.error(f"SQL Migration Error: {e}", exc_info=True)
 
     # --- Sysinfo ---
     @commands.command(name="sysinfo")
