@@ -250,20 +250,27 @@ def build_most_used_pages(
         period_label: str,
         total_uses: int
 ) -> List[discord.Embed]:
-    page_size = 8
+    page_size = 6
     pages: List[discord.Embed] = []
     total_systems = len(rows)
+    total_pages = ceil(total_systems / page_size)
+    top_command = rows[0][0] if rows else "-"
+    top_command_uses = rows[0][1] if rows else 0
 
     for page_index, start in enumerate(range(0, total_systems, page_size), start=1):
         embed = discord.Embed(
-            title="Most Used Systeme",
-            description=(
-                f"**Zeitraum:** `{period_label}`\n"
-                f"**Gesamtausfuehrungen:** `{total_uses}`\n"
-                f"**Erfasste Systeme:** `{total_systems}`\n\n"
-                "_Sortiert nach Nutzungen des Haupt-Commands_"
-            ),
+            title="Command System Usage",
+            description="Ranked overview of the most used command systems from the tracked slash command log.",
             color=discord.Color.blue()
+        )
+
+        embed.add_field(name="Timeframe", value=f"`{period_label}`", inline=True)
+        embed.add_field(name="Total Uses", value=f"`{total_uses}`", inline=True)
+        embed.add_field(name="Tracked Systems", value=f"`{total_systems}`", inline=True)
+        embed.add_field(
+            name="Top System",
+            value=f"`/{top_command}` with `{top_command_uses}` uses",
+            inline=False
         )
 
         for rank, (command, uses, user_count, guild_count, last_used, top_sub, top_sub_uses) in enumerate(
@@ -271,22 +278,31 @@ def build_most_used_pages(
                 start=start + 1
         ):
             percentage = (uses / total_uses * 100) if total_uses else 0
-            guild_label = "Server" if guild_count == 1 else "Servern"
-            user_label = "User" if user_count == 1 else "Usern"
-            top_sub_label = f"`{top_sub}` ({top_sub_uses}x)" if top_sub else "`-`"
+
+            if rank == 1:
+                rank_label = "1."
+            elif rank == 2:
+                rank_label = "2."
+            elif rank == 3:
+                rank_label = "3."
+            else:
+                rank_label = f"{rank}."
+
+            top_sub_label = f"`{top_sub}` ({top_sub_uses}x)" if top_sub else "`No subcommand data`"
 
             embed.add_field(
-                name=f"#{rank} /{command}",
+                name=f"{rank_label} /{command}",
                 value=(
-                    f"**Nutzungen:** `{uses}` ({percentage:.1f}%)\n"
-                    f"**Aktiv bei:** `{user_count}` {user_label}, `{guild_count}` {guild_label}\n"
-                    f"**Top-Subcommand:** {top_sub_label}\n"
-                    f"**Zuletzt genutzt:** `{last_used.strftime('%d.%m.%Y %H:%M')}`"
+                    f"`{uses}` uses  |  `{percentage:.1f}%` share\n"
+                    f"`{user_count}` users  |  `{guild_count}` guilds\n"
+                    f"Top subcommand: {top_sub_label}\n"
+                    f"Last used: `{last_used.strftime('%d.%m.%Y %H:%M')}`"
                 ),
                 inline=False
             )
 
         embed.set_footer(text=f"Seite {page_index}/{ceil(total_systems / page_size)} • Angefordert von {ctx.author}")
+        embed.set_footer(text=f"Page {page_index}/{total_pages} | Requested by {ctx.author}")
         pages.append(embed)
 
     return pages
