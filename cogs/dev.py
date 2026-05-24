@@ -225,6 +225,74 @@ class CommandStatsView(discord.ui.View):
 
 
 # =========================================================
+# Helper: Zeitraum fuer Stats-Commands
+# =========================================================
+
+def parse_usage_period(period: str) -> tuple[str, Optional[datetime], str]:
+    raw = (period or "all").strip().lower()
+    now = datetime.utcnow()
+
+    if raw in ("today", "heute"):
+        return raw, now.replace(hour=0, minute=0, second=0, microsecond=0), "Heute"
+    if raw in ("week", "woche", "7", "7d", "last7"):
+        return raw, now - timedelta(days=7), "Letzte 7 Tage"
+    if raw in ("30", "30d", "month", "monat", "last30"):
+        return raw, now - timedelta(days=30), "Letzte 30 Tage"
+    if raw.isdigit() and int(raw) > 0:
+        days = int(raw)
+        return raw, now - timedelta(days=days), f"Letzte {days} Tage"
+    return raw, None, "Gesamt"
+
+
+def build_most_used_pages(
+        ctx: commands.Context,
+        rows: list,
+        period_label: str,
+        total_uses: int
+) -> List[discord.Embed]:
+    page_size = 8
+    pages: List[discord.Embed] = []
+    total_systems = len(rows)
+
+    for page_index, start in enumerate(range(0, total_systems, page_size), start=1):
+        embed = discord.Embed(
+            title="Most Used Systeme",
+            description=(
+                f"**Zeitraum:** `{period_label}`\n"
+                f"**Gesamtausfuehrungen:** `{total_uses}`\n"
+                f"**Erfasste Systeme:** `{total_systems}`\n\n"
+                "_Sortiert nach Nutzungen des Haupt-Commands_"
+            ),
+            color=discord.Color.blue()
+        )
+
+        for rank, (command, uses, user_count, guild_count, last_used, top_sub, top_sub_uses) in enumerate(
+                rows[start:start + page_size],
+                start=start + 1
+        ):
+            percentage = (uses / total_uses * 100) if total_uses else 0
+            guild_label = "Server" if guild_count == 1 else "Servern"
+            user_label = "User" if user_count == 1 else "Usern"
+            top_sub_label = f"`{top_sub}` ({top_sub_uses}x)" if top_sub else "`-`"
+
+            embed.add_field(
+                name=f"#{rank} /{command}",
+                value=(
+                    f"**Nutzungen:** `{uses}` ({percentage:.1f}%)\n"
+                    f"**Aktiv bei:** `{user_count}` {user_label}, `{guild_count}` {guild_label}\n"
+                    f"**Top-Subcommand:** {top_sub_label}\n"
+                    f"**Zuletzt genutzt:** `{last_used.strftime('%d.%m.%Y %H:%M')}`"
+                ),
+                inline=False
+            )
+
+        embed.set_footer(text=f"Seite {page_index}/{ceil(total_systems / page_size)} • Angefordert von {ctx.author}")
+        pages.append(embed)
+
+    return pages
+
+
+# =========================================================
 # COG: Command Tracking + Stats
 # =========================================================
 
@@ -1351,6 +1419,80 @@ class DevTools(commands.Cog):
             )
             pages.append(embed)
 
+        view = CommandStatsView(pages)
+        await ctx.send(embed=pages[0], view=view)
+
+    @commands.command(name="mostused", aliases=["mostuseddev", "topsystems"])
+    @commands.is_owner()
+    async def mostused(self, ctx: commands.Context, period: str = "all"):
+        _, start_at, period_label = parse_usage_period(period)
+
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                base_query = """
+                    SELECT command, subcommand, user_id, guild_id, used_at
+                    FROM command_usage
+                """
+                params = []
+
+                if start_at:
+                    base_query += " WHERE used_at >= %s"
+                    params.append(start_at)
+
+                base_query += " ORDER BY used_at DESC"
+
+                await cur.execute(base_query, params)
+                rows = await cur.fetchall()
+
+        if not rows:
+            await ctx.send(f"Keine Command-Nutzungen fuer den Zeitraum `{period_label}` gefunden.")
+            return
+
+        systems = defaultdict(lambda: {
+            "uses": 0,
+            "users": set(),
+            "guilds": set(),
+            "last_used": None,
+            "subcommands": defaultdict(int),
+        })
+
+        for command, subcommand, user_id, guild_id, used_at in rows:
+            system = systems[command]
+            system["uses"] += 1
+            system["users"].add(user_id)
+            system["guilds"].add(guild_id)
+
+            if system["last_used"] is None or used_at > system["last_used"]:
+                system["last_used"] = used_at
+
+            if subcommand:
+                system["subcommands"][subcommand] += 1
+
+        ranking = []
+        total_uses = len(rows)
+
+        for command, data in systems.items():
+            top_sub = None
+            top_sub_uses = 0
+            if data["subcommands"]:
+                top_sub, top_sub_uses = max(
+                    data["subcommands"].items(),
+                    key=lambda item: (item[1], item[0])
+                )
+
+            ranking.append((
+                command,
+                data["uses"],
+                len(data["users"]),
+                len(data["guilds"]),
+                data["last_used"],
+                top_sub,
+                top_sub_uses,
+            ))
+
+        ranking.sort(key=lambda item: (-item[1], item[0]))
+
+        pages = build_most_used_pages(ctx, ranking, period_label, total_uses)
         view = CommandStatsView(pages)
         await ctx.send(embed=pages[0], view=view)
 
