@@ -1042,6 +1042,9 @@ class ReopenView(discord.ui.View):
             return await interaction.response.send_message("Guild nicht gefunden.", ephemeral=True)
 
         opener = guild.get_member(self.opener_id) or interaction.client.get_user(self.opener_id)
+
+        if opener is None:
+            opener = await interaction.client.fetch_user(self.opener_id)
         category = guild.get_channel(self.category_id)
         role = guild.get_role(self.role_id)
         if not isinstance(category, discord.CategoryChannel):
@@ -1140,7 +1143,10 @@ class TicketButtons(discord.ui.View):
                         await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s", (guild.id,))
                         logrow = await cur.fetchone()
 
-                opener = inter.client.get_user(int(opened_id))
+                opener = guild.get_member(int(opened_id)) or interaction.client.get_user(int(opened_id))
+
+                if opener is None:
+                    opener = await interaction.client.fetch_user(int(opened_id))
                 claimer = None if claimed == "Not Set" else inter.client.get_user(int(claimed))
                 closer = inter.user
 
@@ -1295,7 +1301,10 @@ class TicketButtons(discord.ui.View):
                 await cur.execute("UPDATE ticketsystem_channels SET claimed=%s WHERE channelID=%s", (member.id, channel.id))
 
         msg = await channel.fetch_message(int(msg_id))
-        opener = interaction.client.get_user(int(opened_id))
+        opener = guild.get_member(int(opened_id)) or interaction.client.get_user(int(opened_id))
+
+        if opener is None:
+            opener = await interaction.client.fetch_user(int(opened_id))
 
         # Schönes Embed + Button lokal deaktivieren
         embed = mk_embed(
