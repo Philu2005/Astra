@@ -1,8 +1,9 @@
+import os
 import re
 import logging
 from pathlib import Path
 
-SCHEMA_PATH = "/root/Astra/opt/schema.sql"
+SCHEMA_PATH = os.getenv("SCHEMA_PATH", "opt/schema.sql")
 
 
 async def table_exists(cur, table_name: str) -> bool:

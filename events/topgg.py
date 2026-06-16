@@ -30,18 +30,21 @@ def setup_topgg_events(bot):   # 👈 DAS IST DER FIX
                     return bot.dispatch("dbl_test", data)
 
                 # --- User/Guild/Objekte ---
-                user_id = int(data["user"])
-                user = bot.get_user(user_id)
-                if user is None:
-                    try:
-                        user = await bot.fetch_user(user_id)
-                    except Exception:
-                        logging.error(f"User {user_id} nicht gefunden")
-                        return
-
                 guild = bot.get_guild(1141116981697859736)
                 if not guild:
                     logging.error("Guild nicht gefunden!")
+                    return
+
+                user_id = int(data["user"])
+                try:
+                    user = guild.get_member(user_id) or await guild.fetch_member(user_id)
+                except discord.NotFound:
+                    user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+                except Exception:
+                    user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+
+                if user is None:
+                    logging.error(f"User {user_id} nicht gefunden")
                     return
 
                 voterole = guild.get_role(1141116981756575875)
