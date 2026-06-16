@@ -314,28 +314,21 @@ class Astra(commands.Bot):
                 guild_cache[g.id] = g
 
         servercount = len(self.guilds)
-        usercount = sum(guild.member_count for guild in self.guilds)
+        usercount = sum(guild.member_count or 0 for guild in self.guilds)
         commandCount = len(self.all_app_commands())
         channelCount = sum(len(guild.channels) for guild in self.guilds)
 
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                # Prüfen, ob Zeile mit id=1 existiert
-                await cur.execute("SELECT id FROM website_stats WHERE id=1")
-                result = await cur.fetchone()
-
-                if result is None:
-                    # Wenn nicht, initialen Datensatz anlegen
-                    await cur.execute(
-                        "INSERT INTO website_stats (id, servercount, usercount, commandCount, channelCount) VALUES (1, %s, %s, %s, %s)",
-                        (servercount, usercount, commandCount, channelCount),
-                    )
-                else:
-                    # Ansonsten updaten
-                    await cur.execute(
-                        "UPDATE website_stats SET servercount=%s, usercount=%s, commandCount=%s, channelCount=%s WHERE id=1",
-                        (servercount, usercount, commandCount, channelCount),
-                    )
+                # Updaten oder Einfügen (UPSERT Simulation für MySQL)
+                await cur.execute("""
+                    INSERT INTO website_stats (id, servercount, usercount, commandCount, channelCount)
+                    VALUES (1, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE 
+                        servercount=%s, usercount=%s, commandCount=%s, channelCount=%s
+                """, (servercount, usercount, commandCount, channelCount,
+                      servercount, usercount, commandCount, channelCount))
+                
                 self.bot_ready = True
 
     def all_app_commands(self):
