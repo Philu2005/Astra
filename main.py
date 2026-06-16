@@ -25,15 +25,6 @@ bot_ready = False
 
 setup_logging()
 
-intents = discord.Intents.default()
-
-intents.guilds = True
-intents.members = True
-intents.voice_states = True
-intents.messages = True
-intents.message_content = True
-intents.reactions = True
-intents.presences = True
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -48,6 +39,15 @@ dbl_port = os.getenv("DBL_PORT")
 
 class Astra(commands.Bot):
     def __init__(self):
+        intents = discord.Intents.default()
+        intents.guilds = True
+        intents.members = True
+        intents.voice_states = True
+        intents.messages = True
+        intents.message_content = True
+        intents.reactions = True
+        intents.presences = True
+
         super().__init__(
             command_prefix="astra!",
             help_command=None,
@@ -62,6 +62,7 @@ class Astra(commands.Bot):
         self.watcher = None
         self.pool = None  # Pool-Objekt hier zentral gespeichert
         self.is_connecting = False
+        self.bot_ready = False
         self.initial_extensions = [
             "cogs.reminder",
             "cogs.stats",
@@ -99,16 +100,33 @@ class Astra(commands.Bot):
 
     async def setup_hook(self):
         try:
-            self.loop.create_task(rotating_presence(self))
-            self.topggpy = topgg.DBLClient(self, str(dbl_token))
-            bot.topgg_webhook = topgg.WebhookManager(bot).dbl_webhook(
-                "/webhook/7d9f1c0a-topgg-astrabot", str(dbl_password)
-            )
-            await bot.topgg_webhook.run(int(dbl_port))
-            self.loop.create_task(cleanup_logs_task(self))
+            # 1. Datenbank-Verbindung herstellen (Priorität hoch)
             await self.connect_db()
             await self.init_tables()
+
+            # 2. Cogs laden
             await self.load_cogs()
+
+            # 3. Externe Dienste (Top.gg)
+            if dbl_token:
+                self.topggpy = topgg.DBLClient(self, str(dbl_token))
+            
+            if dbl_password and dbl_port:
+                try:
+                    self.topgg_webhook = topgg.WebhookManager(self).dbl_webhook(
+                        "/webhook/7d9f1c0a-topgg-astrabot", str(dbl_password)
+                    )
+                    await self.topgg_webhook.run(int(dbl_port))
+                except Exception as e:
+                    logging.error(f"❌ Fehler beim Starten des Top.gg Webhooks: {e}")
+
+            # 4. Hintergrund-Tasks
+            self.loop.create_task(rotating_presence(self))
+            self.loop.create_task(cleanup_logs_task(self))
+            self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
+
+            self.watcher = Watcher(self)
+            self.watcher.start()
 
             logging.info("")
             logging.info("")
@@ -122,11 +140,9 @@ class Astra(commands.Bot):
             logging.info("██║  ██║███████║   ██║   ██║  ██║██║  ██║ ")
             logging.info("╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ")
             logging.info("───────────────────── ✓ ─────────────────────")
-            self.watcher = Watcher(self)
-            self.watcher.start()
-            self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
         except Exception as e:
             logging.error(f"❌ Fehler beim Setup:\n{e}")
+            traceback.print_exc()
 
     async def keep_db_alive(self):
         while True:
@@ -191,7 +207,7 @@ class Astra(commands.Bot):
                                 when = datetime.fromtimestamp(int(ts), timezone.utc)
                                 if when <= now:
                                     when = now
-                                asyncio.create_task(funktion2(user_id, when))
+                                asyncio.create_task(self.funktion2(user_id, when))
                                 await asyncio.sleep(0.05)
                             except Exception as e:
                                 logging.error(
@@ -241,11 +257,14 @@ class Astra(commands.Bot):
     async def on_message(self, msg):
         if msg.author.bot:
             return
-        await bot.process_commands(msg)
+        await self.process_commands(msg)
 
-        botcreated_ts = int(bot.user.created_at.timestamp())
+        if self.user is None:
+            return
 
-        if msg.content in (f"<@{bot.user.id}>", f"<@!{bot.user.id}>"):
+        botcreated_ts = int(self.user.created_at.timestamp())
+
+        if msg.content in (f"<@{self.user.id}>", f"<@!{self.user.id}>"):
             embed = discord.Embed(
                 title="Astra",
                 url="https://astra-bot.de/support",
@@ -296,7 +315,7 @@ class Astra(commands.Bot):
 
         servercount = len(self.guilds)
         usercount = sum(guild.member_count for guild in self.guilds)
-        commandCount = len(all_app_commands(self))
+        commandCount = len(self.all_app_commands())
         channelCount = sum(len(guild.channels) for guild in self.guilds)
 
         async with self.pool.acquire() as conn:
@@ -317,116 +336,112 @@ class Astra(commands.Bot):
                         "UPDATE website_stats SET servercount=%s, usercount=%s, commandCount=%s, channelCount=%s WHERE id=1",
                         (servercount, usercount, commandCount, channelCount),
                     )
-                global bot_ready
-                bot_ready = True
+                self.bot_ready = True
+
+    def all_app_commands(self):
+        global_commands = self.tree.get_commands()
+        from itertools import chain
+
+        guild_commands = chain.from_iterable(self.tree._guild_commands.values())
+        all_commands = list(global_commands) + list(guild_commands)
+        # Optional unique machen:
+        seen = set()
+        unique = []
+        for cmd in all_commands:
+            sig = (cmd.name, getattr(cmd, "type", None))
+            if sig not in seen:
+                seen.add(sig)
+                unique.append(cmd)
+        return unique
+
+
+    async def funktion2(self, user_id: int, when: datetime):
+        await self.wait_until_ready()
+
+        # UTC-sicher
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        await discord.utils.sleep_until(when)
+        now = datetime.now(timezone.utc)
+
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # --- Schutz: ist der Reminder noch gültig? ---
+                # Falls der User inzwischen erneut gevotet hat und ein NEUER next_vote_epoch gesetzt wurde,
+                # ist dieser Task veraltet und wird übersprungen.
+                try:
+                    await cur.execute(
+                        "SELECT next_vote_epoch FROM topgg WHERE userID=%s", (user_id,)
+                    )
+                    row = await cur.fetchone()
+                    current_ts = row[0] if row else None
+                    if current_ts is None:
+                        return
+                    if current_ts > int(when.timestamp()):
+                        return
+                except Exception as e:
+                    logging.warning(
+                        f"[VoteReminder] Vorab-Check fehlgeschlagen ({user_id}): {e}"
+                    )
+
+                # --- DM senden ---
+                try:
+                    user = self.get_user(user_id) or await self.fetch_user(user_id)
+                    embed = discord.Embed(
+                        title="<:Astra_time:1141303932061233202> Du kannst wieder voten!",
+                        url="https://top.gg/de/bot/1113403511045107773/vote",
+                        description=(
+                            "Der Cooldown von 12h ist vorbei. Es wäre schön, wenn du wieder votest.\n"
+                            "Als Belohnung erhältst du eine spezielle Rolle auf unserem Support-Server."
+                        ),
+                        colour=discord.Colour.blue(),
+                    )
+                    await user.send(embed=embed)
+                except Exception as e:
+                    logging.warning(
+                        f"[VoteReminder] ❌ DM an {user_id} fehlgeschlagen: {e}"
+                    )
+
+                # --- Rolle entfernen (optional) ---
+                guild = self.get_guild(1141116981697859736)
+                voterole = guild.get_role(1141116981756575875) if guild else None
+                if guild and voterole:
+                    try:
+                        member = guild.get_member(user_id) or await guild.fetch_member(
+                            user_id
+                        )
+                    except Exception:
+                        member = None
+                    if member and voterole in getattr(member, "roles", []):
+                        try:
+                            await member.remove_roles(
+                                voterole, reason="Voterole Cooldown abgelaufen"
+                            )
+                        except Exception as e:
+                            logging.warning(
+                                f"[VoteReminder] Rolle entfernen fehlgeschlagen ({user_id}): {e}"
+                            )
+
+                # --- Reminder verbrauchen (nur wenn noch derselbe fällig ist) ---
+                try:
+                    await cur.execute(
+                        "UPDATE topgg SET next_vote_epoch=NULL "
+                        "WHERE userID=%s AND next_vote_epoch <= %s",
+                        (user_id, int(when.timestamp())),
+                    )
+                except Exception as e:
+                    logging.error(
+                        f"[VoteReminder] DB-Update fehlgeschlagen ({user_id}): {e}"
+                    )
+
+            try:
+                await conn.commit()
+            except Exception:
+                pass
 
 
 bot = Astra()
 
-
-def all_app_commands(bot):
-    global_commands = bot.tree.get_commands()
-    from itertools import chain
-
-    guild_commands = chain.from_iterable(bot.tree._guild_commands.values())
-    all_commands = list(global_commands) + list(guild_commands)
-    # Optional unique machen:
-    seen = set()
-    unique = []
-    for cmd in all_commands:
-        sig = (cmd.name, getattr(cmd, "type", None))
-        if sig not in seen:
-            seen.add(sig)
-            unique.append(cmd)
-    return unique
-
-
-async def funktion2(user_id: int, when: datetime):
-    await bot.wait_until_ready()
-
-    # UTC-sicher
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    await discord.utils.sleep_until(when)
-    now = datetime.now(timezone.utc)
-
-    async with bot.pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            # --- Schutz: ist der Reminder noch gültig? ---
-            # Falls der User inzwischen erneut gevotet hat und ein NEUER next_vote_epoch gesetzt wurde,
-            # ist dieser Task veraltet und wird übersprungen.
-            try:
-                await cur.execute(
-                    "SELECT next_vote_epoch FROM topgg WHERE userID=%s", (user_id,)
-                )
-                row = await cur.fetchone()
-                current_ts = row[0] if row else None
-                if current_ts is None:
-                    return
-                if current_ts > int(when.timestamp()):
-                    return
-            except Exception as e:
-                logging.warning(
-                    f"[VoteReminder] Vorab-Check fehlgeschlagen ({user_id}): {e}"
-                )
-
-            # --- DM senden ---
-            try:
-                user = bot.get_user(user_id) or await bot.fetch_user(user_id)
-                embed = discord.Embed(
-                    title="<:Astra_time:1141303932061233202> Du kannst wieder voten!",
-                    url="https://top.gg/de/bot/1113403511045107773/vote",
-                    description=(
-                        "Der Cooldown von 12h ist vorbei. Es wäre schön, wenn du wieder votest.\n"
-                        "Als Belohnung erhältst du eine spezielle Rolle auf unserem Support-Server."
-                    ),
-                    colour=discord.Colour.blue(),
-                )
-                await user.send(embed=embed)
-            except Exception as e:
-                logging.warning(
-                    f"[VoteReminder] ❌ DM an {user_id} fehlgeschlagen: {e}"
-                )
-
-            # --- Rolle entfernen (optional) ---
-            guild = bot.get_guild(1141116981697859736)
-            voterole = guild.get_role(1141116981756575875) if guild else None
-            if guild and voterole:
-                try:
-                    member = guild.get_member(user_id) or await guild.fetch_member(
-                        user_id
-                    )
-                except Exception:
-                    member = None
-                if member and voterole in getattr(member, "roles", []):
-                    try:
-                        await member.remove_roles(
-                            voterole, reason="Voterole Cooldown abgelaufen"
-                        )
-                    except Exception as e:
-                        logging.warning(
-                            f"[VoteReminder] Rolle entfernen fehlgeschlagen ({user_id}): {e}"
-                        )
-
-            # --- Reminder verbrauchen (nur wenn noch derselbe fällig ist) ---
-            try:
-                await cur.execute(
-                    "UPDATE topgg SET next_vote_epoch=NULL "
-                    "WHERE userID=%s AND next_vote_epoch <= %s",
-                    (user_id, int(when.timestamp())),
-                )
-            except Exception as e:
-                logging.error(
-                    f"[VoteReminder] DB-Update fehlgeschlagen ({user_id}): {e}"
-                )
-
-        try:
-            await conn.commit()
-        except Exception:
-            pass
-
-
-bot.funktion2 = funktion2
 
 setup_topgg_events(bot)
 
@@ -520,7 +535,7 @@ def servers():
 
 @app.route("/servers/<int:guild_id>")
 def server_detail(guild_id):
-    if not bot_ready:
+    if not bot.bot_ready:
         return jsonify(success=False, error="Bot not ready"), 503
     with guild_cache_lock:
         guild = guild_cache.get(guild_id)
@@ -544,7 +559,7 @@ def server_detail(guild_id):
 
 @app.route("/servers/<int:guild_id>/roles")
 def server_roles(guild_id):
-    if not bot_ready:
+    if not bot.bot_ready:
         return jsonify(success=False, error="Bot not ready"), 503
 
     with guild_cache_lock:
