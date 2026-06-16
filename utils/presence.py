@@ -29,9 +29,9 @@ async def rotating_presence(client: discord.Client):
                 member_count = sum(g.member_count or 0 for g in client.guilds)
                 last_update = current_time
 
-            # 🇩🇪 Deutsche Tausendertrennung
-            server_str = f"{server_count:,}".replace(",", ".")
-            member_str = f"{member_count:,}".replace(",", ".")
+            # 🇩🇪 Deutsche Tausendertrennung (Punkt als Trenner)
+            server_str = format(server_count, ",").replace(",", ".")
+            member_str = format(member_count, ",").replace(",", ".")
 
             # 🌙 Idle zwischen 00:00–06:00 deutscher Zeit
             astra_status = discord.Status.idle if 0 <= now.hour < 6 else discord.Status.online
