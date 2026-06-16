@@ -1,9 +1,12 @@
 import os
 import re
 import logging
+import platform
 from pathlib import Path
 
-SCHEMA_PATH = os.getenv("SCHEMA_PATH", "opt/schema.sql")
+SCHEMA_PATH = os.getenv("SCHEMA_PATH")
+if not SCHEMA_PATH:
+    SCHEMA_PATH = str(Path(__file__).parent.parent / "opt" / "schema.sql")
 
 
 async def table_exists(cur, table_name: str) -> bool:
