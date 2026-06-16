@@ -80,7 +80,12 @@ class ReloadHandler(FileSystemEventHandler):
                 time.sleep(2.0)
                 try:
                     logger.warning("Führe System-Restart aus...")
-                    os.system("/usr/bin/systemctl restart astrabot.service")
+                    if os.name == "nt":  # Windows
+                        logger.info("Restart auf Windows: Bitte den Bot manuell neu starten oder ein Process-Manager nutzen.")
+                    else:  # Linux/Unix
+                        os.system("/usr/bin/systemctl restart astrabot.service")
+                except Exception as e:
+                    logger.error(f"Fehler beim Restart: {e}")
                 finally:
                     with self.lock:
                         self.restart_in_progress = False
