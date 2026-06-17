@@ -207,28 +207,21 @@ class TempChannelView(discord.ui.View):
                 ephemeral=True
             )
 
-        overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(
-                connect=False,
-                view_channel=True,
-                use_voice_activation=True
-            ),
-            interaction.user: discord.PermissionOverwrite(
-                connect=True,
-                speak=True,
-                view_channel=True,
-                use_voice_activation=True
-            ),
-            interaction.guild.me: discord.PermissionOverwrite(
-                connect=True,
-                view_channel=True,
-                manage_channels=True,
-                speak=True,
-                use_voice_activation=True
-            ),
-        }
         try:
-            await vc.edit(overwrites=overwrites)
+            # Nur @everyone und den Besitzer anpassen, Rest bleibt erhalten
+            over_everyone = vc.overwrites_for(interaction.guild.default_role)
+            over_everyone.connect = False
+            over_everyone.view_channel = True
+            over_everyone.use_voice_activation = True
+            await vc.set_permissions(interaction.guild.default_role, overwrite=over_everyone)
+
+            over_owner = vc.overwrites_for(interaction.user)
+            over_owner.connect = True
+            over_owner.speak = True
+            over_owner.view_channel = True
+            over_owner.use_voice_activation = True
+            await vc.set_permissions(interaction.user, overwrite=over_owner)
+
             await interaction.followup.send(
                 "<:Astra_accept:1141303821176422460> **Der Kanal wurde erfolgreich gesperrt.**",
                 ephemeral=True
@@ -265,29 +258,22 @@ class TempChannelView(discord.ui.View):
                 ephemeral=True
             )
 
-        overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(
-                connect=True,
-                view_channel=True,
-                speak=True,
-                use_voice_activation=True
-            ),
-            interaction.user: discord.PermissionOverwrite(
-                connect=True,
-                speak=True,
-                view_channel=True,
-                use_voice_activation=True
-            ),
-            interaction.guild.me: discord.PermissionOverwrite(
-                connect=True,
-                view_channel=True,
-                manage_channels=True,
-                speak=True,
-                use_voice_activation=True
-            ),
-        }
         try:
-            await vc.edit(overwrites=overwrites)
+            # Nur @everyone und den Besitzer anpassen, Rest bleibt erhalten
+            over_everyone = vc.overwrites_for(interaction.guild.default_role)
+            over_everyone.connect = True
+            over_everyone.view_channel = True
+            over_everyone.speak = True
+            over_everyone.use_voice_activation = True
+            await vc.set_permissions(interaction.guild.default_role, overwrite=over_everyone)
+
+            over_owner = vc.overwrites_for(interaction.user)
+            over_owner.connect = True
+            over_owner.speak = True
+            over_owner.view_channel = True
+            over_owner.use_voice_activation = True
+            await vc.set_permissions(interaction.user, overwrite=over_owner)
+
             await interaction.followup.send(
                 "<:Astra_accept:1141303821176422460> **Der Kanal wurde erfolgreich entsperrt.**",
                 ephemeral=True
@@ -324,27 +310,20 @@ class TempChannelView(discord.ui.View):
                 ephemeral=True
             )
 
-        overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(
-                view_channel=False,
-                use_voice_activation=True
-            ),
-            interaction.user: discord.PermissionOverwrite(
-                connect=True,
-                speak=True,
-                view_channel=True,
-                use_voice_activation=True
-            ),
-            interaction.guild.me: discord.PermissionOverwrite(
-                connect=True,
-                view_channel=True,
-                manage_channels=True,
-                speak=True,
-                use_voice_activation=True
-            ),
-        }
         try:
-            await vc.edit(overwrites=overwrites)
+            # Nur @everyone und den Besitzer anpassen, Rest bleibt erhalten
+            over_everyone = vc.overwrites_for(interaction.guild.default_role)
+            over_everyone.view_channel = False
+            over_everyone.use_voice_activation = True
+            await vc.set_permissions(interaction.guild.default_role, overwrite=over_everyone)
+
+            over_owner = vc.overwrites_for(interaction.user)
+            over_owner.connect = True
+            over_owner.speak = True
+            over_owner.view_channel = True
+            over_owner.use_voice_activation = True
+            await vc.set_permissions(interaction.user, overwrite=over_owner)
+
             await interaction.followup.send(
                 "<:Astra_accept:1141303821176422460> **Der Kanal ist nun verborgen.**",
                 ephemeral=True
@@ -381,29 +360,22 @@ class TempChannelView(discord.ui.View):
                 ephemeral=True
             )
 
-        overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(
-                view_channel=True,
-                connect=True,
-                speak=True,
-                use_voice_activation=True
-            ),
-            interaction.user: discord.PermissionOverwrite(
-                connect=True,
-                speak=True,
-                view_channel=True,
-                use_voice_activation=True
-            ),
-            interaction.guild.me: discord.PermissionOverwrite(
-                connect=True,
-                view_channel=True,
-                manage_channels=True,
-                speak=True,
-                use_voice_activation=True
-            ),
-        }
         try:
-            await vc.edit(overwrites=overwrites)
+            # Nur @everyone und den Besitzer anpassen, Rest bleibt erhalten
+            over_everyone = vc.overwrites_for(interaction.guild.default_role)
+            over_everyone.view_channel = True
+            over_everyone.connect = True
+            over_everyone.speak = True
+            over_everyone.use_voice_activation = True
+            await vc.set_permissions(interaction.guild.default_role, overwrite=over_everyone)
+
+            over_owner = vc.overwrites_for(interaction.user)
+            over_owner.connect = True
+            over_owner.speak = True
+            over_owner.view_channel = True
+            over_owner.use_voice_activation = True
+            await vc.set_permissions(interaction.user, overwrite=over_owner)
+
             await interaction.followup.send(
                 "<:Astra_accept:1141303821176422460> **Der Kanal ist nun für alle sichtbar.**",
                 ephemeral=True
@@ -708,13 +680,6 @@ class TempChannelCog(commands.Cog):
                         output = await after.channel.clone(
                             name=name,
                             reason="JoinHub gejoined."
-                        )
-
-                        await output.set_permissions(
-                            member.guild.default_role,
-                            connect=True,
-                            speak=True,
-                            use_voice_activation=True
                         )
 
                         if output:
