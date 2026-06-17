@@ -638,6 +638,13 @@ class TempChannelCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        if member.bot:
+            return
+
+        # Nur reagieren, wenn sich der Channel geändert hat
+        if before.channel == after.channel:
+            return
+
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 # Wenn ein Tempchannel leer wird -> löschen
