@@ -208,20 +208,7 @@ class TempChannelView(discord.ui.View):
             )
 
         try:
-            # Nur @everyone und den Besitzer anpassen, Rest bleibt erhalten
-            over_everyone = vc.overwrites_for(interaction.guild.default_role)
-            over_everyone.connect = False
-            over_everyone.view_channel = True
-            over_everyone.use_voice_activation = True
-            await vc.set_permissions(interaction.guild.default_role, overwrite=over_everyone)
-
-            over_owner = vc.overwrites_for(interaction.user)
-            over_owner.connect = True
-            over_owner.speak = True
-            over_owner.view_channel = True
-            over_owner.use_voice_activation = True
-            await vc.set_permissions(interaction.user, overwrite=over_owner)
-
+            await vc.set_permissions(interaction.guild.default_role, connect=False, reason="Kanal gesperrt")
             await interaction.followup.send(
                 "<:Astra_accept:1141303821176422460> **Der Kanal wurde erfolgreich gesperrt.**",
                 ephemeral=True
@@ -259,21 +246,7 @@ class TempChannelView(discord.ui.View):
             )
 
         try:
-            # Nur @everyone und den Besitzer anpassen, Rest bleibt erhalten
-            over_everyone = vc.overwrites_for(interaction.guild.default_role)
-            over_everyone.connect = True
-            over_everyone.view_channel = True
-            over_everyone.speak = True
-            over_everyone.use_voice_activation = True
-            await vc.set_permissions(interaction.guild.default_role, overwrite=over_everyone)
-
-            over_owner = vc.overwrites_for(interaction.user)
-            over_owner.connect = True
-            over_owner.speak = True
-            over_owner.view_channel = True
-            over_owner.use_voice_activation = True
-            await vc.set_permissions(interaction.user, overwrite=over_owner)
-
+            await vc.set_permissions(interaction.guild.default_role, connect=True, reason="Kanal entsperrt")
             await interaction.followup.send(
                 "<:Astra_accept:1141303821176422460> **Der Kanal wurde erfolgreich entsperrt.**",
                 ephemeral=True
@@ -311,19 +284,7 @@ class TempChannelView(discord.ui.View):
             )
 
         try:
-            # Nur @everyone und den Besitzer anpassen, Rest bleibt erhalten
-            over_everyone = vc.overwrites_for(interaction.guild.default_role)
-            over_everyone.view_channel = False
-            over_everyone.use_voice_activation = True
-            await vc.set_permissions(interaction.guild.default_role, overwrite=over_everyone)
-
-            over_owner = vc.overwrites_for(interaction.user)
-            over_owner.connect = True
-            over_owner.speak = True
-            over_owner.view_channel = True
-            over_owner.use_voice_activation = True
-            await vc.set_permissions(interaction.user, overwrite=over_owner)
-
+            await vc.set_permissions(interaction.guild.default_role, view_channel=False, reason="Kanal versteckt")
             await interaction.followup.send(
                 "<:Astra_accept:1141303821176422460> **Der Kanal ist nun verborgen.**",
                 ephemeral=True
@@ -361,21 +322,7 @@ class TempChannelView(discord.ui.View):
             )
 
         try:
-            # Nur @everyone und den Besitzer anpassen, Rest bleibt erhalten
-            over_everyone = vc.overwrites_for(interaction.guild.default_role)
-            over_everyone.view_channel = True
-            over_everyone.connect = True
-            over_everyone.speak = True
-            over_everyone.use_voice_activation = True
-            await vc.set_permissions(interaction.guild.default_role, overwrite=over_everyone)
-
-            over_owner = vc.overwrites_for(interaction.user)
-            over_owner.connect = True
-            over_owner.speak = True
-            over_owner.view_channel = True
-            over_owner.use_voice_activation = True
-            await vc.set_permissions(interaction.user, overwrite=over_owner)
-
+            await vc.set_permissions(interaction.guild.default_role, view_channel=True, reason="Kanal sichtbar gemacht")
             await interaction.followup.send(
                 "<:Astra_accept:1141303821176422460> **Der Kanal ist nun für alle sichtbar.**",
                 ephemeral=True
@@ -673,13 +620,53 @@ class TempChannelCog(commands.Cog):
                             except ValueError:
                                 pass
 
-                # JoinHub gejoint -> persönlichen Kanal klonen
+                # JoinHub gejoint -> persönlichen Kanal erstellen
                 if after and after.channel:
                     if await isJoinHub(self.bot, after.channel):
                         name = f"{member.name}"
-                        output = await after.channel.clone(
+                        # Wir erstellen den Kanal neu statt zu klonen, um keine unerwünschten Overwrites zu übernehmen
+                        # und setzen die Berechtigungen explizit.
+                        category = after.channel.category
+                        
+                        overwrites = {
+                            member.guild.default_role: discord.PermissionOverwrite(
+                                connect=True,
+                                speak=True,
+                                stream=True,
+                                use_embedded_activities=True,
+                                use_voice_activation=True,
+                                use_soundboard=True,
+                                use_external_sounds=True,
+                                request_to_speak=True
+                            ),
+                            member: discord.PermissionOverwrite(
+                                connect=True,
+                                speak=True,
+                                stream=True,
+                                use_embedded_activities=True,
+                                use_voice_activation=True,
+                                priority_speaker=True,
+                                mute_members=True,
+                                deafen_members=True,
+                                move_members=True,
+                                use_soundboard=True,
+                                use_external_sounds=True,
+                                request_to_speak=True
+                            ),
+                            member.guild.me: discord.PermissionOverwrite(
+                                connect=True,
+                                speak=True,
+                                view_channel=True,
+                                manage_channels=True,
+                                move_members=True
+                            )
+                        }
+
+                        output = await member.guild.create_voice_channel(
                             name=name,
-                            reason="JoinHub gejoined."
+                            category=category,
+                            overwrites=overwrites,
+                            reason="Tempchannel erstellt."
                         )
 
                         if output:
@@ -695,6 +682,7 @@ class TempChannelCog(commands.Cog):
                                     "INSERT INTO usertempchannels (guildID, userID, channelID) VALUES (%s, %s, %s)",
                                     (after.channel.guild.id, member.id, output.id)
                                 )
+                                await conn.commit()
                             except Exception:
                                 pass
 
