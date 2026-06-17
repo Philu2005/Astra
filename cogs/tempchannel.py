@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import traceback
 from typing import Literal
@@ -392,11 +392,53 @@ class TempChannelView(discord.ui.View):
 class TempChannelCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.cleanup_task.start()
+
+    def cog_unload(self):
+        self.cleanup_task.cancel()
 
     # Persistente View registrieren
     @commands.Cog.listener()
     async def on_ready(self):
         self.bot.add_view(TempChannelView())
+
+    @tasks.loop(count=1)
+    async def cleanup_task(self):
+        """Wird einmal beim Start ausgeführt, um verwaiste/leere Tempchannels zu löschen."""
+        await self.bot.wait_until_ready()
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT guildID, channelID FROM usertempchannels")
+                rows = await cur.fetchall()
+
+                for guild_id, channel_id in rows:
+                    guild = self.bot.get_guild(int(guild_id))
+                    if not guild:
+                        continue
+                    
+                    channel = guild.get_channel(int(channel_id))
+                    
+                    # Wenn der Kanal nicht mehr existiert oder leer ist
+                    if channel is None:
+                        await cur.execute(
+                            "DELETE FROM usertempchannels WHERE guildID = %s AND channelID = %s",
+                            (guild_id, channel_id)
+                        )
+                    elif len(channel.members) == 0:
+                        try:
+                            await channel.delete(reason="Bereinigung nach Bot-Neustart (Kanal leer).")
+                        except Exception:
+                            pass
+                        await cur.execute(
+                            "DELETE FROM usertempchannels WHERE guildID = %s AND channelID = %s",
+                            (guild_id, channel_id)
+                        )
+                    else:
+                        # Kanal ist aktiv, in den lokalen Cache aufnehmen
+                        if channel_id not in tempchannels:
+                            tempchannels.append(int(channel_id))
+                
+                await conn.commit()
 
     # ---------- Slash Commands ----------
 
