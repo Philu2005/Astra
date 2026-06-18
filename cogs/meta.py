@@ -27,171 +27,171 @@ def convert(time):
     return val * time_dict[unit]
 
 
-@app_commands.context_menu(name="User Info")
-async def userinfo_context(interaction: discord.Interaction, member: discord.Member):
-
-    banneruser = await interaction.client.fetch_user(member.id)
-
-    guild = interaction.guild
-    member = guild.get_member(member.id)
-
-    if member is None:
-        try:
-            member = await guild.fetch_member(member.id)
-        except:
-            member = interaction.user
-
-    created = discord.utils.format_dt(member.created_at, "R")
-    joined = discord.utils.format_dt(member.joined_at, "R")
-
-    top_role = member.top_role if not member.top_role.is_default() else None
-
-    # ================= BADGES =================
-    badges = []
-    flags = member.public_flags
-
-    BADGE_MAP = {
-        "staff": "<:discordemployee:1494713034793553931>",
-        "partner": "<:partner:1494713075960647710>",
-        "hypesquad": "<:hypesquad:1494712603673493565>",
-        "hypesquad_balance": "<:balance:1494713178183962724>",
-        "hypesquad_bravery": "<:bravery:1494712600817307659>",
-        "hypesquad_brilliance": "<:brillance:1494712602360680560>",
-        "bug_hunter": "<:bughunterlv1:1494713049783996619>",
-        "bug_hunter_level_2": "<:bughunterlv2:1494713060076556542>",
-        "early_supporter": "<:earlysupporter:1494712935463780502>",
-        "verified_bot_developer": "<:earlyverifiedbotdeveloper:1494714480704360548>",
-        "active_developer": "<:quest:1494714496571281448>",
-        "discord_certified_moderator": "<:certifiedmoderator:1494714457274847424>",
-    }
-
-    for attr, emoji in BADGE_MAP.items():
-        if getattr(flags, attr, False):
-            badges.append(emoji)
-
-    if hasattr(flags, "moderator_performance_curriculum") and flags.moderator_performance_curriculum:
-        badges.append("<:moderatorprogram:1494714464161894551>")
-
-    # ================= BOOST =================
-    if member.premium_since:
-        now = discord.utils.utcnow()
-        diff = now - member.premium_since
-        days = diff.days
-
-        badges.append("<:nitro1:1494713979401011271>")
-
-        if days >= 730:
-            badges.append("<:boost9:1494714456226402416>")
-        elif days >= 540:
-            badges.append("<:boost8:1494714462375248213>")
-        elif days >= 365:
-            badges.append("<:boost7:1494714475188584668>")
-        elif days >= 270:
-            badges.append("<:boost6:1494714476509794314>")
-        elif days >= 180:
-            badges.append("<:boost5:1494714485095534763>")
-        elif days >= 90:
-            badges.append("<:boost4:1494714494624989195>")
-        elif days >= 60:
-            badges.append("<:boost3:1494714467550892102>")
-        elif days >= 30:
-            badges.append("<:boost2:1494714493413101639>")
-        else:
-            badges.append("<:boost1:1494714465684291745>")
-
-    if member.id == 1141303828625489940:
-        badges.append("<:LastMeadows:1494713907749716008>")
-
-    badge_text = ", ".join(badges) if badges else "—"
-
-    # ================= STATUS =================
-    status_map = {
-        discord.Status.online: "Online",
-        discord.Status.idle: "Idle",
-        discord.Status.dnd: "DND",
-        discord.Status.offline: "Offline"
-    }
-
-    user_status = status_map.get(member.status, "Offline")
-
-    activities_list = []
-
-    if member.activities:
-        for act in member.activities:
-            if isinstance(act, discord.CustomActivity):
-                content = ""
-                if act.emoji:
-                    content += f"{act.emoji} "
-                if act.name:
-                    content += act.name
-                if content:
-                    activities_list.append(content)
-
-            elif isinstance(act, discord.Spotify):
-                activities_list.append(f"**Spotify:** {act.title} - {act.artist}")
-
-            elif isinstance(act, discord.Game):
-                start_time = ""
-                if act.start:
-                    start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
-                activities_list.append(f"**Spielt:** {act.name}{start_time}")
-
-            elif isinstance(act, discord.Streaming):
-                activities_list.append(f"**Streamt:** {act.name}")
-
-            elif isinstance(act, discord.Activity):
-                prefix = ""
-                if act.type == discord.ActivityType.watching:
-                    prefix = "**Schaut**: "
-                elif act.type == discord.ActivityType.listening:
-                    prefix = "**Hört**: "
-                elif act.type == discord.ActivityType.competing:
-                    prefix = "**Tritt an in**: "
-
-                start_time = ""
-                if act.start:
-                    start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
-
-                if not prefix:
-                    activities_list.append(f"**{act.name}**{start_time}")
-                else:
-                    activities_list.append(f"{prefix}{act.name}{start_time}")
-
-    if activities_list:
-        activity = "\n".join(activities_list)
-    else:
-        activity = f"Keine Aktivität ({user_status})"
-
-    # ================= EMBED =================
-    embed = discord.Embed(color=discord.Color.blue())
-
-    embed.set_author(
-        name=str(member),
-        icon_url=member.display_avatar.url
-    )
-
-    embed.description = f"Account erstellt {created}\nBeigetreten {joined}"
-
-    embed.set_thumbnail(url=member.display_avatar.url)
-
-    if banneruser.banner:
-        embed.set_image(url=banneruser.banner.url)
-
-    embed.add_field(
-        name="Info",
-        value=(
-            f"ID: `{member.id}`\n"
-            f"Bot: {'Ja' if member.bot else 'Nein'}\n"
-            f"Rolle: {top_role.mention if top_role else '@everyone'}"
-        ),
-        inline=False
-    )
-
-    embed.add_field(name="Badges", value=badge_text, inline=False)
-    embed.add_field(name="Status", value=activity, inline=False)
-    embed.add_field(name="Avatar", value=f"[Link]({member.display_avatar.url})", inline=False)
-
-    await interaction.response.send_message(embed=embed)
+# @app_commands.context_menu(name="User Info")
+# async def userinfo_context(interaction: discord.Interaction, member: discord.Member):
+#
+#     banneruser = await interaction.client.fetch_user(member.id)
+#
+#     guild = interaction.guild
+#     member = guild.get_member(member.id)
+#
+#     if member is None:
+#         try:
+#             member = await guild.fetch_member(member.id)
+#         except:
+#             member = interaction.user
+#
+#     created = discord.utils.format_dt(member.created_at, "R")
+#     joined = discord.utils.format_dt(member.joined_at, "R")
+#
+#     top_role = member.top_role if not member.top_role.is_default() else None
+#
+#     # ================= BADGES =================
+#     badges = []
+#     flags = member.public_flags
+#
+#     BADGE_MAP = {
+#         "staff": "<:discordemployee:1494713034793553931>",
+#         "partner": "<:partner:1494713075960647710>",
+#         "hypesquad": "<:hypesquad:1494712603673493565>",
+#         "hypesquad_balance": "<:balance:1494713178183962724>",
+#         "hypesquad_bravery": "<:bravery:1494712600817307659>",
+#         "hypesquad_brilliance": "<:brillance:1494712602360680560>",
+#         "bug_hunter": "<:bughunterlv1:1494713049783996619>",
+#         "bug_hunter_level_2": "<:bughunterlv2:1494713060076556542>",
+#         "early_supporter": "<:earlysupporter:1494712935463780502>",
+#         "verified_bot_developer": "<:earlyverifiedbotdeveloper:1494714480704360548>",
+#         "active_developer": "<:quest:1494714496571281448>",
+#         "discord_certified_moderator": "<:certifiedmoderator:1494714457274847424>",
+#     }
+#
+#     for attr, emoji in BADGE_MAP.items():
+#         if getattr(flags, attr, False):
+#             badges.append(emoji)
+#
+#     if hasattr(flags, "moderator_performance_curriculum") and flags.moderator_performance_curriculum:
+#         badges.append("<:moderatorprogram:1494714464161894551>")
+#
+#     # ================= BOOST =================
+#     if member.premium_since:
+#         now = discord.utils.utcnow()
+#         diff = now - member.premium_since
+#         days = diff.days
+#
+#         badges.append("<:nitro1:1494713979401011271>")
+#
+#         if days >= 730:
+#             badges.append("<:boost9:1494714456226402416>")
+#         elif days >= 540:
+#             badges.append("<:boost8:1494714462375248213>")
+#         elif days >= 365:
+#             badges.append("<:boost7:1494714475188584668>")
+#         elif days >= 270:
+#             badges.append("<:boost6:1494714476509794314>")
+#         elif days >= 180:
+#             badges.append("<:boost5:1494714485095534763>")
+#         elif days >= 90:
+#             badges.append("<:boost4:1494714494624989195>")
+#         elif days >= 60:
+#             badges.append("<:boost3:1494714467550892102>")
+#         elif days >= 30:
+#             badges.append("<:boost2:1494714493413101639>")
+#         else:
+#             badges.append("<:boost1:1494714465684291745>")
+#
+#     if member.id == 1141303828625489940:
+#         badges.append("<:LastMeadows:1494713907749716008>")
+#
+#     badge_text = ", ".join(badges) if badges else "—"
+#
+#     # ================= STATUS =================
+#     status_map = {
+#         discord.Status.online: "Online",
+#         discord.Status.idle: "Idle",
+#         discord.Status.dnd: "DND",
+#         discord.Status.offline: "Offline"
+#     }
+#
+#     user_status = status_map.get(member.status, "Offline")
+#
+#     activities_list = []
+#
+#     if member.activities:
+#         for act in member.activities:
+#             if isinstance(act, discord.CustomActivity):
+#                 content = ""
+#                 if act.emoji:
+#                     content += f"{act.emoji} "
+#                 if act.name:
+#                     content += act.name
+#                 if content:
+#                     activities_list.append(content)
+#
+#             elif isinstance(act, discord.Spotify):
+#                 activities_list.append(f"**Spotify:** {act.title} - {act.artist}")
+#
+#             elif isinstance(act, discord.Game):
+#                 start_time = ""
+#                 if act.start:
+#                     start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
+#                 activities_list.append(f"**Spielt:** {act.name}{start_time}")
+#
+#             elif isinstance(act, discord.Streaming):
+#                 activities_list.append(f"**Streamt:** {act.name}")
+#
+#             elif isinstance(act, discord.Activity):
+#                 prefix = ""
+#                 if act.type == discord.ActivityType.watching:
+#                     prefix = "**Schaut**: "
+#                 elif act.type == discord.ActivityType.listening:
+#                     prefix = "**Hört**: "
+#                 elif act.type == discord.ActivityType.competing:
+#                     prefix = "**Tritt an in**: "
+#
+#                 start_time = ""
+#                 if act.start:
+#                     start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
+#
+#                 if not prefix:
+#                     activities_list.append(f"**{act.name}**{start_time}")
+#                 else:
+#                     activities_list.append(f"{prefix}{act.name}{start_time}")
+#
+#     if activities_list:
+#         activity = "\n".join(activities_list)
+#     else:
+#         activity = f"Keine Aktivität ({user_status})"
+#
+#     # ================= EMBED =================
+#     embed = discord.Embed(color=discord.Color.blue())
+#
+#     embed.set_author(
+#         name=str(member),
+#         icon_url=member.display_avatar.url
+#     )
+#
+#     embed.description = f"Account erstellt {created}\nBeigetreten {joined}"
+#
+#     embed.set_thumbnail(url=member.display_avatar.url)
+#
+#     if banneruser.banner:
+#         embed.set_image(url=banneruser.banner.url)
+#
+#     embed.add_field(
+#         name="Info",
+#         value=(
+#             f"ID: `{member.id}`\n"
+#             f"Bot: {'Ja' if member.bot else 'Nein'}\n"
+#             f"Rolle: {top_role.mention if top_role else '@everyone'}"
+#         ),
+#         inline=False
+#     )
+#
+#     embed.add_field(name="Badges", value=badge_text, inline=False)
+#     embed.add_field(name="Status", value=activity, inline=False)
+#     embed.add_field(name="Avatar", value=f"[Link]({member.display_avatar.url})", inline=False)
+#
+#     await interaction.response.send_message(embed=embed)
 
 
 
@@ -235,190 +235,190 @@ class InfoGroup(app_commands.Group):
             await interaction.response.send_message(embed=embed)
             return
 
-    @app_commands.command(name="user", description="Zeigt Informationen über einen Nutzer.")
-    @app_commands.describe(member="Optional: Das Mitglied, über das Infos angezeigt werden sollen.")
-    @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
-    async def userinfo(self, interaction: discord.Interaction, member: discord.Member = None):
-
-        # ✅ FIX 1: richtig setzen
-        if member is None:
-            member = interaction.user
-
-        banneruser = await interaction.client.fetch_user(member.id)
-
-        # Wir holen das Member-Objekt direkt von der aktuellen Guild
-        # interaction.user ist oft nur ein Member-Objekt mit eingeschränkten Daten
-        # Daher suchen wir ihn spezifisch in der Guild.
-        guild = interaction.guild
-        member = guild.get_member(member.id)
-        
-        # Falls er nicht im Cache ist (was bei aktiven Intents unwahrscheinlich ist, aber vorkommen kann)
-        if member is None:
-            try:
-                member = await guild.fetch_member(banneruser.id) 
-            except:
-                member = interaction.user
-
-        created = discord.utils.format_dt(member.created_at, "R")
-        joined = discord.utils.format_dt(member.joined_at, "R")
-
-        top_role = member.top_role if not member.top_role.is_default() else None
-
-        # ================= BADGES =================
-        badges = []
-        flags = member.public_flags
-
-        BADGE_MAP = {
-            "staff": "<:discordemployee:1494713034793553931>",
-            "partner": "<:partner:1494713075960647710>",
-            "hypesquad": "<:hypesquad:1494712603673493565>",
-            "hypesquad_balance": "<:balance:1494713178183962724>",
-            "hypesquad_bravery": "<:bravery:1494712600817307659>",
-            "hypesquad_brilliance": "<:brillance:1494712602360680560>",
-            "bug_hunter": "<:bughunterlv1:1494713049783996619>",
-            "bug_hunter_level_2": "<:bughunterlv2:1494713060076556542>",
-            "early_supporter": "<:earlysupporter:1494712935463780502>",
-            "verified_bot_developer": "<:earlyverifiedbotdeveloper:1494714480704360548>",
-            "active_developer": "<:quest:1494714496571281448>",
-            "discord_certified_moderator": "<:certifiedmoderator:1494714457274847424>",
-        }
-
-        for attr, emoji in BADGE_MAP.items():
-            if getattr(flags, attr, False):
-                badges.append(emoji)
-
-        if hasattr(flags, "moderator_performance_curriculum") and flags.moderator_performance_curriculum:
-            badges.append("<:moderatorprogram:1494714464161894551>")
-
-        # ================= BOOST =================
-        if member.premium_since:
-            now = discord.utils.utcnow()
-            diff = now - member.premium_since
-            days = diff.days
-
-            badges.append("<:nitro1:1494713979401011271>")
-
-            if days >= 730:
-                badges.append("<:boost9:1494714456226402416>")
-            elif days >= 540:
-                badges.append("<:boost8:1494714462375248213>")
-            elif days >= 365:
-                badges.append("<:boost7:1494714475188584668>")
-            elif days >= 270:
-                badges.append("<:boost6:1494714476509794314>")
-            elif days >= 180:
-                badges.append("<:boost5:1494714485095534763>")
-            elif days >= 90:
-                badges.append("<:boost4:1494714494624989195>")
-            elif days >= 60:
-                badges.append("<:boost3:1494714467550892102>")
-            elif days >= 30:
-                badges.append("<:boost2:1494714493413101639>")
-            else:
-                badges.append("<:boost1:1494714465684291745>")
-
-        if member.id == 1141303828625489940:
-            badges.append("<:LastMeadows:1494713907749716008>")
-
-        badge_text = ", ".join(badges) if badges else "—"
-
-        # ================= STATUS FIX =================
-        status_map = {
-            discord.Status.online: "Online",
-            discord.Status.idle: "Idle",
-            discord.Status.dnd: "DND",
-            discord.Status.offline: "Offline"
-        }
-
-        # Status aus member.status ermitteln
-        user_status = status_map.get(member.status, "Offline")
-
-        # Aktivitäten sammeln
-        activities_list = []
-
-        if member.activities:
-            for act in member.activities:
-                if isinstance(act, discord.CustomActivity):
-                    # Custom Status (der Text unter dem Namen)
-                    content = ""
-                    if act.emoji:
-                        content += f"{act.emoji} "
-                    if act.name:
-                        content += act.name
-                    if content:
-                        activities_list.append(content)
-
-                elif isinstance(act, discord.Spotify):
-                    # Spotify (Liedtitel)
-                    activities_list.append(f"**Spotify**: {act.title} - {act.artist}")
-
-                elif isinstance(act, discord.Game):
-                    # Einfaches Spiel
-                    start_time = ""
-                    if act.start:
-                        start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
-                    activities_list.append(f"**Spielt**: {act.name}{start_time}")
-
-                elif isinstance(act, discord.Streaming):
-                    # Stream
-                    activities_list.append(f"**Streamt**: [{act.name}]({act.url})")
-
-                elif isinstance(act, discord.Activity):
-                    # Rich Presence (z.B. PyCharm, VS Code, Discord RPC)
-                    prefix = ""
-                    if act.type == discord.ActivityType.watching:
-                        prefix = "**Schaut**: "
-                    elif act.type == discord.ActivityType.listening:
-                        prefix = "**Hört**: "
-                    elif act.type == discord.ActivityType.competing:
-                        prefix = "**Tritt an in**: "
-                    
-                    start_time = ""
-                    if act.start:
-                        start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
-                    
-                    # Wenn es kein spezieller Typ ist, einfach nur den Namen fett anzeigen
-                    if not prefix:
-                        activities_list.append(f"**{act.name}**{start_time}")
-                    else:
-                        activities_list.append(f"{prefix}{act.name}{start_time}")
-
-        # Finale Anzeige
-        if activities_list:
-            activity = "\n" + "\n".join(activities_list)
-        else:
-            activity = f"Keine Aktivität ({user_status})"
-
-        # ================= EMBED =================
-        embed = discord.Embed(color=discord.Color.blue())
-
-        embed.set_author(
-            name=str(member),
-            icon_url=member.display_avatar.url
-        )
-
-        embed.description = f"Account erstellt {created}\nBeigetreten {joined}"
-
-        embed.set_thumbnail(url=member.display_avatar.url)
-
-        if banneruser.banner:
-            embed.set_image(url=banneruser.banner.url)
-
-        embed.add_field(
-            name="Info",
-            value=(
-                f"ID: `{member.id}`\n"
-                f"Bot: {'Ja' if member.bot else 'Nein'}\n"
-                f"Rolle: {top_role.mention if top_role else '@everyone'}"
-            ),
-            inline=False
-        )
-
-        embed.add_field(name="Badges", value=badge_text, inline=False)
-        embed.add_field(name="Status", value=activity, inline=False)
-        embed.add_field(name="Avatar", value=f"[Link]({member.display_avatar.url})", inline=False)
-
-        await interaction.response.send_message(embed=embed)
+    # @app_commands.command(name="user", description="Zeigt Informationen über einen Nutzer.")
+    # @app_commands.describe(member="Optional: Das Mitglied, über das Infos angezeigt werden sollen.")
+    # @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
+    # async def userinfo(self, interaction: discord.Interaction, member: discord.Member = None):
+    #
+    #     # ✅ FIX 1: richtig setzen
+    #     if member is None:
+    #         member = interaction.user
+    #
+    #     banneruser = await interaction.client.fetch_user(member.id)
+    #
+    #     # Wir holen das Member-Objekt direkt von der aktuellen Guild
+    #     # interaction.user ist oft nur ein Member-Objekt mit eingeschränkten Daten
+    #     # Daher suchen wir ihn spezifisch in der Guild.
+    #     guild = interaction.guild
+    #     member = guild.get_member(member.id)
+    #
+    #     # Falls er nicht im Cache ist (was bei aktiven Intents unwahrscheinlich ist, aber vorkommen kann)
+    #     if member is None:
+    #         try:
+    #             member = await guild.fetch_member(banneruser.id)
+    #         except:
+    #             member = interaction.user
+    #
+    #     created = discord.utils.format_dt(member.created_at, "R")
+    #     joined = discord.utils.format_dt(member.joined_at, "R")
+    #
+    #     top_role = member.top_role if not member.top_role.is_default() else None
+    #
+    #     # ================= BADGES =================
+    #     badges = []
+    #     flags = member.public_flags
+    #
+    #     BADGE_MAP = {
+    #         "staff": "<:discordemployee:1494713034793553931>",
+    #         "partner": "<:partner:1494713075960647710>",
+    #         "hypesquad": "<:hypesquad:1494712603673493565>",
+    #         "hypesquad_balance": "<:balance:1494713178183962724>",
+    #         "hypesquad_bravery": "<:bravery:1494712600817307659>",
+    #         "hypesquad_brilliance": "<:brillance:1494712602360680560>",
+    #         "bug_hunter": "<:bughunterlv1:1494713049783996619>",
+    #         "bug_hunter_level_2": "<:bughunterlv2:1494713060076556542>",
+    #         "early_supporter": "<:earlysupporter:1494712935463780502>",
+    #         "verified_bot_developer": "<:earlyverifiedbotdeveloper:1494714480704360548>",
+    #         "active_developer": "<:quest:1494714496571281448>",
+    #         "discord_certified_moderator": "<:certifiedmoderator:1494714457274847424>",
+    #     }
+    #
+    #     for attr, emoji in BADGE_MAP.items():
+    #         if getattr(flags, attr, False):
+    #             badges.append(emoji)
+    #
+    #     if hasattr(flags, "moderator_performance_curriculum") and flags.moderator_performance_curriculum:
+    #         badges.append("<:moderatorprogram:1494714464161894551>")
+    #
+    #     # ================= BOOST =================
+    #     if member.premium_since:
+    #         now = discord.utils.utcnow()
+    #         diff = now - member.premium_since
+    #         days = diff.days
+    #
+    #         badges.append("<:nitro1:1494713979401011271>")
+    #
+    #         if days >= 730:
+    #             badges.append("<:boost9:1494714456226402416>")
+    #         elif days >= 540:
+    #             badges.append("<:boost8:1494714462375248213>")
+    #         elif days >= 365:
+    #             badges.append("<:boost7:1494714475188584668>")
+    #         elif days >= 270:
+    #             badges.append("<:boost6:1494714476509794314>")
+    #         elif days >= 180:
+    #             badges.append("<:boost5:1494714485095534763>")
+    #         elif days >= 90:
+    #             badges.append("<:boost4:1494714494624989195>")
+    #         elif days >= 60:
+    #             badges.append("<:boost3:1494714467550892102>")
+    #         elif days >= 30:
+    #             badges.append("<:boost2:1494714493413101639>")
+    #         else:
+    #             badges.append("<:boost1:1494714465684291745>")
+    #
+    #     if member.id == 1141303828625489940:
+    #         badges.append("<:LastMeadows:1494713907749716008>")
+    #
+    #     badge_text = ", ".join(badges) if badges else "—"
+    #
+    #     # ================= STATUS FIX =================
+    #     status_map = {
+    #         discord.Status.online: "Online",
+    #         discord.Status.idle: "Idle",
+    #         discord.Status.dnd: "DND",
+    #         discord.Status.offline: "Offline"
+    #     }
+    #
+    #     # Status aus member.status ermitteln
+    #     user_status = status_map.get(member.status, "Offline")
+    #
+    #     # Aktivitäten sammeln
+    #     activities_list = []
+    #
+    #     if member.activities:
+    #         for act in member.activities:
+    #             if isinstance(act, discord.CustomActivity):
+    #                 # Custom Status (der Text unter dem Namen)
+    #                 content = ""
+    #                 if act.emoji:
+    #                     content += f"{act.emoji} "
+    #                 if act.name:
+    #                     content += act.name
+    #                 if content:
+    #                     activities_list.append(content)
+    #
+    #             elif isinstance(act, discord.Spotify):
+    #                 # Spotify (Liedtitel)
+    #                 activities_list.append(f"**Spotify**: {act.title} - {act.artist}")
+    #
+    #             elif isinstance(act, discord.Game):
+    #                 # Einfaches Spiel
+    #                 start_time = ""
+    #                 if act.start:
+    #                     start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
+    #                 activities_list.append(f"**Spielt**: {act.name}{start_time}")
+    #
+    #             elif isinstance(act, discord.Streaming):
+    #                 # Stream
+    #                 activities_list.append(f"**Streamt**: [{act.name}]({act.url})")
+    #
+    #             elif isinstance(act, discord.Activity):
+    #                 # Rich Presence (z.B. PyCharm, VS Code, Discord RPC)
+    #                 prefix = ""
+    #                 if act.type == discord.ActivityType.watching:
+    #                     prefix = "**Schaut**: "
+    #                 elif act.type == discord.ActivityType.listening:
+    #                     prefix = "**Hört**: "
+    #                 elif act.type == discord.ActivityType.competing:
+    #                     prefix = "**Tritt an in**: "
+    #
+    #                 start_time = ""
+    #                 if act.start:
+    #                     start_time = f" (seit {discord.utils.format_dt(act.start, 'R')})"
+    #
+    #                 # Wenn es kein spezieller Typ ist, einfach nur den Namen fett anzeigen
+    #                 if not prefix:
+    #                     activities_list.append(f"**{act.name}**{start_time}")
+    #                 else:
+    #                     activities_list.append(f"{prefix}{act.name}{start_time}")
+    #
+    #     # Finale Anzeige
+    #     if activities_list:
+    #         activity = "\n" + "\n".join(activities_list)
+    #     else:
+    #         activity = f"Keine Aktivität ({user_status})"
+    #
+    #     # ================= EMBED =================
+    #     embed = discord.Embed(color=discord.Color.blue())
+    #
+    #     embed.set_author(
+    #         name=str(member),
+    #         icon_url=member.display_avatar.url
+    #     )
+    #
+    #     embed.description = f"Account erstellt {created}\nBeigetreten {joined}"
+    #
+    #     embed.set_thumbnail(url=member.display_avatar.url)
+    #
+    #     if banneruser.banner:
+    #         embed.set_image(url=banneruser.banner.url)
+    #
+    #     embed.add_field(
+    #         name="Info",
+    #         value=(
+    #             f"ID: `{member.id}`\n"
+    #             f"Bot: {'Ja' if member.bot else 'Nein'}\n"
+    #             f"Rolle: {top_role.mention if top_role else '@everyone'}"
+    #         ),
+    #         inline=False
+    #     )
+    #
+    #     embed.add_field(name="Badges", value=badge_text, inline=False)
+    #     embed.add_field(name="Status", value=activity, inline=False)
+    #     embed.add_field(name="Avatar", value=f"[Link]({member.display_avatar.url})", inline=False)
+    #
+    #     await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="server", description="Zeigt Informationen über den Server.")
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
