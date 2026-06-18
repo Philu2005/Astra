@@ -33,3 +33,4 @@ def setup_logging():
 
     logging.getLogger("discord.gateway").setLevel(logging.WARNING)
     logging.getLogger().addFilter(CleanLogs())
+    logging.getLogger("aiohttp.access").disabled = True
