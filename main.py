@@ -439,23 +439,6 @@ bot = Astra()
 setup_topgg_events(bot)
 
 
-@bot.command()
-@commands.guild_only()
-@commands.is_owner()
-async def advert(ctx):
-    embed = discord.Embed(
-        title="`🎃` Astra x Astra Support",
-        url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands",
-        description="Astra ist der einzige Bot, den Sie zur Verwaltung Ihres gesamten Servers benötigen. Es gibt viele Server, die Astra verwenden. Vielleicht sind Sie der Nächste?\n\n> __**Was bieten wir an?**__\n・<:Astra_ticket:1141833836204937347> Öffentliches Ticketsystem für Ihren Server\n・<:Astra_time:1141303932061233202> Automatische Moderation\n・<:Astra_messages:1141303867850641488> Willkommen/Nachrichten hinterlassen\n・<:Astra_settings:1141303908778639490> Joinrole&Botrole\n・<:Astra_herz:1141303857855594527> Reaktionsrollen\n・<:Astra_global1:1141303843993436200> Globalchat\n\n\n> __**Nützliche Links:**__\n・[Astra einladen ➚](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n・[Support erhalten ➚](https://discord.gg/eatdJPfjWc)",
-        colour=discord.Colour.blue(),
-    )
-    embed.set_image(
-        url="https://cdn.discordapp.com/attachments/842039934142513152/879880068262940672/Astra-premium3.gif"
-    )
-    embed.set_thumbnail(url=ctx.guild.icon.url)
-    msg = await ctx.send("https://discord.gg/eatdJPfjWc", embed=embed)
-    await ctx.message.delete()
-
 
 @bot.command()
 @commands.is_owner()
