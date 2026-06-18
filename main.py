@@ -46,7 +46,7 @@ class Astra(commands.Bot):
         intents.messages = True
         intents.message_content = True
         intents.reactions = True
-        intents.presences = True
+        intents.presences = False
 
         super().__init__(
             command_prefix="astra!",
