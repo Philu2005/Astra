@@ -818,3 +818,4 @@ class mod(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(mod(bot))
+    bot.tree.add_command(report_message)
