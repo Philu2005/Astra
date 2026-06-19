@@ -13,6 +13,193 @@ from discord.ui import View
 
 logging.getLogger("discord.http").setLevel(logging.ERROR)
 
+@app_commands.context_menu(name="Nachricht melden")
+async def report_message(
+    interaction: discord.Interaction,
+    message: discord.Message
+):
+
+    # Nur auf Servern
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "❌ Diese Funktion kann nur auf Servern verwendet werden.",
+            ephemeral=True
+        )
+
+    # Eigene Nachrichten verhindern
+    if message.author.id == interaction.user.id:
+        return await interaction.response.send_message(
+            "❌ Du kannst deine eigene Nachricht nicht melden.",
+            ephemeral=True
+        )
+
+    # Bots verhindern
+    if message.author.bot:
+        return await interaction.response.send_message(
+            "❌ Bots können nicht gemeldet werden.",
+            ephemeral=True
+        )
+
+    # Zu alte Nachrichten verhindern
+    if (discord.utils.utcnow() - message.created_at).days > 7:
+        return await interaction.response.send_message(
+            "❌ Diese Nachricht ist älter als 7 Tage.",
+            ephemeral=True
+        )
+
+    # Inhalt prüfen
+    content = (message.content or "").strip()
+
+    if (
+        len(content) < 10
+        and not message.attachments
+        and not message.embeds
+    ):
+        return await interaction.response.send_message(
+            "❌ Diese Nachricht enthält zu wenig Inhalt für eine Meldung.",
+            ephemeral=True
+        )
+
+    async with interaction.client.pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+
+            # Doppelmeldungen verhindern
+            await cursor.execute(
+                "SELECT 1 FROM reported_messages WHERE messageID = %s",
+                (message.id,)
+            )
+
+            exists = await cursor.fetchone()
+
+            if exists:
+                return await interaction.response.send_message(
+                    "⚠️ Diese Nachricht wurde bereits gemeldet.",
+                    ephemeral=True
+                )
+
+            # Modlog suchen
+            await cursor.execute(
+                "SELECT channelID FROM modlog WHERE serverID = %s",
+                (interaction.guild.id,)
+            )
+
+            result = await cursor.fetchone()
+
+            if not result:
+                return await interaction.response.send_message(
+                    "❌ Es wurde kein Modlog-Channel eingerichtet.",
+                    ephemeral=True
+                )
+
+            # Meldung speichern
+            await cursor.execute(
+                """
+                INSERT INTO reported_messages
+                (messageID, reporterID)
+                VALUES (%s, %s)
+                """,
+                (message.id, interaction.user.id)
+            )
+
+            await conn.commit()
+
+    channel = interaction.guild.get_channel(int(result[0]))
+
+    if not channel:
+        return await interaction.response.send_message(
+            "❌ Modlog-Channel nicht gefunden.",
+            ephemeral=True
+        )
+
+    embed = discord.Embed(
+        title="🚨 Nachricht gemeldet",
+        colour=discord.Colour.orange(),
+        timestamp=discord.utils.utcnow()
+    )
+
+    embed.add_field(
+        name="👤 Gemeldet von",
+        value=f"{interaction.user.mention} (`{interaction.user.id}`)",
+        inline=False
+    )
+
+    embed.add_field(
+        name="📝 Autor",
+        value=f"{message.author.mention} (`{message.author.id}`)",
+        inline=False
+    )
+
+    embed.add_field(
+        name="📍 Kanal",
+        value=message.channel.mention,
+        inline=False
+    )
+
+    content = message.content or "*Kein Textinhalt*"
+
+    if len(content) > 1024:
+        content = content[:1021] + "..."
+
+    embed.add_field(
+        name="💬 Nachricht",
+        value=content,
+        inline=False
+    )
+
+    embed.add_field(
+        name="🆔 Nachrichten-ID",
+        value=f"`{message.id}`",
+        inline=True
+    )
+
+    embed.add_field(
+        name="📅 Erstellt",
+        value=f"<t:{int(message.created_at.timestamp())}:F>",
+        inline=True
+    )
+
+    if message.attachments:
+        attachments = "\n".join(
+            attachment.url
+            for attachment in message.attachments[:5]
+        )
+
+        embed.add_field(
+            name="📎 Anhänge",
+            value=attachments,
+            inline=False
+        )
+
+    embed.add_field(
+        name="🔗 Link",
+        value=f"[Zur Nachricht springen]({message.jump_url})",
+        inline=False
+    )
+
+    embed.set_author(
+        name=str(message.author),
+        icon_url=message.author.display_avatar.url
+    )
+
+    embed.set_footer(
+        text=f"Gemeldet von {interaction.user}"
+    )
+
+    try:
+        await channel.send(embed=embed)
+
+        await interaction.response.send_message(
+            "✅ Die Nachricht wurde erfolgreich an das Moderationsteam gemeldet.",
+            ephemeral=True
+        )
+
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "❌ Ich kann keine Nachrichten in den Modlog-Channel senden.",
+            ephemeral=True
+        )
+
+
 
 # --- Tuning ---
 BULK_CUTOFF_DAYS = 14            # Bulk delete für <= 14 Tage
