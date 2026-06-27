@@ -1403,6 +1403,17 @@ class levelsystem(commands.Cog):
                     messageres = await cur.fetchone()
 
                     channel = self.bot.get_channel(int(result6[0]))
+
+                    if channel is None:
+                        try:
+                            channel = await self.bot.fetch_channel(int(result6[0]))
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            await cur.execute(
+                                "UPDATE levelchannel SET type = %s WHERE guildID = %s",
+                                ("Last Channel", msg.guild.id)
+                            )
+                            channel = msg.channel
+
                     if messageres is None:
                         await cur.execute(
                             "SELECT roleID FROM levelroles WHERE guildID = (%s) and levelreq = (%s)",
