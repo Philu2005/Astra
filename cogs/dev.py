@@ -1913,7 +1913,7 @@ class DevTools(commands.Cog):
 
         embed.add_field(
             name="Tasks",
-            value=f"`{len(discord.utils.all_tasks())}`",
+            value=f"`{len(asyncio.all_tasks(self.bot.loop))}`",
             inline=True
         )
 
