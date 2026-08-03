@@ -1836,6 +1836,133 @@ class DevTools(commands.Cog):
             f"RAM-Auslastung: {mem.percent}% ({mem.used // 1024 ** 2}MB / {mem.total // 1024 ** 2}MB)"
         )
 
+    @commands.is_owner()
+    @commands.command(name="debug")
+    async def debug(self, ctx: commands.Context):
+        commands_list = list(self.bot.tree.walk_commands())
+
+        command_names = {c.qualified_name for c in commands_list}
+
+        important = [
+            "help",
+            "ticket",
+            "autorole",
+            "reactionrole",
+            "warn",
+            "ban",
+            "kick",
+            "level",
+        ]
+
+        missing = [cmd for cmd in important if cmd not in command_names]
+
+        proc = psutil.Process()
+
+        activity = self.bot.activity
+        if activity:
+            activity_text = f"{activity.type.name}: {activity.name}"
+        else:
+            activity_text = "❌ Keine Activity"
+
+        embed = discord.Embed(
+            title="🔎 Astra Debug",
+            colour=discord.Colour.blurple()
+        )
+
+        embed.add_field(
+            name="Bot",
+            value=(
+                f"Ready: `{self.bot.is_ready()}`\n"
+                f"Closed: `{self.bot.is_closed()}`\n"
+                f"Latency: `{round(self.bot.latency * 1000)} ms`"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="Discord",
+            value=(
+                f"Guilds: `{len(self.bot.guilds)}`\n"
+                f"Users: `{sum(g.member_count or 0 for g in self.bot.guilds)}`"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="Command Tree",
+            value=(
+                f"Slash Commands: `{len(commands_list)}`\n"
+                f"Prefix Commands: `{len(self.bot.commands)}`"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="Presence",
+            value=activity_text,
+            inline=False
+        )
+
+        embed.add_field(
+            name="Loaded Cogs",
+            value=f"`{len(self.bot.cogs)}`",
+            inline=True
+        )
+
+        embed.add_field(
+            name="Tasks",
+            value=f"`{len(discord.utils.all_tasks())}`",
+            inline=True
+        )
+
+        embed.add_field(
+            name="RAM",
+            value=f"`{proc.memory_info().rss / 1024 / 1024:.1f} MB`",
+            inline=True
+        )
+
+        if missing:
+            embed.add_field(
+                name="❌ Fehlende wichtige Commands",
+                value="\n".join(f"• {c}" for c in missing),
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="✅ Wichtige Commands",
+                value="Alle vorhanden",
+                inline=False
+            )
+
+        embed.add_field(
+            name="Python",
+            value=platform.python_version(),
+            inline=True
+        )
+
+        embed.add_field(
+            name="discord.py",
+            value=discord.__version__,
+            inline=True
+        )
+
+        await ctx.send(embed=embed)
+
+    @commands.is_owner()
+    @commands.command()
+    async def tree(self, ctx):
+        cmds = sorted(c.qualified_name for c in self.bot.tree.walk_commands())
+
+        text = "\n".join(cmds)
+
+        if len(text) < 1900:
+            await ctx.send(f"```{text}```")
+        else:
+            await ctx.send(file=discord.File(
+                io.StringIO(text),
+                filename="tree.txt"
+            ))
+
 
 async def setup(bot: commands.Bot) -> None:
 
