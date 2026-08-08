@@ -1925,7 +1925,7 @@ class DevTools(commands.Cog):
 
         if missing:
             embed.add_field(
-                name="❌ Fehlende wichtige Commands:",
+                name="❌ Fehlende wichtige Commands",
                 value="\n".join(f"• {c}" for c in missing),
                 inline=False
             )
