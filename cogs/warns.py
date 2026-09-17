@@ -1587,12 +1587,31 @@ class Warn(commands.Cog):
                     warn_msg = await msg.channel.send(embed=warning_embed)
 
                     # Entscheidung: Eindeutig oder Unsicher?
-                    # Kriterium: Wenn Severity EXACT ist und keine "leichten" Wörter (wie hell/damn) vorliegen, 
-                    # die die Kontext-Erkennung durchgelassen hat. 
-                    # Wir stufen Treffer als "Eindeutig" ein, wenn glin_profanity sie als profan markiert 
-                    # und mindestens ein Treffer Severity EXACT hat.
+                    # Wir stufen Treffer als "Eindeutig" ein, wenn:
+                    # 1. glin_profanity sie als profan markiert UND
+                    # 2. Mindestens ein Treffer Severity EXACT hat UND
+                    # 3. Der Kontext auf eine direkte Beleidigung hindeutet (z.B. Pronomen wie "du", "you")
+                    #    ODER es sich um extrem schwere Beleidigungen handelt.
                     
-                    is_clear = any(m.get("severity") == SeverityLevel.EXACT for m in res.get("matches", []))
+                    is_exact = any(m.get("severity") == SeverityLevel.EXACT for m in res.get("matches", []))
+                    
+                    # Heuristik für direkte Ansprache/Beleidigung
+                    import re
+                    direct_address = bool(re.search(r"\b(du|you|u|deine|your|bist|are|dir|euch|ihr)\b", msg.content, re.IGNORECASE))
+
+                    # NEU: Heuristik für positive Verstärker (Compliments)
+                    # Wenn Wörter wie "geil", "nice", "awesome" etc. vorkommen, 
+                    # ist es wahrscheinlich keine Beleidigung, sondern ein Kompliment mit Fluch-Intensivierer.
+                    positive_context = bool(re.search(r"\b(geil|geiler|geile|nice|awesome|gut|gute|guter|good|bester|beste|love|liebe|toll|tolle|toller|hammer|krass|krasse|krasser|stabil|stabile|stabiler)\b", msg.content, re.IGNORECASE))
+                    
+                    # Liste von Begriffen, die fast immer eine automatische Sanktion rechtfertigen (Hassrede/extreme Beleidigung)
+                    # Wir prüfen hier nur, ob diese in den erkannten profane_words sind.
+                    hard_triggers = ["hurensohn", "nigger", "bastard", "wichser", "asshole", "arschloch", "fotze", "schlampe"]
+                    is_hard_trigger = any(word.lower() in hard_triggers for word in res.get("profane_words", []))
+                    
+                    # Logik: Eindeutig wenn (Hard-Trigger ODER (direkte Ansprache UND kein positiver Kontext))
+                    is_clear = is_exact and (is_hard_trigger or (direct_address and not positive_context))
+                    
                     matched_words = ", ".join(res.get("profane_words", []))
                     reason = f"Beleidigungsfilter: {matched_words}"
 
@@ -1619,7 +1638,7 @@ class Warn(commands.Cog):
                             review_embed.add_field(name="👤 User", value=f"{msg.author.mention} (`{msg.author.id}`)", inline=True)
                             review_embed.add_field(name="📄 Nachricht", value=msg.content[:1024], inline=False)
                             review_embed.add_field(name="🔎 Begriffe", value=matched_words, inline=True)
-                            review_embed.add_field(name="📊 Details", value=res.get("reason", "Keine Details"), inline=True)
+                            review_embed.add_field(name="📊 Grund für Unsicherheit", value="Treffer ohne direkten Bezug (Slang/Ausruf?)", inline=True)
                             
                             view = ProfanityReviewView(self.bot, msg.author, reason, msg.content, res)
                             await log_channel.send(embed=review_embed, view=view)
