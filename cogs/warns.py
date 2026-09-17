@@ -1,9 +1,133 @@
 import discord
 from discord.ext import commands
 from discord import app_commands, ui
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Literal
 import asyncio
+import os
+from glin_profanity import Filter, SeverityLevel
+
+# Profanity Filter initialisieren
+# Wir aktivieren Kontext-Awareness und unterstützen alle 23 Sprachen
+profanity_filter = Filter({
+    "all_languages": True,
+    "enable_context_aware": True,
+    "detect_leetspeak": True,
+    "normalize_unicode": True
+})
+
+# =========================================================
+# ================= PROFANITY REVIEW VIEW =================
+# =========================================================
+
+class ProfanityReviewView(discord.ui.View):
+    def __init__(self, bot: commands.Bot, member: discord.Member, reason: str, message_content: str, filter_result: dict):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.member = member
+        self.reason = reason
+        self.message_content = message_content
+        self.filter_result = filter_result
+
+    async def _disable_buttons(self, interaction: discord.Interaction, status_text: str):
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+        
+        embed = interaction.message.embeds[0]
+        embed.add_field(name="📌 Entscheidung", value=status_text, inline=False)
+        embed.color = discord.Color.greyple()
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Annehmen", style=discord.ButtonStyle.success, emoji="✅")
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Automod Aktion ausführen
+        warn_cog = self.bot.get_cog("Warn")
+        if warn_cog:
+            # Wir simulieren einen Warn-Aufruf
+            # Da warn() eine Interaction erwartet, extrahieren wir die Logik
+            await self._execute_automod(interaction)
+            await self._disable_buttons(interaction, f"✅ Bestätigt von {interaction.user.mention}")
+        else:
+            await interaction.response.send_message("Fehler: Warn-System nicht gefunden.", ephemeral=True)
+
+    @discord.ui.button(label="Ablehnen", style=discord.ButtonStyle.danger, emoji="❌")
+    async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._disable_buttons(interaction, f"❌ Abgelehnt von {interaction.user.mention}")
+
+    async def _execute_automod(self, interaction: discord.Interaction):
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                # 1. Warn eintragen
+                await cursor.execute(
+                    "SELECT COUNT(*) FROM warns WHERE userID=%s AND guildID=%s",
+                    (self.member.id, interaction.guild.id)
+                )
+                count_row = await cursor.fetchone()
+                current_warns = count_row[0] if count_row else 0
+                warnid = current_warns + 1
+
+                await cursor.execute(
+                    "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s,%s,%s,%s)",
+                    (interaction.guild.id, self.member.id, self.reason, warnid)
+                )
+
+                # 2. Modlog über Warnung (nicht Automod-Eskalation selbst)
+                await cursor.execute(
+                    "SELECT channelID FROM modlog WHERE serverID=%s",
+                    (interaction.guild.id,)
+                )
+                modlog_row = await cursor.fetchone()
+                if modlog_row:
+                    log_channel = interaction.guild.get_channel(int(modlog_row[0]))
+                    if log_channel:
+                        log_embed = discord.Embed(
+                            colour=discord.Colour.orange(),
+                            description=f"{self.member} (`{self.member.id}`) wurde verwarnt (manuelle Bestätigung)."
+                        )
+                        log_embed.add_field(name="👤 Member", value=self.member.mention, inline=False)
+                        log_embed.add_field(
+                            name="👮 Moderator",
+                            value=f"{interaction.user} (`{interaction.user.id}`)",
+                            inline=False
+                        )
+                        log_embed.add_field(name="📄 Grund", value=self.reason, inline=False)
+                        log_embed.set_author(name=self.member, icon_url=self.member.avatar)
+                        await log_channel.send(embed=log_embed)
+
+                # 3. Automod Eskalations-Check
+                await cursor.execute(
+                    "SELECT action, warns, timeout_seconds FROM automod WHERE guildID=%s",
+                    (interaction.guild.id,)
+                )
+                rules = await cursor.fetchall()
+                if rules:
+                    rules = sorted(rules, key=lambda x: int(x[1]), reverse=True)
+                    for action, warn_limit, timeout_seconds in rules:
+                        if warnid >= int(warn_limit):
+                            # Automod Aktion ausführen
+                            if action == "Kick":
+                                await self.member.kick(reason="Automod: Beleidigungsfilter")
+                            elif action == "Ban":
+                                await self.member.ban(reason="Automod: Beleidigungsfilter")
+                            elif action == "Timeout":
+                                duration = timeout_seconds if timeout_seconds else 30
+                                await self.member.timeout(timedelta(seconds=int(duration)), reason="Automod: Beleidigungsfilter")
+
+                            # Automod Log
+                            if log_channel:
+                                auto_embed = discord.Embed(
+                                    title="🤖 Automod ausgelöst",
+                                    colour=discord.Colour.dark_orange(),
+                                    timestamp=discord.utils.utcnow()
+                                )
+                                auto_embed.add_field(name="👤 Member", value=self.member.mention, inline=False)
+                                auto_embed.add_field(name="📊 Verwarnungen", value=f"{warnid} / {warn_limit}", inline=True)
+                                auto_embed.add_field(name="⚙️ Aktion", value=action, inline=True)
+                                auto_embed.add_field(name="🔔 Auslöser", value="Beleidigungsfilter (Bestätigt)", inline=False)
+                                await log_channel.send(embed=auto_embed)
+                            break
 
 # =========================================================
 # ================= AUTOMOD SETUP VIEW(Components V2) ====================
@@ -27,8 +151,8 @@ class AutomodSetupView(discord.ui.LayoutView):
         self.caps_enabled: bool = False
         self.caps_percent: int = 50
 
-        # Blacklist
-        self.blacklist_words: list[str] = []
+        # Blacklist (Filter)
+        self.blacklist_enabled: bool = False
 
     def _parse_duration(self, value: str) -> int | None:
         if not value:
@@ -88,24 +212,17 @@ class AutomodSetupView(discord.ui.LayoutView):
                 )
                 caps_exists = await cursor.fetchone()
 
-                # Blacklist (neue Tabellenstruktur!)
+                # Blacklist
                 await cursor.execute(
-                    "SELECT serverID FROM blacklist_settings WHERE serverID=%s LIMIT 1",
+                    "SELECT status FROM blacklist_settings WHERE serverID=%s LIMIT 1",
                     (guild_id,)
                 )
                 blacklist_settings_exists = await cursor.fetchone()
-
-                await cursor.execute(
-                    "SELECT serverID FROM blacklist_words WHERE serverID=%s LIMIT 1",
-                    (guild_id,)
-                )
-                blacklist_words_exists = await cursor.fetchone()
 
                 return bool(
                     warn_exists
                     or caps_exists
                     or blacklist_settings_exists
-                    or blacklist_words_exists
                 )
 
     async def start(self, interaction: discord.Interaction) -> bool:
@@ -178,7 +295,7 @@ class AutomodSetupView(discord.ui.LayoutView):
                 "## Überblick\n\n"
                 "<:Astra_punkt:1141303896745201696> **Warn-System konfigurieren**\n"
                 "<:Astra_punkt:1141303896745201696> **Caps-Filter einstellen**\n"
-                "<:Astra_punkt:1141303896745201696> **Blacklist verwalten**\n\n"
+                "<:Astra_punkt:1141303896745201696> **Beleidigungsfilter aktivieren**\n\n"
                 "<:Astra_light_on:1141303864134467675> "
                 "Alle Moderationsfunktionen werden hier zentral eingerichtet."
             ))
@@ -345,59 +462,36 @@ class AutomodSetupView(discord.ui.LayoutView):
         # PAGE 3
         elif self.page == 3:
 
-            words_text = (
-                "\n".join(
-                    f"<:Astra_punkt:1141303896745201696> `{w}`"
-                    for w in self.blacklist_words
-                )
-                if self.blacklist_words
-                else "<:Astra_x:1141303954555289600> Keine Wörter gesetzt."
+            active = self.blacklist_enabled
+            status_emoji = "<:Astra_accept:1141303821176422460>" if active else "<:Astra_x:1141303954555289600>"
+            status_text = "Aktiv" if active else "Deaktiviert"
+
+            toggle_label = "Ein" if not active else "Aus"
+            toggle_style = discord.ButtonStyle.success if not active else discord.ButtonStyle.danger
+
+            toggle_btn = discord.ui.Button(
+                label=toggle_label,
+                style=toggle_style,
+                custom_id="automod_setup_toggle_blacklist"
             )
 
-            container.add_item(discord.ui.TextDisplay(
-                "## Blacklist\n\n"
-                f"{words_text}\n\n"
-                "<:Astra_light_on:1141303864134467675> "
-                "Mehrere Wörter mit `,` trennen."
+            async def toggle_cb(interaction):
+                self.blacklist_enabled = not self.blacklist_enabled
+                self._build()
+                await interaction.response.edit_message(view=self)
+
+            toggle_btn.callback = toggle_cb
+
+            container.add_item(discord.ui.Section(
+                discord.ui.TextDisplay(
+                    "## Beleidigungsfilter\n\n"
+                    f"{status_emoji} **Status:** {status_text}\n\n"
+                    "<:Astra_light_on:1141303864134467675> "
+                    "Schützt deinen Server automatisch vor Beleidigungen und Schimpfwörtern. "
+                    "Unterstützt Deutsch, Englisch und Slang."
+                ),
+                accessory=toggle_btn
             ))
-
-            container.add_item(discord.ui.Separator())
-
-            add_btn = discord.ui.Button(
-                label="Wörter hinzufügen",
-                emoji="<:Astra_accept:1141303821176422460>",
-                style=discord.ButtonStyle.primary,
-                custom_id="automod_setup_add_blacklist_button"
-            )
-
-            async def add_cb(interaction):
-
-                class WordModal(discord.ui.Modal, title="Blacklist Wörter"):
-
-                    words = discord.ui.TextInput(
-                        label="Wörter (mit , trennen)"
-                    )
-
-                    def __init__(self, parent):
-                        super().__init__()
-                        self.parent = parent
-
-                    async def on_submit(self, inter):
-
-                        entries = [
-                            w.strip().lower()
-                            for w in self.words.value.split(",")
-                            if w.strip()
-                        ]
-
-                        self.parent.blacklist_words.extend(entries)
-                        self.parent._build()
-                        await inter.response.edit_message(view=self.parent)
-
-                await interaction.response.send_modal(WordModal(self))
-
-            add_btn.callback = add_cb
-            container.add_item(discord.ui.ActionRow(add_btn))
 
         # PAGE 4
         elif self.page == 4:
@@ -410,7 +504,7 @@ class AutomodSetupView(discord.ui.LayoutView):
                 f"Caps: **{'Aktiv' if self.caps_enabled else 'Deaktiviert'} "
                 f"({self.caps_percent}%)**\n"
                 f"<:Astra_punkt:1141303896745201696> "
-                f"Blacklist: **{len(self.blacklist_words)} Wörter**\n\n"
+                f"Beleidigungsfilter: **{'Aktiv' if self.blacklist_enabled else 'Deaktiviert'}**\n\n"
                 "<:Astra_accept:1141303821176422460> "
                 "Wenn alles korrekt ist, kann gespeichert werden."
             ))
@@ -471,19 +565,12 @@ class AutomodSetupView(discord.ui.LayoutView):
                                 (interaction.guild.id, self.caps_percent, 1)
                             )
 
-                        if self.blacklist_words:
+                        if self.blacklist_enabled:
                             await cursor.execute(
                                 "INSERT INTO blacklist_settings (serverID, status) "
                                 "VALUES (%s,%s)",
                                 (interaction.guild.id, 1)
                             )
-
-                            for word in self.blacklist_words:
-                                await cursor.execute(
-                                    "INSERT INTO blacklist_words (serverID, word) "
-                                    "VALUES (%s,%s)",
-                                    (interaction.guild.id, word)
-                                )
 
                 success_view = discord.ui.LayoutView()
 
@@ -569,7 +656,6 @@ class AutomodConfigView(discord.ui.LayoutView):
 
         self.warn_rules: list[tuple[int, str, int | None]] = []
         self.caps_percent: int | None = None
-        self.words: list[str] = []
 
     def _parse_duration(self, value: str) -> int | None:
         if not value:
@@ -672,14 +758,6 @@ class AutomodConfigView(discord.ui.LayoutView):
                     self.blacklist_status = row[0]
                 else:
                     self.blacklist_status = 0
-
-                # Wörter laden
-                await cursor.execute(
-                    "SELECT word FROM blacklist_words WHERE serverID=%s",
-                    (self.guild.id,)
-                )
-                words = await cursor.fetchall()
-                self.words = [w[0] for w in words] if words else []
 
     # =========================================================
     # PERMISSION CHECK
@@ -949,14 +1027,11 @@ class AutomodConfigView(discord.ui.LayoutView):
         container.add_item(discord.ui.Separator())
 
         # =====================================================
-        # BLACKLIST
+        # BLACKLIST (Beleidigungsfilter)
         # =====================================================
 
         # Status aus _load_data()
         blacklist_enabled = getattr(self, "blacklist_status", 0) == 1
-
-        # Wörter aus blacklist_words
-        real_words = sorted(self.words)
 
         status_emoji = (
             "<:Astra_accept:1141303821176422460>"
@@ -965,15 +1040,6 @@ class AutomodConfigView(discord.ui.LayoutView):
         )
 
         status_text = "Aktiv" if blacklist_enabled else "Deaktiviert"
-
-        words_text = (
-            "\n".join(
-                f"<:Astra_punkt:1141303896745201696> `{w}`"
-                for w in real_words
-            )
-            if real_words
-            else "<:Astra_x:1141303954555289600> Keine Wörter gesetzt."
-        )
 
         # ---------- TOGGLE BUTTON ----------
 
@@ -1011,97 +1077,16 @@ class AutomodConfigView(discord.ui.LayoutView):
 
         blacklist_section = discord.ui.Section(
             discord.ui.TextDisplay(
-                "## Blacklist\n\n"
+                "## Beleidigungsfilter\n\n"
                 f"{status_emoji} Status: **{status_text}**\n\n"
-                f"{words_text}\n\n"
                 "<:Astra_light_on:1141303864134467675> "
-                "Nachrichten mit diesen Wörtern werden automatisch gelöscht."
+                "Schützt deinen Server automatisch vor Beleidigungen und Schimpfwörtern. "
+                "Unterstützt Deutsch, Englisch und Slang mit Kontext-Erkennung."
             ),
             accessory=toggle_blacklist
         )
 
         container.add_item(blacklist_section)
-        container.add_item(discord.ui.Separator())
-
-        # ---------- BUTTONS ----------
-
-        add_word = discord.ui.Button(
-            label="Wörter hinzufügen",
-            emoji="<:Astra_accept:1141303821176422460>",
-            style=discord.ButtonStyle.success,
-            disabled=not blacklist_enabled,
-            custom_id="automod_config_add_word_button"
-        )
-
-        remove_word = discord.ui.Button(
-            label="Wort entfernen",
-            emoji="<:Astra_x:1141303954555289600>",
-            style=discord.ButtonStyle.danger,
-            disabled=not blacklist_enabled,
-            custom_id="automod_config_remove_word_button"
-        )
-
-        # ---------- ADD WORD ----------
-
-        async def add_word_cb(interaction):
-
-            class AddWord(discord.ui.Modal, title="Blacklist Wörter hinzufügen"):
-                words = discord.ui.TextInput(
-                    label="Wörter (mit , trennen)"
-                )
-
-                def __init__(self, parent):
-                    super().__init__()
-                    self.parent = parent
-
-                async def on_submit(self, inter):
-                    entries = [
-                        w.strip().lower()
-                        for w in self.words.value.split(",")
-                        if w.strip()
-                    ]
-
-                    async with self.parent.bot.pool.acquire() as conn:
-                        async with conn.cursor() as cursor:
-                            for word in entries:
-                                await cursor.execute(
-                                    "INSERT IGNORE INTO blacklist_words (serverID, word) "
-                                    "VALUES (%s,%s)",
-                                    (self.parent.guild.id, word)
-                                )
-
-                    await self.parent.refresh_view(inter)
-
-            await interaction.response.send_modal(AddWord(self))
-
-        # ---------- REMOVE WORD ----------
-
-        async def remove_word_cb(interaction):
-
-            class RemoveWord(discord.ui.Modal, title="Blacklist Wort entfernen"):
-                word = discord.ui.TextInput(label="Wort")
-
-                def __init__(self, parent):
-                    super().__init__()
-                    self.parent = parent
-
-                async def on_submit(self, inter):
-                    async with self.parent.bot.pool.acquire() as conn:
-                        async with conn.cursor() as cursor:
-                            await cursor.execute(
-                                "DELETE FROM blacklist_words "
-                                "WHERE serverID=%s AND word=%s",
-                                (self.parent.guild.id, self.word.value.lower())
-                            )
-
-                    await self.parent.refresh_view(inter)
-
-            await interaction.response.send_modal(RemoveWord(self))
-
-        add_word.callback = add_word_cb
-        remove_word.callback = remove_word_cb
-
-        container.add_item(discord.ui.ActionRow(add_word, remove_word))
         self.add_item(container)
 
     # =========================================================
@@ -1584,76 +1569,132 @@ class Warn(commands.Cog):
                 if not status_row or status_row[0] != 1:
                     return
 
+                res = profanity_filter.check_profanity(msg.content)
+                if res["contains_profanity"]:
+                    # Nachricht löschen und Warnung an User (immer bei Treffer)
+                    try:
+                        await msg.delete()
+                    except (discord.Forbidden, discord.NotFound):
+                        pass
+
+                    warning_embed = discord.Embed(
+                        title="Bitte unterlasse die Schimpfwörter!",
+                        description=f"{msg.author.mention} nutze ein Wort welches hier nicht erlaubt ist!",
+                        colour=discord.Color.red(),
+                        timestamp=discord.utils.utcnow()
+                    )
+                    warning_embed.set_author(name=msg.author, icon_url=msg.author.avatar)
+                    warn_msg = await msg.channel.send(embed=warning_embed)
+
+                    # Entscheidung: Eindeutig oder Unsicher?
+                    # Kriterium: Wenn Severity EXACT ist und keine "leichten" Wörter (wie hell/damn) vorliegen, 
+                    # die die Kontext-Erkennung durchgelassen hat. 
+                    # Wir stufen Treffer als "Eindeutig" ein, wenn glin_profanity sie als profan markiert 
+                    # und mindestens ein Treffer Severity EXACT hat.
+                    
+                    is_clear = any(m.get("severity") == SeverityLevel.EXACT for m in res.get("matches", []))
+                    matched_words = ", ".join(res.get("profane_words", []))
+                    reason = f"Beleidigungsfilter: {matched_words}"
+
+                    # Modlog finden
+                    await cursor.execute(
+                        "SELECT channelID FROM modlog WHERE serverID = (%s)",
+                        (msg.guild.id,)
+                    )
+                    result_modlog = await cursor.fetchone()
+                    log_channel = msg.guild.get_channel(int(result_modlog[0])) if result_modlog else None
+
+                    if is_clear:
+                        # EINDEUTIG -> Automatisch handeln
+                        # Wir rufen intern die Logik von /warn auf (via Cog-Methode)
+                        await self.execute_automod_action(msg.guild, msg.author, reason, log_channel)
+                    else:
+                        # UNSICHER -> Modlog zur Prüfung
+                        if log_channel:
+                            review_embed = discord.Embed(
+                                title="⚠️ Mögliche Beleidigung erkannt",
+                                colour=discord.Color.orange(),
+                                timestamp=discord.utils.utcnow()
+                            )
+                            review_embed.add_field(name="👤 User", value=f"{msg.author.mention} (`{msg.author.id}`)", inline=True)
+                            review_embed.add_field(name="📄 Nachricht", value=msg.content[:1024], inline=False)
+                            review_embed.add_field(name="🔎 Begriffe", value=matched_words, inline=True)
+                            review_embed.add_field(name="📊 Details", value=res.get("reason", "Keine Details"), inline=True)
+                            
+                            view = ProfanityReviewView(self.bot, msg.author, reason, msg.content, res)
+                            await log_channel.send(embed=review_embed, view=view)
+
+                    await asyncio.sleep(7)
+                    try:
+                        await warn_msg.delete()
+                    except discord.NotFound:
+                        pass
+
+    async def execute_automod_action(self, guild, member, reason, log_channel):
+        """Führt eine automatische Warnung und ggf. Eskalation aus."""
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                # 1. Warn eintragen
                 await cursor.execute(
-                    "SELECT word FROM blacklist_words WHERE serverID = (%s)",
-                    (msg.guild.id,)
+                    "SELECT COUNT(*) FROM warns WHERE userID=%s AND guildID=%s",
+                    (member.id, guild.id)
                 )
-                result = await cursor.fetchall()
+                count_row = await cursor.fetchone()
+                current_warns = count_row[0] if count_row else 0
+                warnid = current_warns + 1
 
-                if not result:
-                    return
+                await cursor.execute(
+                    "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s,%s,%s,%s)",
+                    (guild.id, member.id, reason, warnid)
+                )
 
-                for eintrag in result:
+                # 2. Modlog
+                if log_channel:
+                    log_embed = discord.Embed(
+                        colour=discord.Colour.orange(),
+                        description=f"Der User {member} (`{member.id}`) wurde automatisch verwarnt."
+                    )
+                    log_embed.add_field(name="👤 User:", value=f"{member.mention}", inline=False)
+                    log_embed.add_field(name="🔔 Auslöser:", value="Automatischer Beleidigungsfilter (Eindeutig)", inline=False)
+                    log_embed.add_field(name="📄 Grund:", value=reason, inline=False)
+                    log_embed.set_author(name=member, icon_url=member.avatar)
+                    await log_channel.send(embed=log_embed)
 
-                    word = eintrag[0]
-                    lowerword = word.lower()
-                    lowercontent = msg.content.lower()
-
-                    if lowerword in lowercontent:
-
-                        embed = discord.Embed(
-                            title="Bitte unterlasse die Schimpfwörter!",
-                            description=f"{msg.author.mention} nutze ein Wort: ``{word}`` welches hier nicht erlaubt ist!",
-                            colour=discord.Colour.red(),
-                            timestamp=discord.utils.utcnow()
-                        )
-                        embed.set_author(name=msg.author, icon_url=msg.author.avatar)
-
-                        delete = await msg.channel.send(embed=embed)
-
-                        channel = msg.channel
-                        message = await channel.fetch_message(msg.id)
-                        await message.delete()
-
-                        # ================= MODLOG BLACKLIST =================
-
-                        await cursor.execute(
-                            "SELECT channelID FROM modlog WHERE serverID = (%s)",
-                            (msg.guild.id,)
-                        )
-                        result_modlog = await cursor.fetchone()
-
-                        if result_modlog is not None:
-                            log_channel = msg.guild.get_channel(int(result_modlog[0]))
-
-                            log_embed = discord.Embed(
-                                colour=discord.Colour.orange(),
-                                description=f"Der User {msg.author} (`{msg.author.id}`) nutzte ein verbotenes Wort."
-                            )
-                            log_embed.add_field(
-                                name="👤 User:",
-                                value=f"{msg.author.mention}",
-                                inline=False
-                            )
-                            log_embed.add_field(
-                                name="📄 Wort:",
-                                value=f"{word}",
-                                inline=False
-                            )
-                            log_embed.add_field(
-                                name="🔔 Auslöser:",
-                                value="Blacklist",
-                                inline=False
-                            )
-                            log_embed.set_author(
-                                name=msg.author,
-                                icon_url=msg.author.avatar
-                            )
-
-                            await log_channel.send(embed=log_embed)
-
-                        await asyncio.sleep(7)
-                        await delete.delete()
+                # 3. Eskalations-Check
+                await cursor.execute(
+                    "SELECT action, warns, timeout_seconds FROM automod WHERE guildID=%s",
+                    (guild.id,)
+                )
+                rules = await cursor.fetchall()
+                if rules:
+                    rules = sorted(rules, key=lambda x: int(x[1]), reverse=True)
+                    for action, warn_limit, timeout_seconds in rules:
+                        if warnid >= int(warn_limit):
+                            # Aktion ausführen
+                            try:
+                                if action == "Kick":
+                                    await member.kick(reason=f"Automod: {reason}")
+                                elif action == "Ban":
+                                    await member.ban(reason=f"Automod: {reason}")
+                                elif action == "Timeout":
+                                    duration = timeout_seconds if timeout_seconds else 30
+                                    await member.timeout(timedelta(seconds=int(duration)), reason=f"Automod: {reason}")
+                                
+                                # Eskalations-Log
+                                if log_channel:
+                                    auto_embed = discord.Embed(
+                                        title="🤖 Automod ausgelöst",
+                                        colour=discord.Color.dark_orange(),
+                                        timestamp=discord.utils.utcnow()
+                                    )
+                                    auto_embed.add_field(name="👤 Member", value=member.mention, inline=False)
+                                    auto_embed.add_field(name="📊 Verwarnungen", value=f"{warnid} / {warn_limit}", inline=True)
+                                    auto_embed.add_field(name="⚙️ Aktion", value=action, inline=True)
+                                    auto_embed.add_field(name="🔔 Auslöser", value="Automod Eskalation", inline=False)
+                                    await log_channel.send(embed=auto_embed)
+                            except discord.Forbidden:
+                                pass
+                            break
 
     @app_commands.command(name="warn", description="Warne einen User.")
     @app_commands.guild_only()
