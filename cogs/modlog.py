@@ -4,6 +4,7 @@ import pymysql.err
 from discord import app_commands
 from typing import Literal
 from cogs.tempchannel import is_temp_category
+import asyncio
 
 
 ##########
@@ -329,6 +330,17 @@ class modlog(commands.Cog):
     @commands.Cog.listener()
     async def on_message_delete(self, message):
         if message.guild is None or message.author.bot:
+            return
+
+        # Automod-Check: Wenn die Nachricht vom Automod gelöscht wurde, nicht loggen
+        if hasattr(self.bot, 'automod_deleted_messages') and message.id in self.bot.automod_deleted_messages:
+            # Wir warten kurz, um sicherzustellen, dass andere Listener (z.B. Snipe) auch Zeit hatten, den Cache zu lesen
+            # oder wir entfernen es nach einer gewissen Zeit.
+            # Da Listener parallel laufen, ist das Entfernen hier riskant, wenn mod.py noch nicht dran war.
+            # Aber wir können es einfach drin lassen und in modlog.py am Ende des on_message_delete entfernen,
+            # oder wir nutzen ein asyncio.sleep(1) vor dem Entfernen.
+            await asyncio.sleep(1)
+            self.bot.automod_deleted_messages.discard(message.id)
             return
 
         async with self.bot.pool.acquire() as conn:

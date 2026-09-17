@@ -755,6 +755,12 @@ class mod(commands.Cog):
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
         if message.guild:
+            # Automod-Check: Wenn die Nachricht vom Automod gelöscht wurde, nicht für Snipe speichern
+            if hasattr(self.bot, 'automod_deleted_messages') and message.id in self.bot.automod_deleted_messages:
+                # Wir entfernen es hier NICHT aus dem Cache, da modlog.py es auch noch braucht 
+                # und modlog.py es nach der Verarbeitung entfernt.
+                return
+
             self.snipe_message_author[message.guild.id] = message.author
             self.snipe_message_content[message.guild.id] = message.content or ""
             self.snipe_message_channel[message.guild.id] = message.channel

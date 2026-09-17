@@ -97,9 +97,13 @@ class Astra(commands.Bot):
             "cogs.levels",
             "cogs.snake",
         ]
+        self.automod_deleted_messages = set()
 
     async def setup_hook(self):
         try:
+            # Task zum periodischen Leeren des Automod-Caches starten (Sicherheitsmaßnahme)
+            self.loop.create_task(self.clear_automod_cache_task())
+
             # 1. Datenbank-Verbindung herstellen (Priorität hoch)
             await self.connect_db()
             await self.init_tables()
@@ -253,6 +257,12 @@ class Astra(commands.Bot):
         logging.info("──────────────────── ✓ ────────────────────")
         if fehler > 0:
             logging.error(f"❗ {fehler} Cog(s) konnten nicht geladen werden.")
+
+    async def clear_automod_cache_task(self):
+        """Leert den Automod-Cache periodisch, um Speicherlecks zu vermeiden."""
+        while not self.is_closed():
+            await asyncio.sleep(3600)  # Einmal pro Stunde
+            self.automod_deleted_messages.clear()
 
     async def on_message(self, msg):
         if msg.author.bot:

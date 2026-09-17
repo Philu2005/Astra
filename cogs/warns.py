@@ -1497,6 +1497,11 @@ class Warn(commands.Cog):
                                 )
 
                                 await msg.channel.send(embed=embed)
+                                
+                                # In Cache eintragen, damit Modlog es ignoriert
+                                if hasattr(self.bot, 'automod_deleted_messages'):
+                                    self.bot.automod_deleted_messages.add(msg.id)
+                                
                                 await message.delete()
 
                                 await cursor.execute(
@@ -1573,6 +1578,9 @@ class Warn(commands.Cog):
                 if res["contains_profanity"]:
                     # Nachricht löschen und Warnung an User (immer bei Treffer)
                     try:
+                        # In Cache eintragen, damit Modlog es ignoriert
+                        if hasattr(self.bot, 'automod_deleted_messages'):
+                            self.bot.automod_deleted_messages.add(msg.id)
                         await msg.delete()
                     except (discord.Forbidden, discord.NotFound):
                         pass
