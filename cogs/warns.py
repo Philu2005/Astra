@@ -476,6 +476,26 @@ class AutomodSetupView(discord.ui.LayoutView):
             )
 
             async def toggle_cb(interaction):
+                if not self.blacklist_enabled:
+                    async with self.bot.pool.acquire() as conn:
+                        async with conn.cursor() as cursor:
+                            await cursor.execute(
+                                "SELECT channelID FROM modlog WHERE serverID = %s",
+                                (interaction.guild.id,)
+                            )
+                            result = await cursor.fetchone()
+
+                            if not result:
+                                embed = discord.Embed(
+                                    title="<:Astra_x:1141303954555289600> Modlog benötigt",
+                                    description=(
+                                        "Um den **Beleidigungsfilter** zu aktivieren, muss ein **Modlog-Kanal** eingerichtet sein.\n\n"
+                                        "Bitte richte erst einen Modlog mit `/modlog setup` ein."
+                                    ),
+                                    colour=discord.Colour.red()
+                                )
+                                return await interaction.response.send_message(embed=embed, ephemeral=True)
+
                 self.blacklist_enabled = not self.blacklist_enabled
                 self._build()
                 await interaction.response.edit_message(view=self)
@@ -1059,6 +1079,26 @@ class AutomodConfigView(discord.ui.LayoutView):
         async def toggle_blacklist_cb(interaction):
 
             new_status = 0 if blacklist_enabled else 1
+
+            if new_status == 1:
+                async with self.bot.pool.acquire() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute(
+                            "SELECT channelID FROM modlog WHERE serverID = %s",
+                            (self.guild.id,)
+                        )
+                        result = await cursor.fetchone()
+
+                        if not result:
+                            embed = discord.Embed(
+                                title="<:Astra_x:1141303954555289600> Modlog benötigt",
+                                description=(
+                                    "Um den **Beleidigungsfilter** zu aktivieren, muss ein **Modlog-Kanal** eingerichtet sein.\n\n"
+                                    "Bitte richte erst einen Modlog mit `/modlog setup` ein."
+                                ),
+                                colour=discord.Colour.red()
+                            )
+                            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
             async with self.bot.pool.acquire() as conn:
                 async with conn.cursor() as cursor:
