@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands, ui
 from datetime import timedelta, datetime
-from typing import Literal
+from typing import Literal, Optional
 import asyncio
 import os
 from utils.profanity import check_profanity_message
@@ -60,12 +60,12 @@ class ProfanityReviewView(discord.ui.View):
             async with conn.cursor() as cursor:
                 # 1. Warn eintragen
                 await cursor.execute(
-                    "SELECT COUNT(*) FROM warns WHERE userID=%s AND guildID=%s",
+                    "SELECT COALESCE(MAX(warnID), 0) FROM warns WHERE userID=%s AND guildID=%s",
                     (self.member.id, interaction.guild.id)
                 )
                 count_row = await cursor.fetchone()
-                current_warns = count_row[0] if count_row else 0
-                warnid = current_warns + 1
+                max_warns = count_row[0] if count_row else 0
+                warnid = max_warns + 1
 
                 await cursor.execute(
                     "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s,%s,%s,%s)",
@@ -1322,15 +1322,15 @@ async def warn_user_context(interaction: discord.Interaction, member: discord.Me
             async with interaction.client.pool.acquire() as conn:
                 async with conn.cursor() as cursor:
 
-                    # WARN COUNT
+                    # WARN COUNT / NEXT ID
                     await cursor.execute(
-                        "SELECT COUNT(*) FROM warns WHERE userID=%s AND guildID=%s",
+                        "SELECT COALESCE(MAX(warnID), 0) FROM warns WHERE userID=%s AND guildID=%s",
                         (member.id, interaction.guild.id)
                     )
                     count_row = await cursor.fetchone()
-                    current_warns = count_row[0] if count_row else 0
+                    max_warns = count_row[0] if count_row else 0
 
-                    warnid = current_warns + 1
+                    warnid = max_warns + 1
 
                     await cursor.execute(
                         "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s,%s,%s,%s)",
@@ -1436,35 +1436,59 @@ async def unwarn_user_context(interaction: discord.Interaction, member: discord.
 
     class UnwarnModal(discord.ui.Modal, title="Warn entfernen"):
 
-        warnid = discord.ui.TextInput(label="Warn ID", required=True)
+        warnid = discord.ui.TextInput(label="Warn ID (oder 'alle')", required=True)
 
         async def on_submit(self, inter: discord.Interaction):
             async with interaction.client.pool.acquire() as conn:
                 async with conn.cursor() as cursor:
-
-                    await cursor.execute(
-                        "DELETE FROM warns WHERE guildID=%s AND warnID=%s AND userID=%s",
-                        (interaction.guild.id, self.warnid.value, member.id)
-                    )
-
-                    if cursor.rowcount > 0:
-                        embed = discord.Embed(
-                            title="Verwarnung gelöscht",
-                            description=(
-                                f"Die Verwarnung des Users {member.mention} mit der ID: ``{self.warnid.value}`` "
-                                f"wurde gelöscht.\nUm jemanden zu warnen nutze `/warn`."
-                            ),
-                            color=discord.Color.green()
+                    val = self.warnid.value.strip()
+                    if val.lower() in ("alle", "all", "*"):
+                        await cursor.execute(
+                            "DELETE FROM warns WHERE guildID=%s AND userID=%s",
+                            (interaction.guild.id, member.id)
                         )
+                        if cursor.rowcount > 0:
+                            embed = discord.Embed(
+                                title="Verwarnungen gelöscht",
+                                description=(
+                                    f"Es wurden alle Verwarnungen ({cursor.rowcount}) des Users {member.mention} "
+                                    f"gelöscht.\nUm jemanden zu warnen nutze `/warn`."
+                                ),
+                                color=discord.Color.green()
+                            )
+                        else:
+                            embed = discord.Embed(
+                                title="Keine aktuellen Verwarnungen",
+                                description=(
+                                    f"Es gibt aktuell keine Verwarnungen für den User {member.mention}!\n"
+                                    f"Um jemanden zu warnen nutze `/warn`."
+                                ),
+                                color=discord.Color.green()
+                            )
                     else:
-                        embed = discord.Embed(
-                            title="Keine Aktuellen erwarnungen",
-                            description=(
-                                f"Es gibt aktuell keine Verwarnungen für den User {member.mention} "
-                                f"mit der WarnID: ``{self.warnid.value}``!\nUm jemanden zu warnen nutze `/warn`."
-                            ),
-                            color=discord.Color.green()
+                        await cursor.execute(
+                            "DELETE FROM warns WHERE guildID=%s AND warnID=%s AND userID=%s",
+                            (interaction.guild.id, val, member.id)
                         )
+
+                        if cursor.rowcount > 0:
+                            embed = discord.Embed(
+                                title="Verwarnung gelöscht",
+                                description=(
+                                    f"Die Verwarnung des Users {member.mention} mit der ID: ``{val}`` "
+                                    f"wurde gelöscht.\nUm jemanden zu warnen nutze `/warn`."
+                                ),
+                                color=discord.Color.green()
+                            )
+                        else:
+                            embed = discord.Embed(
+                                title="Keine aktuellen Verwarnungen",
+                                description=(
+                                    f"Es gibt aktuell keine Verwarnungen für den User {member.mention} "
+                                    f"mit der WarnID: ``{val}``!\nUm jemanden zu warnen nutze `/warn`."
+                                ),
+                                color=discord.Color.green()
+                            )
 
                     await inter.response.send_message(embed=embed)
 
@@ -1544,26 +1568,21 @@ class Warn(commands.Cog):
                                 await message.delete()
 
                                 await cursor.execute(
-                                    "SELECT reason FROM warns WHERE userID = (%s) AND guildID = (%s)",
+                                    "SELECT COALESCE(MAX(warnID), 0) FROM warns WHERE userID = %s AND guildID = %s",
                                     (msg.author.id, msg.guild.id)
                                 )
-                                result2 = await cursor.fetchall()
+                                max_row = await cursor.fetchone()
+                                warnid = (max_row[0] if max_row else 0) + 1
 
                                 reason = (
                                     f"{msg.author.name} überschritt das Caps Limit von "
                                     f"`{int(percent1)}%`. Die Nachricht hatte `{round(procent)}%` Caps!"
                                 )
 
-                                if result2 == ():
-                                    await cursor.execute(
-                                        "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s, %s, %s, %s)",
-                                        (msg.guild.id, msg.author.id, reason, 1)
-                                    )
-                                else:
-                                    await cursor.execute(
-                                        "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s, %s, %s, %s)",
-                                        (msg.guild.id, msg.author.id, reason, len(result2) + 1)
-                                    )
+                                await cursor.execute(
+                                    "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s, %s, %s, %s)",
+                                    (msg.guild.id, msg.author.id, reason, warnid)
+                                )
 
                                 await cursor.execute(
                                     "SELECT channelID FROM modlog WHERE serverID = (%s)",
@@ -1679,12 +1698,12 @@ class Warn(commands.Cog):
             async with conn.cursor() as cursor:
                 # 1. Warn eintragen
                 await cursor.execute(
-                    "SELECT COUNT(*) FROM warns WHERE userID=%s AND guildID=%s",
+                    "SELECT COALESCE(MAX(warnID), 0) FROM warns WHERE userID=%s AND guildID=%s",
                     (member.id, guild.id)
                 )
                 count_row = await cursor.fetchone()
-                current_warns = count_row[0] if count_row else 0
-                warnid = current_warns + 1
+                max_warns = count_row[0] if count_row else 0
+                warnid = max_warns + 1
 
                 await cursor.execute(
                     "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s,%s,%s,%s)",
@@ -1749,16 +1768,16 @@ class Warn(commands.Cog):
             async with conn.cursor() as cursor:
 
                 # ─────────────────────────────
-                # WARN COUNT HOLEN
+                # WARN COUNT / NEXT ID HOLEN
                 # ─────────────────────────────
                 await cursor.execute(
-                    "SELECT COUNT(*) FROM warns WHERE userID=%s AND guildID=%s",
+                    "SELECT COALESCE(MAX(warnID), 0) FROM warns WHERE userID=%s AND guildID=%s",
                     (member.id, interaction.guild.id)
                 )
                 count_row = await cursor.fetchone()
-                current_warns = count_row[0] if count_row else 0
+                max_warns = count_row[0] if count_row else 0
 
-                warnid = current_warns + 1
+                warnid = max_warns + 1
 
                 await cursor.execute(
                     "INSERT INTO warns (guildID, userID, reason, warnID) VALUES (%s,%s,%s,%s)",
@@ -1861,37 +1880,80 @@ class Warn(commands.Cog):
 
                         break  # ← nur höchste Regel!
 
-    @app_commands.command(name="unwarn", description="Entferne Warns von einem User.")
+    @app_commands.command(name="unwarn", description="Entferne Verwarnungen von einem User.")
+    @app_commands.describe(
+        member="Der User, dessen Verwarnung(en) entfernt werden sollen.",
+        warnid="Die spezifische Warn-ID, die gelöscht werden soll.",
+        alle="Setze auf True, um alle Verwarnungen des Users zu löschen."
+    )
     @app_commands.guild_only()
     @app_commands.checks.cooldown(1, 5, key=lambda i: (i.guild_id, i.user.id))
     @app_commands.checks.has_permissions(moderate_members=True)
-    async def unwarn(self, interaction: discord.Interaction, member: discord.Member, warnid: int):
-        """Entferne Warns von einem User."""
+    async def unwarn(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        warnid: Optional[int] = None,
+        alle: Optional[bool] = False
+    ):
+        """Entferne Verwarnungen von einem User."""
+        if not alle and warnid is None:
+            embed = discord.Embed(
+                title="Ungültige Eingabe",
+                description="Bitte gib entweder eine `warnid` an oder setze `alle` auf `True`, um alle Verwarnungen zu löschen.",
+                color=discord.Color.red()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "DELETE FROM warns WHERE guildID=%s AND warnID=%s AND userID=%s",
-                    (interaction.guild.id, warnid, member.id)
-                )
-
-                if cursor.rowcount > 0:
-                    embed = discord.Embed(
-                        title="Verwarnung gelöscht",
-                        description=(
-                            f"Die Verwarnung des Users {member.mention} mit der ID: ``{warnid}`` "
-                            f"wurde gelöscht.\nUm jemanden zu warnen nutze `/warn`."
-                        ),
-                        color=discord.Color.green()
+                if alle:
+                    await cursor.execute(
+                        "DELETE FROM warns WHERE guildID=%s AND userID=%s",
+                        (interaction.guild.id, member.id)
                     )
+                    if cursor.rowcount > 0:
+                        embed = discord.Embed(
+                            title="Verwarnungen gelöscht",
+                            description=(
+                                f"Es wurden alle Verwarnungen ({cursor.rowcount}) des Users {member.mention} "
+                                f"gelöscht.\nUm jemanden zu warnen nutze `/warn`."
+                            ),
+                            color=discord.Color.green()
+                        )
+                    else:
+                        embed = discord.Embed(
+                            title="Keine aktuellen Verwarnungen",
+                            description=(
+                                f"Es gibt aktuell keine Verwarnungen für den User {member.mention}!\n"
+                                f"Um jemanden zu warnen nutze `/warn`."
+                            ),
+                            color=discord.Color.green()
+                        )
                 else:
-                    embed = discord.Embed(
-                        title="Keine Aktuellen erwarnungen",
-                        description=(
-                            f"Es gibt aktuell keine Verwarnungen für den User {member.mention} "
-                            f"mit der WarnID: ``{warnid}``!\nUm jemanden zu warnen nutze `/warn`."
-                        ),
-                        color=discord.Color.green()
+                    await cursor.execute(
+                        "DELETE FROM warns WHERE guildID=%s AND warnID=%s AND userID=%s",
+                        (interaction.guild.id, warnid, member.id)
                     )
+
+                    if cursor.rowcount > 0:
+                        embed = discord.Embed(
+                            title="Verwarnung gelöscht",
+                            description=(
+                                f"Die Verwarnung des Users {member.mention} mit der ID: ``{warnid}`` "
+                                f"wurde gelöscht.\nUm jemanden zu warnen nutze `/warn`."
+                            ),
+                            color=discord.Color.green()
+                        )
+                    else:
+                        embed = discord.Embed(
+                            title="Keine aktuellen Verwarnungen",
+                            description=(
+                                f"Es gibt aktuell keine Verwarnungen für den User {member.mention} "
+                                f"mit der WarnID: ``{warnid}``!\nUm jemanden zu warnen nutze `/warn`."
+                            ),
+                            color=discord.Color.green()
+                        )
 
                 await interaction.response.send_message(embed=embed)
 
