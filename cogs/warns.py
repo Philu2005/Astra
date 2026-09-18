@@ -21,13 +21,14 @@ profanity_filter = Filter({
 # =========================================================
 
 class ProfanityReviewView(discord.ui.View):
-    def __init__(self, bot: commands.Bot, member: discord.Member, reason: str, message_content: str, filter_result: dict):
+    def __init__(self, bot: commands.Bot, member: discord.Member, reason: str, message_content: str, filter_result: dict, message: discord.Message = None):
         super().__init__(timeout=None)
         self.bot = bot
         self.member = member
         self.reason = reason
         self.message_content = message_content
         self.filter_result = filter_result
+        self.message = message
 
     async def _disable_buttons(self, interaction: discord.Interaction, status_text: str):
         for item in self.children:
@@ -45,6 +46,13 @@ class ProfanityReviewView(discord.ui.View):
         # Automod Aktion ausführen
         warn_cog = self.bot.get_cog("Warn")
         if warn_cog:
+            if self.message:
+                try:
+                    if hasattr(self.bot, 'automod_deleted_messages'):
+                        self.bot.automod_deleted_messages.add(self.message.id)
+                    await self.message.delete()
+                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                    pass
             # Wir simulieren einen Warn-Aufruf
             # Da warn() eine Interaction erwartet, extrahieren wir die Logik
             await self._execute_automod(interaction)
@@ -1616,24 +1624,6 @@ class Warn(commands.Cog):
 
                 res = profanity_filter.check_profanity(msg.content)
                 if res["contains_profanity"]:
-                    # Nachricht löschen und Warnung an User (immer bei Treffer)
-                    try:
-                        # In Cache eintragen, damit Modlog es ignoriert
-                        if hasattr(self.bot, 'automod_deleted_messages'):
-                            self.bot.automod_deleted_messages.add(msg.id)
-                        await msg.delete()
-                    except (discord.Forbidden, discord.NotFound):
-                        pass
-
-                    warning_embed = discord.Embed(
-                        title="Bitte unterlasse die Schimpfwörter!",
-                        description=f"{msg.author.mention} nutze ein Wort welches hier nicht erlaubt ist!",
-                        colour=discord.Color.red(),
-                        timestamp=discord.utils.utcnow()
-                    )
-                    warning_embed.set_author(name=msg.author, icon_url=msg.author.avatar)
-                    warn_msg = await msg.channel.send(embed=warning_embed)
-
                     # Entscheidung: Eindeutig oder Unsicher?
                     # Wir stufen Treffer als "Eindeutig" ein, wenn:
                     # 1. glin_profanity sie als profan markiert UND
@@ -1672,11 +1662,34 @@ class Warn(commands.Cog):
                     log_channel = msg.guild.get_channel(int(result_modlog[0])) if result_modlog else None
 
                     if is_clear:
-                        # EINDEUTIG -> Automatisch handeln
+                        # EINDEUTIG -> Nachricht sofort löschen, Warnung an User und automatisch handeln
+                        try:
+                            # In Cache eintragen, damit Modlog es ignoriert
+                            if hasattr(self.bot, 'automod_deleted_messages'):
+                                self.bot.automod_deleted_messages.add(msg.id)
+                            await msg.delete()
+                        except (discord.Forbidden, discord.NotFound):
+                            pass
+
+                        warning_embed = discord.Embed(
+                            title="Bitte unterlasse die Schimpfwörter!",
+                            description=f"{msg.author.mention} nutze ein Wort welches hier nicht erlaubt ist!",
+                            colour=discord.Color.red(),
+                            timestamp=discord.utils.utcnow()
+                        )
+                        warning_embed.set_author(name=msg.author, icon_url=msg.author.avatar)
+                        warn_msg = await msg.channel.send(embed=warning_embed)
+
                         # Wir rufen intern die Logik von /warn auf (via Cog-Methode)
                         await self.execute_automod_action(msg.guild, msg.author, reason, log_channel)
+
+                        await asyncio.sleep(7)
+                        try:
+                            await warn_msg.delete()
+                        except discord.NotFound:
+                            pass
                     else:
-                        # UNSICHER -> Modlog zur Prüfung
+                        # UNSICHER -> Modlog zur Prüfung (Nachricht wird erst gelöscht, wenn Admin bestätigt)
                         if log_channel:
                             review_embed = discord.Embed(
                                 title="⚠️ Mögliche Beleidigung erkannt",
@@ -1688,14 +1701,8 @@ class Warn(commands.Cog):
                             review_embed.add_field(name="🔎 Begriffe", value=matched_words, inline=True)
                             review_embed.add_field(name="📊 Grund für Unsicherheit", value="Treffer ohne direkten Bezug (Slang/Ausruf?)", inline=True)
                             
-                            view = ProfanityReviewView(self.bot, msg.author, reason, msg.content, res)
+                            view = ProfanityReviewView(self.bot, msg.author, reason, msg.content, res, message=msg)
                             await log_channel.send(embed=review_embed, view=view)
-
-                    await asyncio.sleep(7)
-                    try:
-                        await warn_msg.delete()
-                    except discord.NotFound:
-                        pass
 
     async def execute_automod_action(self, guild, member, reason, log_channel):
         """Führt eine automatische Warnung und ggf. Eskalation aus."""
