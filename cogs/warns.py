@@ -5,16 +5,7 @@ from datetime import timedelta, datetime
 from typing import Literal
 import asyncio
 import os
-from glin_profanity import Filter, SeverityLevel
-
-# Profanity Filter initialisieren
-# Wir aktivieren Kontext-Awareness und unterstützen alle 23 Sprachen
-profanity_filter = Filter({
-    "all_languages": True,
-    "enable_context_aware": True,
-    "detect_leetspeak": True,
-    "normalize_unicode": True
-})
+from utils.profanity import check_profanity_message
 
 # =========================================================
 # ================= PROFANITY REVIEW VIEW =================
@@ -1622,87 +1613,65 @@ class Warn(commands.Cog):
                 if not status_row or status_row[0] != 1:
                     return
 
-                res = profanity_filter.check_profanity(msg.content)
-                if res["contains_profanity"]:
-                    # Entscheidung: Eindeutig oder Unsicher?
-                    # Wir stufen Treffer als "Eindeutig" ein, wenn:
-                    # 1. glin_profanity sie als profan markiert UND
-                    # 2. Mindestens ein Treffer Severity EXACT hat UND
-                    # 3. Der Kontext auf eine direkte Beleidigung hindeutet (z.B. Pronomen wie "du", "you")
-                    #    ODER es sich um extrem schwere Beleidigungen handelt.
-                    
-                    is_exact = any(m.get("severity") == SeverityLevel.EXACT for m in res.get("matches", []))
-                    
-                    # Heuristik für direkte Ansprache/Beleidigung
-                    import re
-                    direct_address = bool(re.search(r"\b(du|you|u|deine|your|bist|are|dir|euch|ihr)\b", msg.content, re.IGNORECASE))
+                result = check_profanity_message(msg.content)
+                if result.get("outcome") == "IGNORE" or not result["contains_profanity"]:
+                    return
 
-                    # NEU: Heuristik für positive Verstärker (Compliments)
-                    # Wenn Wörter wie "geil", "nice", "awesome" etc. vorkommen, 
-                    # ist es wahrscheinlich keine Beleidigung, sondern ein Kompliment mit Fluch-Intensivierer.
-                    positive_context = bool(re.search(r"\b(geil|geiler|geile|nice|awesome|gut|gute|guter|good|bester|beste|love|liebe|toll|tolle|toller|hammer|krass|krasse|krasser|stabil|stabile|stabiler)\b", msg.content, re.IGNORECASE))
-                    
-                    # Liste von Begriffen, die fast immer eine automatische Sanktion rechtfertigen (Hassrede/extreme Beleidigung)
-                    # Wir prüfen hier nur, ob diese in den erkannten profane_words sind.
-                    hard_triggers = ["hurensohn", "nigger", "bastard", "wichser", "asshole", "arschloch", "fotze", "schlampe"]
-                    is_hard_trigger = any(word.lower() in hard_triggers for word in res.get("profane_words", []))
-                    
-                    # Logik: Eindeutig wenn (Hard-Trigger ODER (direkte Ansprache UND kein positiver Kontext))
-                    is_clear = is_exact and (is_hard_trigger or (direct_address and not positive_context))
-                    
-                    matched_words = ", ".join(res.get("profane_words", []))
-                    reason = f"Beleidigungsfilter: {matched_words}"
+                matched_words = result["matched_words"]
+                reason = result["reason"]
+                is_clear = result["is_clear"]
+                res = result["raw_result"]
 
-                    # Modlog finden
-                    await cursor.execute(
-                        "SELECT channelID FROM modlog WHERE serverID = (%s)",
-                        (msg.guild.id,)
+                # Modlog finden
+                await cursor.execute(
+                    "SELECT channelID FROM modlog WHERE serverID = (%s)",
+                    (msg.guild.id,)
+                )
+                result_modlog = await cursor.fetchone()
+                log_channel = msg.guild.get_channel(int(result_modlog[0])) if result_modlog else None
+
+                if is_clear:
+                    # EINDEUTIG -> Nachricht sofort löschen, Warnung an User und automatisch handeln
+                    try:
+                        # In Cache eintragen, damit Modlog es ignoriert
+                        if hasattr(self.bot, 'automod_deleted_messages'):
+                            self.bot.automod_deleted_messages.add(msg.id)
+                        await msg.delete()
+                    except (discord.Forbidden, discord.NotFound):
+                        pass
+
+                    warning_embed = discord.Embed(
+                        title="Bitte unterlasse die Schimpfwörter!",
+                        description=f"{msg.author.mention} nutze ein Wort welches hier nicht erlaubt ist!",
+                        colour=discord.Color.red(),
+                        timestamp=discord.utils.utcnow()
                     )
-                    result_modlog = await cursor.fetchone()
-                    log_channel = msg.guild.get_channel(int(result_modlog[0])) if result_modlog else None
+                    warning_embed.set_author(name=msg.author, icon_url=msg.author.avatar)
+                    warn_msg = await msg.channel.send(embed=warning_embed)
 
-                    if is_clear:
-                        # EINDEUTIG -> Nachricht sofort löschen, Warnung an User und automatisch handeln
-                        try:
-                            # In Cache eintragen, damit Modlog es ignoriert
-                            if hasattr(self.bot, 'automod_deleted_messages'):
-                                self.bot.automod_deleted_messages.add(msg.id)
-                            await msg.delete()
-                        except (discord.Forbidden, discord.NotFound):
-                            pass
+                    # Wir rufen intern die Logik von /warn auf (via Cog-Methode)
+                    await self.execute_automod_action(msg.guild, msg.author, reason, log_channel)
 
-                        warning_embed = discord.Embed(
-                            title="Bitte unterlasse die Schimpfwörter!",
-                            description=f"{msg.author.mention} nutze ein Wort welches hier nicht erlaubt ist!",
-                            colour=discord.Color.red(),
+                    await asyncio.sleep(7)
+                    try:
+                        await warn_msg.delete()
+                    except discord.NotFound:
+                        pass
+                else:
+                    # UNSICHER -> Modlog zur Prüfung (Nachricht wird erst gelöscht, wenn Admin bestätigt)
+                    if log_channel:
+                        review_embed = discord.Embed(
+                            title="⚠️ Mögliche Beleidigung erkannt",
+                            colour=discord.Color.orange(),
                             timestamp=discord.utils.utcnow()
                         )
-                        warning_embed.set_author(name=msg.author, icon_url=msg.author.avatar)
-                        warn_msg = await msg.channel.send(embed=warning_embed)
-
-                        # Wir rufen intern die Logik von /warn auf (via Cog-Methode)
-                        await self.execute_automod_action(msg.guild, msg.author, reason, log_channel)
-
-                        await asyncio.sleep(7)
-                        try:
-                            await warn_msg.delete()
-                        except discord.NotFound:
-                            pass
-                    else:
-                        # UNSICHER -> Modlog zur Prüfung (Nachricht wird erst gelöscht, wenn Admin bestätigt)
-                        if log_channel:
-                            review_embed = discord.Embed(
-                                title="⚠️ Mögliche Beleidigung erkannt",
-                                colour=discord.Color.orange(),
-                                timestamp=discord.utils.utcnow()
-                            )
-                            review_embed.add_field(name="👤 User", value=f"{msg.author.mention} (`{msg.author.id}`)", inline=True)
-                            review_embed.add_field(name="📄 Nachricht", value=msg.content[:1024], inline=False)
-                            review_embed.add_field(name="🔎 Begriffe", value=matched_words, inline=True)
-                            review_embed.add_field(name="📊 Grund für Unsicherheit", value="Treffer ohne direkten Bezug (Slang/Ausruf?)", inline=True)
-                            
-                            view = ProfanityReviewView(self.bot, msg.author, reason, msg.content, res, message=msg)
-                            await log_channel.send(embed=review_embed, view=view)
+                        review_embed.add_field(name="👤 User", value=f"{msg.author.mention} (`{msg.author.id}`)", inline=True)
+                        review_embed.add_field(name="📄 Nachricht", value=msg.content[:1024], inline=False)
+                        review_embed.add_field(name="🔎 Begriffe", value=matched_words, inline=True)
+                        review_embed.add_field(name="📊 Grund für Unsicherheit", value="Treffer ohne direkten Bezug (Slang/Ausruf/Selbstbezug?)", inline=True)
+                        
+                        view = ProfanityReviewView(self.bot, msg.author, reason, msg.content, res, message=msg)
+                        await log_channel.send(embed=review_embed, view=view)
 
     async def execute_automod_action(self, guild, member, reason, log_channel):
         """Führt eine automatische Warnung und ggf. Eskalation aus."""
