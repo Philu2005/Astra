@@ -19,8 +19,8 @@ profanity_filter = Filter({
 # Es dient als starkes Signal für die Einstufung. Ohne zielgerichteten Adressaten (z. B. bei "Ich bin ein Hurensohn"
 # oder "Hurensohn-Move") darf KEINE automatische Bestrafung erfolgen, sondern maximal ein REVIEW.
 HARD_TRIGGERS = [
-    "hurensohn", "hurensoehne", "hurensöhne", "hurensohn-move", "hurensohnmove",
-    "nigger", "nigga",
+    "hurensohn", "hurensoehne", "hurensöhne",
+    "nigger", "nigga", "nuga",
     "bastard", "bastarde", "bastarden",
     "wichser", "wixxer", "wixer",
     "asshole", "assholes", "arschloch", "arschlöcher", "arschloecher",
