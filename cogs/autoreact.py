@@ -28,12 +28,14 @@ class autoreact(commands.Cog):
                     for eintrag in result:
                         channelID = eintrag[0]
                         if msg.channel.id == channelID:
-                            await cursor.execute("SELECT emoji FROM autoreact WHERE channelID = (%s)", (msg.channel.id))
+                            await cursor.execute("SELECT emoji FROM autoreact WHERE channelID = (%s)", (msg.channel.id,))
                             emoji = await cursor.fetchone()
-                            emoji3 = emoji[0]
-                            channel = msg.channel
-                            message = await channel.fetch_message(msg.id)
-                            await message.add_reaction(emoji3)
+                            if emoji:
+                                emoji3 = emoji[0]
+                                try:
+                                    await msg.add_reaction(emoji3)
+                                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                                    pass
 
     @app_commands.command(name="autoreact")
     @app_commands.guild_only()

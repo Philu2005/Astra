@@ -45,25 +45,33 @@ class guessthenumber(commands.Cog):
                     return
                 else:
                     channelid = result[0]
-                    await cursor.execute(f"SELECT number FROM guessthenumber WHERE channelID = {channelid}")
+                    if msg.channel.id != channelid:
+                        return
+                    await cursor.execute("SELECT number FROM guessthenumber WHERE channelID = (%s)", (channelid,))
                     result2 = await cursor.fetchone()
+                    if not result2:
+                        return
                     number1 = result2[0]
-                    if msg.channel.id == channelid:
-                        if str(number1) == msg.content:
-                            number = random.randint(30, 100)
-                            number2 = random.randint(1, number)
-                            channel = self.bot.get_channel(channelid)
-                            await cursor.execute(f"UPDATE guessthenumber SET number = (%s) WHERE guildID = (%s)", (number2, msg.guild.id))
-                            embed = discord.Embed(title="Guess the number",
-                                                  description=f"Ich habe eine Nummer zwischen **1** und **{number}** gewählt. Kannst du sie erraten?",
-                                                  colour=discord.Colour.blue(), timestamp=discord.utils.utcnow())
-                            embed.set_footer(text=f"Die letzte Nummer wurde von {msg.author} erraten.", icon_url=msg.author.avatar)
-                            channel2 = msg.channel
-                            message = await channel2.fetch_message(msg.id)
-                            won = self.bot.get_emoji(1141319026140790885)
-                            print(3)
-                            await message.add_reaction(won)
-                            await channel.send(f"{msg.author.mention} hat die Nummer erraten.", embed=embed)
+                    if str(number1) == msg.content:
+                        number = random.randint(30, 100)
+                        number2 = random.randint(1, number)
+                        channel = self.bot.get_channel(channelid)
+                        await cursor.execute("UPDATE guessthenumber SET number = (%s) WHERE guildID = (%s)", (number2, msg.guild.id))
+                        embed = discord.Embed(title="Guess the number",
+                                              description=f"Ich habe eine Nummer zwischen **1** und **{number}** gewählt. Kannst du sie erraten?",
+                                              colour=discord.Colour.blue(), timestamp=discord.utils.utcnow())
+                        embed.set_footer(text=f"Die letzte Nummer wurde von {msg.author} erraten.", icon_url=msg.author.avatar)
+                        won = self.bot.get_emoji(1141319026140790885)
+                        if won:
+                            try:
+                                await msg.add_reaction(won)
+                            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                                pass
+                        if channel:
+                            try:
+                                await channel.send(f"{msg.author.mention} hat die Nummer erraten.", embed=embed)
+                            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                                pass
                         else:
                             pass
 

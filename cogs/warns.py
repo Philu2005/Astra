@@ -1541,9 +1541,6 @@ class Warn(commands.Cog):
 
                             if int(percent1) < round(procent):
 
-                                channel = self.bot.get_channel(msg.channel.id)
-                                message = await channel.fetch_message(msg.id)
-
                                 embed = discord.Embed(
                                     title="Bitte unterlasse übermäßige Caps!",
                                     description=f"Die Nachricht hatte `{round(procent)}%` Caps!\nDu wurdest verwarnt {msg.author.mention}!",
@@ -1559,13 +1556,19 @@ class Warn(commands.Cog):
                                     text=f"User: {msg.author} | ID: {msg.author.id}"
                                 )
 
-                                await msg.channel.send(embed=embed)
+                                try:
+                                    await msg.channel.send(embed=embed)
+                                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                                    pass
                                 
                                 # In Cache eintragen, damit Modlog es ignoriert
                                 if hasattr(self.bot, 'automod_deleted_messages'):
                                     self.bot.automod_deleted_messages.add(msg.id)
                                 
-                                await message.delete()
+                                try:
+                                    await msg.delete()
+                                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                                    pass
 
                                 await cursor.execute(
                                     "SELECT COALESCE(MAX(warnID), 0) FROM warns WHERE userID = %s AND guildID = %s",

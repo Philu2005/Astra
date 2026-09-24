@@ -20,48 +20,64 @@ class counter(commands.Cog):
             return
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute("SELECT channelID FROM counter WHERE guildID = (%s)", (msg.guild.id))
+                await cursor.execute("SELECT channelID FROM counter WHERE guildID = (%s)", (msg.guild.id,))
                 result = await cursor.fetchone()
                 if not result:
                     return
                 else:
                     channelid = result[0]
-                    await cursor.execute(f"SELECT number FROM counter WHERE channelID = {channelid}")
+                    if msg.channel.id != channelid:
+                        return
+                    await cursor.execute("SELECT number FROM counter WHERE channelID = (%s)", (channelid,))
                     result2 = await cursor.fetchone()
+                    if not result2:
+                        return
                     number = result2[0]
-                    if msg.channel.id == channelid:
-                        if str(number) == msg.content:
-                            await cursor.execute(f"SELECT lastuserID FROM counter WHERE channelID = {channelid}")
-                            result2 = await cursor.fetchone()
-                            if not result2:
-                                await cursor.execute("INSERT INTO counter (lastuserID) VALUES (%s)", (msg.author.id))
-                            if result2[0] == msg.author.id:
-                                if msg.author.bot:
-                                    return
-                                if not msg.author.bot:
-                                    alone = await msg.channel.fetch_message(msg.id)
-                                    await alone.delete()
-                                    msg = await msg.channel.send(
+                    if str(number) == msg.content:
+                        await cursor.execute("SELECT lastuserID FROM counter WHERE channelID = (%s)", (channelid,))
+                        result2 = await cursor.fetchone()
+                        if not result2:
+                            await cursor.execute("INSERT INTO counter (lastuserID) VALUES (%s)", (msg.author.id,))
+                            result2 = (None,)
+                        if result2 and result2[0] == msg.author.id:
+                            if msg.author.bot:
+                                return
+                            if not msg.author.bot:
+                                try:
+                                    await msg.delete()
+                                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                                    pass
+                                try:
+                                    sent_msg = await msg.channel.send(
                                         f"<:Astra_x:1141303954555289600> Du kannst nicht alleine Spielen, lass auch mal jemand anderem den Vorrang! {msg.author.mention}")
                                     await asyncio.sleep(5)
-                                    await msg.delete()
-                                    return
-                            if result2[0] != msg.author.id:
-                                number2 = int(number + 1)
-                                await cursor.execute(f"UPDATE counter SET number = (%s) WHERE guildID = (%s)", (number2, msg.guild.id))
-                                await cursor.execute(f"UPDATE counter SET lastuserID = (%s) WHERE guildID = (%s)", (msg.author.id, msg.guild.id))
+                                    await sent_msg.delete()
+                                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                                    pass
+                                return
+                        if not result2 or result2[0] != msg.author.id:
+                            number2 = int(number + 1)
+                            await cursor.execute("UPDATE counter SET number = (%s) WHERE guildID = (%s)", (number2, msg.guild.id))
+                            await cursor.execute("UPDATE counter SET lastuserID = (%s) WHERE guildID = (%s)", (msg.author.id, msg.guild.id))
 
-                                channel2 = msg.channel
-                                message = await channel2.fetch_message(msg.id)
-                                won = self.bot.get_emoji(1141319026140790885)
-                                await message.add_reaction(won)
-                        if str(number) != msg.content:
-                            wrong = await msg.channel.fetch_message(msg.id)
-                            await wrong.delete()
+                            won = self.bot.get_emoji(1141319026140790885)
+                            if won:
+                                try:
+                                    await msg.add_reaction(won)
+                                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                                    pass
+                    elif str(number) != msg.content:
+                        try:
+                            await msg.delete()
+                        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                            pass
+                        try:
                             msg2 = await msg.channel.send(f"<:Astra_x:1141303954555289600> Falsch! Versuchs nochmal. {msg.author.mention}")
                             await asyncio.sleep(5)
                             await msg2.delete()
-                            return
+                        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                            pass
+                        return
 
     @app_commands.command(name="counting")
     @app_commands.guild_only()
