@@ -144,18 +144,64 @@ class Astra(commands.Bot):
             logging.info("██║  ██║███████║   ██║   ██║  ██║██║  ██║ ")
             logging.info("╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ")
             logging.info("───────────────────── ✓ ─────────────────────")
-        except Exception as e:
-            logging.error(f"❌ Fehler beim Setup:\n{e}")
-            traceback.print_exc()
+        except Exception:
+            logging.exception("❌ Kritischer Fehler beim Setup")
+            raise
 
     async def keep_db_alive(self):
-        while True:
-            async with self.pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        "SELECT 1"
-                    )  # Einfacher Testbefehl, um die Verbindung aufrechtzuerhalten
-            await asyncio.sleep(120)  # Alle 2 Minuten
+        """Überprüft regelmäßig die MySQL-Verbindung und hält den DB-Pool funktionsfähig."""
+        while not self.is_closed():
+            try:
+                if self.pool is None:
+                    logging.warning("⚠️ DB-Pool ist nicht verfügbar. Warte 10 Sekunden...")
+                    await asyncio.sleep(10)
+                    continue
+
+                async with self.pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute("SELECT 1")
+                        await cur.fetchone()
+
+                logging.debug("💚 DB-Healthcheck erfolgreich")
+
+            except asyncio.CancelledError:
+                logging.info("🛑 DB-Healthcheck-Task wurde beendet.")
+                raise
+
+            except Exception as e:
+                logging.error(
+                    f"❌ DB-Healthcheck fehlgeschlagen: {type(e).__name__}: {e}",
+                    exc_info=True
+                )
+
+                # Pool schließen und komplett neu aufbauen
+                try:
+                    if self.pool is not None:
+                        self.pool.close()
+                        await self.pool.wait_closed()
+                        self.pool = None
+
+                    logging.warning("🔄 Versuche, die DB-Verbindung neu aufzubauen...")
+                    await asyncio.sleep(5)
+
+                    await self.connect_db()
+                    logging.info("✅ DB-Verbindung erfolgreich wiederhergestellt.")
+
+                except asyncio.CancelledError:
+                    raise
+
+                except Exception as reconnect_error:
+                    logging.error(
+                        f"❌ Wiederherstellung der DB-Verbindung fehlgeschlagen: "
+                        f"{type(reconnect_error).__name__}: {reconnect_error}",
+                        exc_info=True
+                    )
+
+                    # Nicht sofort spammen/retryen
+                    await asyncio.sleep(30)
+                    continue
+
+            await asyncio.sleep(120)
 
     async def connect_db(self):
         """Stellt den DB-Pool her und speichert ihn in self.pool"""
@@ -176,55 +222,103 @@ class Astra(commands.Bot):
         logging.info("✅ DB-Verbindung erfolgreich")
 
     async def init_tables(self):
-        """Erstellt/Registriert Tasks und führt einen DB-Healthcheck aus."""
-        await run_sql_file(self.pool)
+        """Initialisiert die Datenbank, führt einen Healthcheck aus und stellt offene Vote-Reminder wieder her."""
 
-        # DB-Healthcheck
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT 1")
-        logging.info("✅ DB-Test erfolgreich")
-        logging.info("───────────────────── ✓ ─────────────────────")
+        try:
+            # 1. SQL-Schema / Tabellen initialisieren
+            await run_sql_file(self.pool)
+            logging.info("✅ Datenbank-Tabellen erfolgreich initialisiert.")
 
-        # Aiomysql anstoßen
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
+            # 2. DB-Healthcheck
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT 1")
+                    result = await cur.fetchone()
 
-                # --- Vote-Reminder (topgg.next_vote_epoch) ---
-                if not self.task2:
-                    self.task2 = True
+                    if not result or result[0] != 1:
+                        raise RuntimeError("DB-Healthcheck lieferte kein gültiges Ergebnis.")
 
-                    await cur.execute("""
-                                      SELECT userID, next_vote_epoch
-                                      FROM topgg
-                                      WHERE next_vote_epoch IS NOT NULL
-                                      ORDER BY next_vote_epoch ASC
-                                      """)
-                    eintraege2 = await cur.fetchall()
+            logging.info("✅ DB-Test erfolgreich")
+            logging.info("───────────────────── ✓ ─────────────────────")
 
-                    async def starte_voterole_tasks():
-                        now = datetime.now(timezone.utc)
-                        for user_id, ts in eintraege2:
-                            try:
-                                if not ts:
-                                    continue
-                                when = datetime.fromtimestamp(int(ts), timezone.utc)
-                                if when <= now:
-                                    when = now
-                                asyncio.create_task(self.funktion2(user_id, when))
-                                await asyncio.sleep(0.05)
-                            except Exception as e:
-                                logging.error(
-                                    f"❌ Reminder-Replay-Fehler (user={user_id}, ts={ts}): {e}"
-                                )
+            # 3. Bereits vorhandene Vote-Reminder aus der Datenbank laden
+            if not self.task2:
+                self.task2 = True
 
-                    asyncio.create_task(starte_voterole_tasks())
+                async with self.pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute("""
+                                          SELECT userID, next_vote_epoch
+                                          FROM topgg
+                                          WHERE next_vote_epoch IS NOT NULL
+                                          ORDER BY next_vote_epoch ASC
+                                          """)
 
-        logging.info("")
-        logging.info("")
-        logging.info("──────────────── ⏱️ TASKS ────────────────")
-        logging.info("✅ Tasks Registered!")
-        logging.info("──────────────────── ✓ ────────────────────")
+                        eintraege2 = await cur.fetchall()
+
+                logging.info(
+                    f"🔄 {len(eintraege2)} offene Vote-Reminder aus der Datenbank geladen."
+                )
+
+                async def starte_voterole_tasks():
+                    erfolgreich = 0
+                    übersprungen = 0
+                    fehler = 0
+
+                    now = datetime.now(timezone.utc)
+
+                    for user_id, ts in eintraege2:
+                        try:
+                            if not ts:
+                                übersprungen += 1
+                                continue
+
+                            when = datetime.fromtimestamp(int(ts), timezone.utc)
+
+                            # Bereits fällige Reminder sofort ausführen
+                            if when <= now:
+                                when = now
+
+                            asyncio.create_task(
+                                self.funktion2(user_id, when)
+                            )
+
+                            erfolgreich += 1
+
+                            # Nicht tausende Tasks gleichzeitig erzeugen
+                            await asyncio.sleep(0.05)
+
+                        except Exception:
+                            fehler += 1
+                            logging.exception(
+                                f"❌ Reminder-Replay-Fehler "
+                                f"(user={user_id}, ts={ts})"
+                            )
+
+                    logging.info(
+                        f"✅ Vote-Reminder-Replay abgeschlossen: "
+                        f"{erfolgreich} gestartet, "
+                        f"{übersprungen} übersprungen, "
+                        f"{fehler} Fehler."
+                    )
+
+                # Replay bewusst im Hintergrund starten,
+                # damit der eigentliche Bot-Start nicht auf alle Reminder wartet.
+                asyncio.create_task(starte_voterole_tasks())
+
+            logging.info("")
+            logging.info("")
+            logging.info("──────────────── ⏱️ TASKS ────────────────")
+            logging.info("✅ Tasks Registered!")
+            logging.info("───────────────────── ✓ ────────────────────")
+
+        except asyncio.CancelledError:
+            logging.info("🛑 init_tables() wurde abgebrochen.")
+            raise
+
+        except Exception:
+            logging.exception("❌ Kritischer Fehler bei der Datenbankinitialisierung.")
+            raise
 
     async def load_cogs(self):
         """Lädt alle Cogs"""
@@ -357,90 +451,273 @@ class Astra(commands.Bot):
                 unique.append(cmd)
         return unique
 
-
     async def funktion2(self, user_id: int, when: datetime):
-        await self.wait_until_ready()
+        """Sendet einen Vote-Reminder, entfernt die Voterolle und verbraucht den Reminder sicher."""
 
-        # UTC-sicher
-        if when.tzinfo is None:
-            when = when.replace(tzinfo=timezone.utc)
-        await discord.utils.sleep_until(when)
-        now = datetime.now(timezone.utc)
+        try:
+            # ---------------------------------------------------------
+            # 1. Warten, bis Discord vollständig bereit ist
+            # ---------------------------------------------------------
+            await self.wait_until_ready()
 
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                # --- Schutz: ist der Reminder noch gültig? ---
-                # Falls der User inzwischen erneut gevotet hat und ein NEUER next_vote_epoch gesetzt wurde,
-                # ist dieser Task veraltet und wird übersprungen.
-                try:
-                    await cur.execute(
-                        "SELECT next_vote_epoch FROM topgg WHERE userID=%s", (user_id,)
-                    )
-                    row = await cur.fetchone()
-                    current_ts = row[0] if row else None
-                    if current_ts is None:
-                        return
-                    if current_ts > int(when.timestamp()):
-                        return
-                except Exception as e:
-                    logging.warning(
-                        f"[VoteReminder] Vorab-Check fehlgeschlagen ({user_id}): {e}"
-                    )
+            # ---------------------------------------------------------
+            # 2. Zeitpunkt UTC-sicher machen
+            # ---------------------------------------------------------
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
 
-                # --- DM senden ---
-                try:
-                    user = self.get_user(user_id) or await self.fetch_user(user_id)
-                    embed = discord.Embed(
-                        title="<:Astra_time:1141303932061233202> Du kannst wieder voten!",
-                        url="https://top.gg/de/bot/1113403511045107773/vote",
-                        description=(
-                            "Der Cooldown von 12h ist vorbei. Es wäre schön, wenn du wieder votest.\n"
-                            "Als Belohnung erhältst du eine spezielle Rolle auf unserem Support-Server."
-                        ),
-                        colour=discord.Colour.blue(),
-                    )
-                    await user.send(embed=embed)
-                except Exception as e:
-                    logging.warning(
-                        f"[VoteReminder] ❌ DM an {user_id} fehlgeschlagen: {e}"
-                    )
+            reminder_ts = int(when.timestamp())
 
-                # --- Rolle entfernen (optional) ---
-                guild = self.get_guild(1141116981697859736)
-                voterole = guild.get_role(1141116981756575875) if guild else None
-                if guild and voterole:
-                    try:
-                        member = guild.get_member(user_id) or await guild.fetch_member(
-                            user_id
+            # Bis zum eigentlichen Reminder warten
+            await discord.utils.sleep_until(when)
+
+            logging.info(
+                f"[VoteReminder] ⏰ Reminder fällig für User {user_id} "
+                f"(timestamp={reminder_ts})"
+            )
+
+            # ---------------------------------------------------------
+            # 3. Prüfen, ob überhaupt ein DB-Pool vorhanden ist
+            # ---------------------------------------------------------
+            if self.pool is None:
+                logging.error(
+                    f"[VoteReminder] ❌ Kein DB-Pool verfügbar für User {user_id}. "
+                    f"Reminder wird nicht verarbeitet."
+                )
+                return
+
+            # ---------------------------------------------------------
+            # 4. Prüfen, ob der Reminder noch gültig ist
+            # ---------------------------------------------------------
+            try:
+                async with self.pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+
+                        await cur.execute(
+                            """
+                            SELECT next_vote_epoch
+                            FROM topgg
+                            WHERE userID = %s
+                            """,
+                            (user_id,),
                         )
-                    except Exception:
-                        member = None
-                    if member and voterole in getattr(member, "roles", []):
-                        try:
-                            await member.remove_roles(
-                                voterole, reason="Voterole Cooldown abgelaufen"
+
+                        row = await cur.fetchone()
+
+                        # Kein DB-Eintrag / Reminder wurde bereits entfernt
+                        if not row:
+                            logging.info(
+                                f"[VoteReminder] ℹ️ Kein Eintrag für User {user_id}. "
+                                f"Reminder wird übersprungen."
                             )
-                        except Exception as e:
-                            logging.warning(
-                                f"[VoteReminder] Rolle entfernen fehlgeschlagen ({user_id}): {e}"
+                            return
+
+                        current_ts = row[0]
+
+                        # Reminder wurde bereits verbraucht
+                        if current_ts is None:
+                            logging.info(
+                                f"[VoteReminder] ℹ️ Reminder für User {user_id} "
+                                f"wurde bereits verarbeitet."
+                            )
+                            return
+
+                        # User hat inzwischen erneut gevotet.
+                        # Dadurch wurde ein NEUER next_vote_epoch gesetzt.
+                        if int(current_ts) > reminder_ts:
+                            logging.info(
+                                f"[VoteReminder] 🔄 Veralteter Reminder für User {user_id}. "
+                                f"Alter={reminder_ts}, Neu={current_ts}"
+                            )
+                            return
+
+            except asyncio.CancelledError:
+                raise
+
+            except Exception:
+                logging.exception(
+                    f"[VoteReminder] ❌ Vorab-Check der Datenbank fehlgeschlagen "
+                    f"(user={user_id}). Reminder wird sicherheitshalber abgebrochen."
+                )
+                return
+
+            # ---------------------------------------------------------
+            # 5. DM senden
+            # ---------------------------------------------------------
+            try:
+                user = self.get_user(user_id)
+
+                if user is None:
+                    user = await self.fetch_user(user_id)
+
+                embed = discord.Embed(
+                    title="<:Astra_time:1141303932061233202> Du kannst wieder voten!",
+                    url="https://top.gg/de/bot/1113403511045107773/vote",
+                    description=(
+                        "Der Cooldown von 12h ist vorbei. Es wäre schön, wenn du wieder votest.\n"
+                        "Als Belohnung erhältst du eine spezielle Rolle auf unserem Support-Server."
+                    ),
+                    colour=discord.Colour.blue(),
+                )
+
+                await user.send(embed=embed)
+
+                logging.info(
+                    f"[VoteReminder] 📩 DM erfolgreich an User {user_id} gesendet."
+                )
+
+            except asyncio.CancelledError:
+                raise
+
+            except discord.Forbidden:
+                logging.warning(
+                    f"[VoteReminder] ⚠️ DM an User {user_id} nicht möglich "
+                    f"(DMs deaktiviert / blockiert)."
+                )
+
+            except discord.NotFound:
+                logging.warning(
+                    f"[VoteReminder] ⚠️ User {user_id} wurde nicht gefunden."
+                )
+
+            except Exception:
+                logging.exception(
+                    f"[VoteReminder] ❌ Unerwarteter Fehler beim Senden der DM "
+                    f"(user={user_id})."
+                )
+
+            # ---------------------------------------------------------
+            # 6. Voterolle entfernen
+            # ---------------------------------------------------------
+            guild = self.get_guild(1141116981697859736)
+
+            if guild is None:
+                logging.warning(
+                    f"[VoteReminder] ⚠️ Support-Guild nicht im Cache "
+                    f"(user={user_id})."
+                )
+
+            else:
+                voterole = guild.get_role(1141116981756575875)
+
+                if voterole is None:
+                    logging.warning(
+                        f"[VoteReminder] ⚠️ Voterole nicht gefunden "
+                        f"(user={user_id})."
+                    )
+
+                else:
+                    try:
+                        member = guild.get_member(user_id)
+
+                        if member is None:
+                            member = await guild.fetch_member(user_id)
+
+                        if member is None:
+                            logging.info(
+                                f"[VoteReminder] ℹ️ User {user_id} ist nicht "
+                                f"mehr auf dem Support-Server."
                             )
 
-                # --- Reminder verbrauchen (nur wenn noch derselbe fällig ist) ---
-                try:
-                    await cur.execute(
-                        "UPDATE topgg SET next_vote_epoch=NULL "
-                        "WHERE userID=%s AND next_vote_epoch <= %s",
-                        (user_id, int(when.timestamp())),
-                    )
-                except Exception as e:
-                    logging.error(
-                        f"[VoteReminder] DB-Update fehlgeschlagen ({user_id}): {e}"
-                    )
+                        elif voterole in member.roles:
+                            await member.remove_roles(
+                                voterole,
+                                reason="Voterole Cooldown abgelaufen",
+                            )
+
+                            logging.info(
+                                f"[VoteReminder] 🏷️ Voterole von User {user_id} entfernt."
+                            )
+
+                        else:
+                            logging.debug(
+                                f"[VoteReminder] ℹ️ User {user_id} hatte die "
+                                f"Voterole bereits nicht mehr."
+                            )
+
+                    except asyncio.CancelledError:
+                        raise
+
+                    except discord.NotFound:
+                        logging.info(
+                            f"[VoteReminder] ℹ️ User {user_id} ist nicht mehr "
+                            f"auf dem Support-Server."
+                        )
+
+                    except discord.Forbidden:
+                        logging.error(
+                            f"[VoteReminder] ❌ Keine Berechtigung, die Voterole "
+                            f"von User {user_id} zu entfernen."
+                        )
+
+                    except Exception:
+                        logging.exception(
+                            f"[VoteReminder] ❌ Fehler beim Entfernen der Voterole "
+                            f"(user={user_id})."
+                        )
+
+            # ---------------------------------------------------------
+            # 7. Reminder in der DB verbrauchen
+            #
+            # WICHTIG:
+            # Die Bedingung next_vote_epoch <= reminder_ts verhindert,
+            # dass ein neuer Vote versehentlich gelöscht wird.
+            # ---------------------------------------------------------
+            if self.pool is None:
+                logging.error(
+                    f"[VoteReminder] ❌ DB-Pool nach Verarbeitung nicht verfügbar "
+                    f"(user={user_id}). Reminder konnte nicht gelöscht werden."
+                )
+                return
 
             try:
-                await conn.commit()
+                async with self.pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """
+                            UPDATE topgg
+                            SET next_vote_epoch = NULL
+                            WHERE userID = %s
+                              AND next_vote_epoch <= %s
+                            """,
+                            (user_id, reminder_ts),
+                        )
+
+                        updated_rows = cur.rowcount
+
+                    await conn.commit()
+
+                if updated_rows > 0:
+                    logging.info(
+                        f"[VoteReminder] ✅ Reminder erfolgreich abgeschlossen "
+                        f"(user={user_id})."
+                    )
+                else:
+                    logging.info(
+                        f"[VoteReminder] ℹ️ Reminder für User {user_id} "
+                        f"war bereits geändert/verbraucht."
+                    )
+
+            except asyncio.CancelledError:
+                raise
+
             except Exception:
-                pass
+                logging.exception(
+                    f"[VoteReminder] ❌ DB-Update zum Verbrauch des Reminders "
+                    f"fehlgeschlagen (user={user_id})."
+                )
+
+        except asyncio.CancelledError:
+            # Task wurde absichtlich beendet → NICHT als Fehler behandeln
+            raise
+
+        except Exception:
+            # Letzte Sicherheitsstufe:
+            # Kein unerwarteter Fehler darf den Task unbemerkt sterben lassen.
+            logging.exception(
+                f"[VoteReminder] 💥 Unerwarteter Fehler in funktion2 "
+                f"(user={user_id})."
+            )
 
 
 bot = Astra()
