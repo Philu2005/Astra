@@ -113,7 +113,7 @@ async def userinfo_context(interaction: discord.Interaction, member: discord.Mem
     }
 
     user_status = status_map.get(member.status, "Offline")
-    print(member.status)
+    logging.info(member.status)
 
     activities_list = []
 
