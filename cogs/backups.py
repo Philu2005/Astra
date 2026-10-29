@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import logging
 import time
 import typing as T
 import uuid
@@ -410,11 +411,16 @@ class BackupCog(commands.Cog):
     async def _job_worker_loop(self):
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
-            jobs = await self._fetch_pending_jobs()
-            for job in jobs:
-                guild_id = job["guild_id"]
-                self.guild_locks.setdefault(guild_id, asyncio.Lock())
-                asyncio.create_task(self._run_job(job))
+            try:
+                jobs = await self._fetch_pending_jobs()
+                for job in jobs:
+                    guild_id = job["guild_id"]
+                    self.guild_locks.setdefault(guild_id, asyncio.Lock())
+                    asyncio.create_task(self._run_job(job))
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logging.exception(f"[BackupCog] Unerwarteter Fehler im _job_worker_loop: {e}")
             await asyncio.sleep(5)
 
     async def _run_job(self, job: dict):

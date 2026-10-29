@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from typing import Optional
 import asyncio
+import logging
 from dateutil import tz
 import re
 from datetime import datetime, timedelta, timezone
@@ -515,67 +516,87 @@ class CommunityGoalsCog(commands.Cog):
                     self.bot.loop.create_task(self.goal_auto_update_task(goal_id, guild_id, ends_at, reward_role_id))
 
     async def goal_auto_update_task(self, goal_id, guild_id, ends_at_ts, reward_role_id=None):
-        now_ts = int(time.time())
-        if ends_at_ts < now_ts:
-            ends_at_ts = now_ts
+        try:
+            now_ts = int(time.time())
+            if ends_at_ts < now_ts:
+                ends_at_ts = now_ts
 
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT channel_id, msg_id, reward_text FROM community_goals WHERE id=%s", (goal_id,))
-                res = await cur.fetchone()
-                if not res:
-                    return
-                channel_id, msg_id, reward_text = res
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT channel_id, msg_id, reward_text FROM community_goals WHERE id=%s", (goal_id,))
+                    res = await cur.fetchone()
+                    if not res:
+                        return
+                    channel_id, msg_id, reward_text = res
 
-                guild = self.bot.get_guild(guild_id)
-                channel = guild.get_channel(channel_id) if guild else None
-                msg = await channel.fetch_message(msg_id) if channel else None
-                reward_role = guild.get_role(reward_role_id) if reward_role_id and guild else None
+                    guild = self.bot.get_guild(guild_id)
+                    channel = None
+                    msg = None
+                    if guild:
+                        channel = guild.get_channel(channel_id)
+                        if channel is None:
+                            try:
+                                channel = await guild.fetch_channel(channel_id)
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                channel = None
 
-                # Warten bis Zeit vorbei ist!
-                while True:
-                    time_left = ends_at_ts - int(time.time())
-                    if time_left > 0:
-                        await asyncio.sleep(min(60, time_left))  # jede Minute checken
-                        continue
+                        if channel and isinstance(channel, discord.TextChannel):
+                            try:
+                                msg = await channel.fetch_message(msg_id)
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                msg = None
 
-                    # ENDE ERREICHT: Aber prüfe, ob das Ziel schon geschafft ist!
-                    await cur.execute("SELECT type, target, progress FROM community_goal_conditions WHERE goal_id=%s",
-                                      (goal_id,))
-                    conds_db = await cur.fetchall()
-                    finished = sum(1 for typ, target, progress in conds_db if progress >= target)
-                    conds = [(typ, target, progress) for typ, target, progress in conds_db]
+                    reward_role = guild.get_role(reward_role_id) if reward_role_id and guild else None
 
-                    all_done = finished == len(conds) and finished > 0
+                    # Warten bis Zeit vorbei ist!
+                    while True:
+                        time_left = ends_at_ts - int(time.time())
+                        if time_left > 0:
+                            await asyncio.sleep(min(60, time_left))  # jede Minute checken
+                            continue
 
-                    if all_done:
-                        status = "🏁 Community Goal **GESCHAFFT!**"
-                        desc = "Alle Ziele wurden erreicht! 🎉"
-                        # Rollenverteilen, falls noch nicht geschehen:
-                        if reward_role:
-                            for member in guild.members:
-                                try:
-                                    await member.add_roles(reward_role, reason="Community Goal abgeschlossen")
-                                except Exception:
-                                    pass
-                    else:
-                        status = "⏹️ Community Goal beendet"
-                        desc = f"Nicht alle Ziele wurden erreicht! **{finished}/{len(conds)}**"
+                        # ENDE ERREICHT: Aber prüfe, ob das Ziel schon geschafft ist!
+                        await cur.execute("SELECT type, target, progress FROM community_goal_conditions WHERE goal_id=%s",
+                                          (goal_id,))
+                        conds_db = await cur.fetchall()
+                        finished = sum(1 for typ, target, progress in conds_db if progress >= target)
+                        conds = [(typ, target, progress) for typ, target, progress in conds_db]
 
-                    final_embed = format_goal_embed(
-                        conds, reward_text, ends_at_ts, finished, len(conds), reward_role, status=status
-                    )
-                    final_embed.description = desc
-                    try:
+                        all_done = finished == len(conds) and finished > 0
+
+                        if all_done:
+                            status = "🏁 Community Goal **GESCHAFFT!**"
+                            desc = "Alle Ziele wurden erreicht! 🎉"
+                            # Rollenverteilen, falls noch nicht geschehen:
+                            if reward_role and guild:
+                                for member in guild.members:
+                                    try:
+                                        await member.add_roles(reward_role, reason="Community Goal abgeschlossen")
+                                    except (discord.Forbidden, discord.HTTPException):
+                                        pass
+                        else:
+                            status = "⏹️ Community Goal beendet"
+                            desc = f"Nicht alle Ziele wurden erreicht! **{finished}/{len(conds)}**"
+
+                        final_embed = format_goal_embed(
+                            conds, reward_text, ends_at_ts, finished, len(conds), reward_role, status=status
+                        )
+                        final_embed.description = desc
                         if msg:
-                            await msg.edit(embed=final_embed)
-                    except Exception:
-                        pass
-                    await cur.execute("UPDATE community_goals SET active=FALSE WHERE id=%s", (goal_id,))
-                    await cur.execute("DELETE FROM community_goal_conditions WHERE goal_id=%s", (goal_id,))
-                    await cur.execute("DELETE FROM community_goals WHERE id=%s", (goal_id,))
-                    await conn.commit()
-                    break
+                            try:
+                                await msg.edit(embed=final_embed)
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                pass
+
+                        await cur.execute("UPDATE community_goals SET active=FALSE WHERE id=%s", (goal_id,))
+                        await cur.execute("DELETE FROM community_goal_conditions WHERE goal_id=%s", (goal_id,))
+                        await cur.execute("DELETE FROM community_goals WHERE id=%s", (goal_id,))
+                        await conn.commit()
+                        break
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.exception(f"[Goals] Fehler im goal_auto_update_task für Goal {goal_id} (Guild {guild_id}): {e}")
 
     async def check_ban_in_period(self, guild_id, started_at: datetime, ends_at: datetime) -> bool:
         async with self.bot.pool.acquire() as conn:

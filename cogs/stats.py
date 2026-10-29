@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiomysql
+import logging
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
@@ -33,17 +34,28 @@ class Analytics(commands.Cog):
 
     @tasks.loop(hours=24)
     async def cleanup_task(self):
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "DELETE FROM analytics_messages WHERE date < CURDATE() - INTERVAL 30 DAY"
-                )
-                await cursor.execute(
-                    "DELETE FROM analytics_voice WHERE date < CURDATE() - INTERVAL 30 DAY"
-                )
-                await cursor.execute(
-                    "DELETE FROM analytics_daily_guild WHERE date < CURDATE() - INTERVAL 30 DAY"
-                )
+        try:
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(
+                        "DELETE FROM analytics_messages WHERE date < CURDATE() - INTERVAL 30 DAY"
+                    )
+                    await cursor.execute(
+                        "DELETE FROM analytics_voice WHERE date < CURDATE() - INTERVAL 30 DAY"
+                    )
+                    await cursor.execute(
+                        "DELETE FROM analytics_daily_guild WHERE date < CURDATE() - INTERVAL 30 DAY"
+                    )
+        except Exception as e:
+            logging.exception(f"[Analytics] Fehler im cleanup_task: {e}")
+
+    @cleanup_task.before_loop
+    async def before_cleanup_task(self):
+        await self.bot.wait_until_ready()
+
+    @cleanup_task.error
+    async def cleanup_task_error(self, error: Exception):
+        logging.error(f"[Analytics] Unerwarteter Fehler im Task cleanup_task: {error}", exc_info=error)
 
     # =====================================================
     # MESSAGE TRACKING

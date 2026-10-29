@@ -251,12 +251,22 @@ class Notifier(commands.Cog):
 
         for guild_id, channel_id, platform, content_id, ping_role_id, last_item_id in subs:
             try:
-                if not await self.is_enabled(int(guild_id), platform):
+                g_id = int(guild_id)
+                guild = self.bot.get_guild(g_id)
+                if guild is None:
+                    # Bot ist nicht mehr auf dem Server -> sauber überspringen
+                    continue
+
+                if not await self.is_enabled(g_id, platform):
                     continue
                 if platform == "youtube":
-                    await self._check_youtube(content_id, int(guild_id), int(channel_id), ping_role_id, last_item_id)
+                    await self._check_youtube(content_id, g_id, int(channel_id), ping_role_id, last_item_id)
                 elif platform == "twitch":
-                    await self._check_twitch(content_id, int(guild_id), int(channel_id), ping_role_id, last_item_id)
+                    await self._check_twitch(content_id, g_id, int(channel_id), ping_role_id, last_item_id)
+            except (discord.NotFound, discord.Forbidden) as e:
+                logging.warning(f"[Notifier] Nicht verfügbar / keine Berechtigung bei {platform}:{content_id} (Guild: {guild_id}) → {e}")
+            except discord.HTTPException as e:
+                logging.warning(f"[Notifier] Discord HTTP-Fehler bei {platform}:{content_id} (Guild: {guild_id}) → {e}")
             except Exception as e:
                 g = self.bot.get_guild(int(guild_id))
                 guild_name = f"{g.name} ({g.id})" if g else str(guild_id)
@@ -265,6 +275,10 @@ class Notifier(commands.Cog):
     @check_for_updates.before_loop
     async def before_check_for_updates(self):
         await self.bot.wait_until_ready()
+
+    @check_for_updates.error
+    async def check_for_updates_error(self, error: Exception):
+        logging.error(f"[Notifier] Unerwarteter Fehler im Task check_for_updates: {error}", exc_info=error)
 
     # ---------- YouTube ----------
     async def _resolve_youtube_channel_id(self, raw: str) -> Optional[str]:
@@ -314,8 +328,16 @@ class Notifier(commands.Cog):
         return {"duration": duration, "views": views, "channel_thumb": ch_thumb}
 
     async def _check_youtube(self, yt_channel_id: str, guild_id: int, target_channel_id: int, ping_role_id: Optional[int], last_item_id: Optional[str]):
-        guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
-        channel = guild.get_channel(target_channel_id) or await guild.fetch_channel(target_channel_id)
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            return
+        channel = guild.get_channel(target_channel_id)
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(target_channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                logging.info(f"[Notifier] YouTube Zielkanal {target_channel_id} in {guild.name} nicht erreichbar.")
+                return
         if not isinstance(channel, discord.TextChannel):
             logging.info(f"[Notifier] YouTube Zielkanal {target_channel_id} in {guild.name} nicht gefunden/kein Textkanal.")
             return
@@ -401,8 +423,16 @@ class Notifier(commands.Cog):
 
     # ---------- Twitch ----------
     async def _check_twitch(self, login: str, guild_id: int, target_channel_id: int, ping_role_id: Optional[int], last_item_id: Optional[str]):
-        guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
-        channel = guild.get_channel(target_channel_id) or await guild.fetch_channel(target_channel_id)
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            return
+        channel = guild.get_channel(target_channel_id)
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(target_channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                logging.info(f"[Notifier] Twitch Zielkanal {target_channel_id} in {guild.name} nicht erreichbar.")
+                return
         if not isinstance(channel, discord.TextChannel):
             logging.info(f"[Notifier] Twitch Zielkanal {target_channel_id} in {guild.name} nicht gefunden/kein Textkanal.")
             return
@@ -484,6 +514,8 @@ class Notifier(commands.Cog):
         file: Optional[discord.File] = None,  # NEW
     ):
         webhook = await self._get_or_create_webhook(channel.guild.id, channel.id)
+        if not webhook:
+            return
 
         e = discord.Embed(title=title, description=(description or "")[:4096], url=url, color=color)
         e.timestamp = datetime.now(timezone.utc)
@@ -510,32 +542,51 @@ class Notifier(commands.Cog):
             if role:
                 content = role.mention
 
-        await webhook.send(
-            embed=e,
-            content=content,
-            allowed_mentions=allowed,
-            username=WEBHOOK_NAME,
-            view=view,
-            file=file,  # NEW
-        )
+        try:
+            await webhook.send(
+                embed=e,
+                content=content,
+                allowed_mentions=allowed,
+                username=WEBHOOK_NAME,
+                view=view,
+                file=file,  # NEW
+            )
+        except discord.NotFound:
+            # Webhook wurde möglicherweise auf Discord gelöscht -> Cache leeren
+            self._webhook_cache.pop((channel.guild.id, channel.id), None)
+            raise
 
     async def _get_or_create_webhook(self, guild_id: int, channel_id: int):
         key = (guild_id, channel_id)
         if key in self._webhook_cache:
             return self._webhook_cache[key]
 
-        guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
-        channel = guild.get_channel(channel_id) or await guild.fetch_channel(channel_id)
-        for wh in await channel.webhooks():
-            if wh.name == WEBHOOK_NAME:
-                await self._ensure_webhook_avatar(wh)  # CHANGED: Avatar aktualisieren
-                self._webhook_cache[key] = wh
-                return wh
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return None
+        channel = guild.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                return None
+        if not isinstance(channel, discord.TextChannel):
+            return None
 
-        wh = await channel.create_webhook(name=WEBHOOK_NAME, reason="Astra Notifier")
-        await self._ensure_webhook_avatar(wh)
-        self._webhook_cache[key] = wh
-        return wh
+        try:
+            for wh in await channel.webhooks():
+                if wh.name == WEBHOOK_NAME:
+                    await self._ensure_webhook_avatar(wh)  # CHANGED: Avatar aktualisieren
+                    self._webhook_cache[key] = wh
+                    return wh
+
+            wh = await channel.create_webhook(name=WEBHOOK_NAME, reason="Astra Notifier")
+            await self._ensure_webhook_avatar(wh)
+            self._webhook_cache[key] = wh
+            return wh
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+            logging.warning(f"[Notifier] Konnte Webhook in {channel.name} ({guild_id}) nicht abrufen/erstellen: {e}")
+            return None
 
     async def _ensure_webhook_avatar(self, webhook: discord.Webhook):
         """Setzt/aktualisiert das Avatar für bestehende/neu erstellte Webhooks mit hartem Cache-Refresh."""

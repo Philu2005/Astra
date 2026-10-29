@@ -442,43 +442,61 @@ class Partner(commands.Cog):
 
     async def sende_werbung(self, when: datetime.datetime, ad_channel_id: int):
         await self.bot.wait_until_ready()
-        await discord.utils.sleep_until(when)
-
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT title, description, invite_link, thumbnail, image FROM astra_ad_config LIMIT 1")
-                result = await cur.fetchone()
-
-        if not result:
-            logging.warning("⚠️ Kein Werbeintrag gefunden in astra_ad_config")
+        try:
+            await discord.utils.sleep_until(when)
+        except asyncio.CancelledError:
             return
 
-        title, description, invite, thumbnail, image = result
+        try:
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT title, description, invite_link, thumbnail, image FROM astra_ad_config LIMIT 1")
+                    result = await cur.fetchone()
 
-        embed = discord.Embed(
-            title=title,
-            description=description.replace("{invite}", invite),
-            color=discord.Color.blurple()
-        )
-        if thumbnail:
-            embed.set_thumbnail(url=thumbnail)
-        if image:
-            embed.set_image(url=image)
+            if not result:
+                logging.warning("[Partner] ⚠️ Kein Werbeintrag gefunden in astra_ad_config")
+                return
 
-        channel = self.bot.get_channel(ad_channel_id)
-        if channel:
-            try:
-                await channel.send(embed=embed)
-            except Exception as e:
-                logging.error(f"Fehler beim Werbung posten in {ad_channel_id}: {e}")
+            title, description, invite, thumbnail, image = result
 
-        neue_zeit = int((datetime.datetime.now() + datetime.timedelta(hours=6)).timestamp())
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("UPDATE partner_ad_config SET time = %s WHERE ad_channel_id = %s", (neue_zeit, ad_channel_id))
-                await conn.commit()
+            embed = discord.Embed(
+                title=title,
+                description=description.replace("{invite}", invite),
+                color=discord.Color.blurple()
+            )
+            if thumbnail:
+                embed.set_thumbnail(url=thumbnail)
+            if image:
+                embed.set_image(url=image)
 
-        asyncio.create_task(self.sende_werbung(datetime.datetime.fromtimestamp(neue_zeit), ad_channel_id))
+            channel = self.bot.get_channel(ad_channel_id)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(ad_channel_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    channel = None
+
+            if channel:
+                try:
+                    await channel.send(embed=embed)
+                except (discord.NotFound, discord.Forbidden) as e:
+                    logging.warning(f"[Partner] Nicht verfügbar / keine Berechtigung beim Werbung posten in {ad_channel_id}: {e}")
+                except discord.HTTPException as e:
+                    logging.warning(f"[Partner] Discord HTTP-Fehler beim Werbung posten in {ad_channel_id}: {e}")
+                except Exception as e:
+                    logging.exception(f"[Partner] Unerwarteter Fehler beim Werbung posten in {ad_channel_id}: {e}")
+
+            neue_zeit = int((datetime.datetime.now() + datetime.timedelta(hours=6)).timestamp())
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("UPDATE partner_ad_config SET time = %s WHERE ad_channel_id = %s", (neue_zeit, ad_channel_id))
+                    await conn.commit()
+
+            asyncio.create_task(self.sende_werbung(datetime.datetime.fromtimestamp(neue_zeit), ad_channel_id))
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.exception(f"[Partner] Unerwarteter Fehler in sende_werbung (channel={ad_channel_id}): {e}")
 
 
     @app_commands.command(name="partnerbewerbung", description="Beginne deine Partnerbewerbung")

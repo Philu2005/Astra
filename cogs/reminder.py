@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands, ui
 import asyncio
+import logging
 import math
 from datetime import datetime, timezone
 
@@ -527,24 +528,31 @@ class Reminder(commands.Cog):
     async def load_reminders(self):
         await self.bot.wait_until_ready()
 
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT id, userID, grund, time FROM reminder WHERE time > UNIX_TIMESTAMP()"
-                )
-                rows = await cur.fetchall()
+        try:
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT id, userID, grund, time FROM reminder WHERE time > UNIX_TIMESTAMP()"
+                    )
+                    rows = await cur.fetchall()
+        except Exception as e:
+            logging.exception(f"[Reminder] Fehler beim Laden der Reminder aus DB: {e}")
+            return
 
         for rid, uid, grund, ts in rows:
-            when = datetime.fromtimestamp(int(ts), timezone.utc)
+            try:
+                when = datetime.fromtimestamp(int(ts), timezone.utc)
 
-            if rid in self.tasks:
-                continue  # verhindert doppelte Tasks
+                if rid in self.tasks:
+                    continue  # verhindert doppelte Tasks
 
-            task = asyncio.create_task(
-                self.reminder_task(rid, uid, grund, when)
-            )
+                task = asyncio.create_task(
+                    self.reminder_task(rid, uid, grund, when)
+                )
 
-            self.tasks[rid] = task
+                self.tasks[rid] = task
+            except Exception as e:
+                logging.exception(f"[Reminder] Fehler beim Einplanen von Reminder {rid}: {e}")
 
     async def reminder_task(self, rid, uid, grund, when):
         await self.bot.wait_until_ready()
@@ -555,32 +563,47 @@ class Reminder(commands.Cog):
             return  # <- EXTREM WICHTIG
 
         try:
-            user = self.bot.get_user(uid) or await self.bot.fetch_user(uid)
+            user = self.bot.get_user(uid)
+            if user is None:
+                try:
+                    user = await self.bot.fetch_user(uid)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                    logging.warning(f"[Reminder] User {uid} für Reminder {rid} nicht gefunden / erreichbar: {e}")
+                    user = None
+
+            if user:
+                embed = discord.Embed(
+                    title="<:Astra_time:1141303932061233202> Erinnerung",
+                    description=f"> {grund}",
+                    colour=discord.Colour.blue()
+                )
+
+                embed.add_field(name="⏳ Fällig", value=f"<t:{int(when.timestamp())}:R>", inline=True)
+                embed.add_field(name="📅 Datum", value=f"<t:{int(when.timestamp())}:F>", inline=True)
+
+                embed.set_footer(text="Astra Reminder System")
+
+                try:
+                    await user.send(embed=embed)
+                except (discord.NotFound, discord.Forbidden) as e:
+                    logging.warning(f"[Reminder] DM an User {uid} (Reminder {rid}) nicht möglich: {e}")
+                except discord.HTTPException as e:
+                    logging.warning(f"[Reminder] Discord HTTP-Fehler beim Senden an User {uid} (Reminder {rid}): {e}")
+                except Exception as e:
+                    logging.exception(f"[Reminder] Unerwarteter Fehler beim Senden an User {uid} (Reminder {rid}): {e}")
+
         except Exception as e:
-            print(e)
-            return
+            logging.exception(f"[Reminder] Unerwarteter Fehler in reminder_task (rid={rid}, uid={uid}): {e}")
 
-        embed = discord.Embed(
-            title="<:Astra_time:1141303932061233202> Erinnerung",
-            description=f"> {grund}",
-            colour=discord.Colour.blue()
-        )
+        finally:
+            try:
+                async with self.bot.pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute("DELETE FROM reminder WHERE id=%s", (rid,))
+            except Exception as e:
+                logging.exception(f"[Reminder] Fehler beim Löschen des erledigten Reminders {rid}: {e}")
 
-        embed.add_field(name="⏳ Fällig", value=f"<t:{int(when.timestamp())}:R>", inline=True)
-        embed.add_field(name="📅 Datum", value=f"<t:{int(when.timestamp())}:F>", inline=True)
-
-        embed.set_footer(text="Astra Reminder System")
-
-        try:
-            await user.send(embed=embed)
-        except Exception as e:
-            print(e)
-
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("DELETE FROM reminder WHERE id=%s", (rid,))
-
-        self.tasks.pop(rid, None)
+            self.tasks.pop(rid, None)
 
     @app_commands.guild_only()
     @app_commands.command(name="erinnerungen", description="Öffnet eine Übersicht deiner Erinnerungen mit Optionen zum Erstellen, Löschen und Verwalten")

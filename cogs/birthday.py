@@ -1,5 +1,6 @@
 # geburtstag_system.py — exakt HH:mm:00, Multi-{mention}, schlichtes Embed, Alias-UPSERT, Modal (Embed ja/nein), Status (AN/AUS)
 import asyncio
+import logging
 from typing import Optional, Tuple, List, Dict, Literal
 
 import discord
@@ -131,119 +132,132 @@ class Birthday(commands.Cog):
                     grouped.setdefault(int(g_id), []).append((int(user_id), birth_str, int(d), int(m), int(y)))
 
                 for g_id, items in grouped.items():
-                    ch_id, tpl, hr, mn, tz_name, use_embed, enabled = settings.get(
-                        g_id, (0, "", 9, 0, FALLBACK_TZ, 1, 1)
-                    )
-
-                    # Guild deaktiviert? Überspringen + nur next_epoch neu planen.
-                    tz = _safe_tz(tz_name)
-                    if int(enabled) == 0:
-                        for user_id, _birth_str, d, m, y in items:
-                            new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
-                            async with self.bot.pool.acquire() as conn:
-                                async with conn.cursor() as cur:
-                                    await cur.execute(
-                                        "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
-                                        (new_epoch, g_id, user_id)
-                                    )
-                        continue
-
-                    guild = self.bot.get_guild(g_id)
-                    if not guild or not ch_id:
-                        # Keine Ausgabe, aber next_epoch neu planen.
-                        for user_id, _birth_str, d, m, y in items:
-                            new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
-                            async with self.bot.pool.acquire() as conn:
-                                async with conn.cursor() as cur:
-                                    await cur.execute(
-                                        "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
-                                        (new_epoch, g_id, user_id)
-                                    )
-                        continue
-
-                    channel = guild.get_channel(int(ch_id))
-                    if not isinstance(channel, discord.TextChannel):
-                        for user_id, _birth_str, d, m, y in items:
-                            new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
-                            async with self.bot.pool.acquire() as conn:
-                                async with conn.cursor() as cur:
-                                    await cur.execute(
-                                        "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
-                                        (new_epoch, g_id, user_id)
-                                    )
-                        continue
-
-                    # Mitglieder sammeln, die (noch) auf dem Server sind
-                    members: List[discord.Member] = []
-                    any_birth_str = None
-                    for user_id, birth_str, d, m, y in items:
-                        mem = guild.get_member(user_id)
-                        if mem:
-                            members.append(mem)
-                            any_birth_str = any_birth_str or birth_str
-                    if not members:
-                        # Trotzdem next_epoch neu planen
-                        for user_id, _birth_str, d, m, y in items:
-                            new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
-                            async with self.bot.pool.acquire() as conn:
-                                async with conn.cursor() as cur:
-                                    await cur.execute(
-                                        "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
-                                        (new_epoch, g_id, user_id)
-                                    )
-                        continue
-
-                    # Template befüllen
-                    mentions_str = _format_mentions_list(members)
-                    first = members[0]  # Back-compat für {name}/{tag}/{user_id}
-                    msg_template = (tpl.strip() or STD_MSG)
-                    msg = (msg_template
-                           .replace("{mention}", mentions_str)
-                           .replace("{user_id}", str(first.id))
-                           .replace("{tag}", str(first))
-                           .replace("{name}", first.display_name))
-
-                    if use_embed:
-                        # Schlichtes, schönes Embed: Titel + Beschreibung (Template) + Timestamp + Footer
-                        embed = discord.Embed(
-                            title="🎂 Geburtstage heute",
-                            description=msg,
-                            colour=discord.Colour.blurple(),
-                            timestamp=datetime.now(tz),
+                    try:
+                        ch_id, tpl, hr, mn, tz_name, use_embed, enabled = settings.get(
+                            g_id, (0, "", 9, 0, FALLBACK_TZ, 1, 1)
                         )
-                        embed.set_footer(text="Alles Gute!")
-                        try:
-                            await channel.send(
-                                embed=embed,
-                                allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False)
-                            )
-                        except Exception:
-                            pass
-                    else:
-                        try:
-                            await channel.send(
-                                msg,
-                                allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False)
-                            )
-                        except Exception:
-                            pass
 
-                    # Nächsten Termin je User in Guild-Zeitzone planen
-                    for user_id, _birth_str, d, m, y in items:
-                        new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
-                        async with self.bot.pool.acquire() as conn:
-                            async with conn.cursor() as cur:
-                                await cur.execute(
-                                    "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
-                                    (new_epoch, g_id, user_id)
+                        tz = _safe_tz(tz_name)
+                        # Guild deaktiviert? Überspringen + nur next_epoch neu planen.
+                        if int(enabled) == 0:
+                            for user_id, _birth_str, d, m, y in items:
+                                new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
+                                async with self.bot.pool.acquire() as conn:
+                                    async with conn.cursor() as cur:
+                                        await cur.execute(
+                                            "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
+                                            (new_epoch, g_id, user_id)
+                                        )
+                            continue
+
+                        guild = self.bot.get_guild(g_id)
+                        if not guild or not ch_id:
+                            # Bot ist nicht mehr auf dem Server oder kein Channel konfiguriert -> sauber next_epoch neu planen
+                            for user_id, _birth_str, d, m, y in items:
+                                new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
+                                async with self.bot.pool.acquire() as conn:
+                                    async with conn.cursor() as cur:
+                                        await cur.execute(
+                                            "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
+                                            (new_epoch, g_id, user_id)
+                                        )
+                            continue
+
+                        channel = guild.get_channel(int(ch_id))
+                        if channel is None:
+                            try:
+                                channel = await guild.fetch_channel(int(ch_id))
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                channel = None
+
+                        if not isinstance(channel, discord.TextChannel):
+                            for user_id, _birth_str, d, m, y in items:
+                                new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
+                                async with self.bot.pool.acquire() as conn:
+                                    async with conn.cursor() as cur:
+                                        await cur.execute(
+                                            "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
+                                            (new_epoch, g_id, user_id)
+                                        )
+                            continue
+
+                        # Mitglieder sammeln, die (noch) auf dem Server sind
+                        members: List[discord.Member] = []
+                        any_birth_str = None
+                        for user_id, birth_str, d, m, y in items:
+                            mem = guild.get_member(user_id)
+                            if mem:
+                                members.append(mem)
+                                any_birth_str = any_birth_str or birth_str
+                        if not members:
+                            # Trotzdem next_epoch neu planen
+                            for user_id, _birth_str, d, m, y in items:
+                                new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
+                                async with self.bot.pool.acquire() as conn:
+                                    async with conn.cursor() as cur:
+                                        await cur.execute(
+                                            "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
+                                            (new_epoch, g_id, user_id)
+                                        )
+                            continue
+
+                        # Template befüllen
+                        mentions_str = _format_mentions_list(members)
+                        first = members[0]  # Back-compat für {name}/{tag}/{user_id}
+                        msg_template = (tpl.strip() or STD_MSG)
+                        msg = (msg_template
+                               .replace("{mention}", mentions_str)
+                               .replace("{user_id}", str(first.id))
+                               .replace("{tag}", str(first))
+                               .replace("{name}", first.display_name))
+
+                        if use_embed:
+                            # Schlichtes, schönes Embed: Titel + Beschreibung (Template) + Timestamp + Footer
+                            embed = discord.Embed(
+                                title="🎂 Geburtstage heute",
+                                description=msg,
+                                colour=discord.Colour.blurple(),
+                                timestamp=datetime.now(tz),
+                            )
+                            embed.set_footer(text="Alles Gute!")
+                            try:
+                                await channel.send(
+                                    embed=embed,
+                                    allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False)
                                 )
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                                logging.warning(f"[Birthday] Senden in Guild {g_id} (Channel {ch_id}) nicht möglich: {e}")
+                        else:
+                            try:
+                                await channel.send(
+                                    msg,
+                                    allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False)
+                                )
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                                logging.warning(f"[Birthday] Senden in Guild {g_id} (Channel {ch_id}) nicht möglich: {e}")
+
+                        # Nächsten Termin je User in Guild-Zeitzone planen
+                        for user_id, _birth_str, d, m, y in items:
+                            new_epoch = _calc_next_epoch(d, m, tz, hr, mn)
+                            async with self.bot.pool.acquire() as conn:
+                                async with conn.cursor() as cur:
+                                    await cur.execute(
+                                        "UPDATE birthdays_guild SET next_epoch=%s WHERE guild_id=%s AND user_id=%s",
+                                        (new_epoch, g_id, user_id)
+                                    )
+                    except (discord.NotFound, discord.Forbidden) as e:
+                        logging.warning(f"[Birthday] Ressource nicht verfügbar / keine Rechte für Guild {g_id}: {e}")
+                    except discord.HTTPException as e:
+                        logging.warning(f"[Birthday] Discord HTTP-Fehler für Guild {g_id}: {e}")
+                    except Exception as e:
+                        logging.exception(f"[Birthday] Unerwarteter Fehler bei Verarbeitung von Guild {g_id}: {e}")
 
                 wake = next_minute_utc(wake)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"[Birthday] ticker error: {e}")
+                logging.exception(f"[Birthday] Unerwarteter Fehler im ticker-Loop: {e}")
                 wake = next_minute_utc()
 
 # ================= Slash-Commands (pro Guild) =================

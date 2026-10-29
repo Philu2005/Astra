@@ -48,98 +48,69 @@ def _to_int_or_none(v) -> Optional[int]:
 async def gwtimes(bot: commands.Bot, when: datetime, messageid: int):
     """Wartet bis 'when' und beendet dann das Giveaway (messageid)."""
     await bot.wait_until_ready()
-    await discord.utils.sleep_until(when=when)
+    try:
+        await discord.utils.sleep_until(when=when)
+    except asyncio.CancelledError:
+        return
 
-    async with bot.pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "SELECT guildID, channelID, userID, messageID FROM giveaway_entrys WHERE messageID = %s",
-                (messageid,),
-            )
-            result = await cur.fetchall()
-
-            await cur.execute(
-                "SELECT ended, prize, winners, entrys, time, guildID, channelID "
-                "FROM giveaway_active WHERE messageID = %s",
-                (messageid,),
-            )
-            row = await cur.fetchone()
-            if not row:
-                return
-
-            ended, prize, winners, entrys, time_unix, guildID, channelID = row
-
-            guild = bot.get_guild(int(guildID))
-            if guild is None:
-                logging.error(f"Guild {guildID} not found for giveaway {messageid}!")
-                return
-
-            channel = guild.get_channel(int(channelID))
-            if channel is None:
-                logging.error(f"Channel {channelID} not found in guild {guildID} for giveaway {messageid}!")
-                return
-
-            try:
-                msg = await channel.fetch_message(int(messageid))
-            except Exception as e:
-                logging.error(f"Giveaway message {messageid} not found: {e}")
-                return
-
-            end_dt = datetime.fromtimestamp(int(time_unix), tz=timezone.utc)
-
-            if int(ended) == 1:
-                return
-
-            if not result:
-                # niemand teilgenommen
-                embed = discord.Embed(
-                    title=" ",
-                    description=(
-                        f"🏆 Preis: {prize}\n"
-                        "`🤖` [Astra Einladen]"
-                        "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
-                        "<:Astra_gw_open2:1141303850125504533> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
-                        "<:Astra_arrow:1141303823600717885> Niemand hat das Gewinnspiel gewonnen.\n"
-                        f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
-                        "<:Astra_arrow:1141303823600717885> Es gab **0** Teilnehmer."
-                    ),
-                    colour=discord.Colour.red(),
+    try:
+        async with bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT guildID, channelID, userID, messageID FROM giveaway_entrys WHERE messageID = %s",
+                    (messageid,),
                 )
-                await msg.edit(content="`❌` Giveaway Ended `❌`", embed=embed, view=None)
-                await msg.reply("<:Astra_x:1141303954555289600> **Es gab nicht genügend Teilnehmer. Niemand hat das Gewinnspiel gewonnen.**")
-            else:
-                # es gibt Teilnehmer
-                participants = [row[2] for row in result]
-                to_pick = min(len(participants), int(winners)) if participants else 0
-                chosen = random.sample(participants, k=to_pick) if to_pick > 0 else []
+                result = await cur.fetchall()
 
-                users = []
-                for uid in chosen:
-                    u = bot.get_user(int(uid))
-                    if not u:
-                        continue
-                    win = discord.Embed(
-                        title=" ",
-                        description=(
-                            f"🏆 Preis: {prize}\n"
-                            "`🤖` [Astra Einladen]"
-                            "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
-                            f"`🎉` Du hast ein Gewinnspiel auf [{guild.name}]"
-                            f"(https://discord.com/channels/{guild.id}/{channel.id}/{msg.id}) gewonnen.\n"
-                            f"`⏰` Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}"
-                        ),
-                        colour=discord.Colour.yellow(),
-                    )
-                    if guild.icon:
-                        win.set_thumbnail(url=guild.icon.url)
+                await cur.execute(
+                    "SELECT ended, prize, winners, entrys, time, guildID, channelID "
+                    "FROM giveaway_active WHERE messageID = %s",
+                    (messageid,),
+                )
+                row = await cur.fetchone()
+                if not row:
+                    return
+
+                ended, prize, winners, entrys, time_unix, guildID, channelID = row
+
+                if int(ended) == 1:
+                    return
+
+                guild = bot.get_guild(int(guildID))
+                if guild is None:
+                    logging.info(f"[Giveaway] Guild {guildID} für Giveaway {messageid} nicht gefunden (Bot nicht mehr auf dem Server).")
+                    await cur.execute("UPDATE giveaway_active SET ended = 1 WHERE messageID = %s", (messageid,))
+                    await cur.execute("DELETE FROM giveway_ids WHERE messageID = %s", (messageid,))
+                    await cur.execute("DELETE FROM giveaway_entrys WHERE messageID = %s", (messageid,))
+                    return
+
+                channel = guild.get_channel(int(channelID))
+                if channel is None:
                     try:
-                        await u.send("<:Astra_herz:1141303857855594527> **Du hast ein Gewinnspiel gewonnen! Herzlichen Glückwunsch.**", embed=win)
-                    except Exception:
-                        pass
-                    users.append(u)
+                        channel = await guild.fetch_channel(int(channelID))
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        channel = None
 
-                mentions = ", ".join(u.mention for u in users if u)
-                if entrys < 1 or not users:
+                if channel is None or not isinstance(channel, discord.TextChannel):
+                    logging.warning(f"[Giveaway] Channel {channelID} in Guild {guildID} für Giveaway {messageid} nicht gefunden/kein Textkanal.")
+                    await cur.execute("UPDATE giveaway_active SET ended = 1 WHERE messageID = %s", (messageid,))
+                    await cur.execute("DELETE FROM giveway_ids WHERE messageID = %s", (messageid,))
+                    await cur.execute("DELETE FROM giveaway_entrys WHERE messageID = %s", (messageid,))
+                    return
+
+                try:
+                    msg = await channel.fetch_message(int(messageid))
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                    logging.warning(f"[Giveaway] Nachricht {messageid} in Channel {channelID} nicht gefunden: {e}")
+                    await cur.execute("UPDATE giveaway_active SET ended = 1 WHERE messageID = %s", (messageid,))
+                    await cur.execute("DELETE FROM giveway_ids WHERE messageID = %s", (messageid,))
+                    await cur.execute("DELETE FROM giveaway_entrys WHERE messageID = %s", (messageid,))
+                    return
+
+                end_dt = datetime.fromtimestamp(int(time_unix), tz=timezone.utc)
+
+                if not result:
+                    # niemand teilgenommen
                     embed = discord.Embed(
                         title=" ",
                         description=(
@@ -153,38 +124,104 @@ async def gwtimes(bot: commands.Bot, when: datetime, messageid: int):
                         ),
                         colour=discord.Colour.red(),
                     )
-                    await msg.edit(content="`❌` Giveaway Ended `❌`", embed=embed, view=None)
-                    await msg.reply("<:Astra_x:1141303954555289600> Es gab nicht genügend Teilnehmer. Niemand hat das Gewinnspiel gewonnen.")
+                    try:
+                        await msg.edit(content="`❌` Giveaway Ended `❌`", embed=embed, view=None)
+                        await msg.reply("<:Astra_x:1141303954555289600> **Es gab nicht genügend Teilnehmer. Niemand hat das Gewinnspiel gewonnen.**")
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                        logging.warning(f"[Giveaway] Konnte Giveaway-Ende-Nachricht {messageid} nicht aktualisieren: {e}")
                 else:
-                    embed = discord.Embed(
-                        title=" ",
-                        description=(
-                            f"🏆 Preis: {prize}\n"
-                            "`🤖` [Astra Einladen]"
-                            "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
-                            "<:Astra_gw_open2:1141303850125504533> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
-                            f"<:Astra_arrow:1141303823600717885> {mentions} hat das Gewinnspiel gewonnen.\n"
-                            f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
-                            f"<:Astra_arrow:1141303823600717885> Es gab **{entrys}** Teilnehmer."
-                        ),
-                        colour=discord.Colour.red(),
-                    )
-                    await msg.edit(content="`❌` Giveaway Ended `❌`", embed=embed, view=None)
-                    await msg.reply(f"<:Astra_gw1:1141303852889550928> {mentions} hat das Gewinnspiel gewonnen! Herzlichen Glückwunsch.")
+                    # es gibt Teilnehmer
+                    participants = [row[2] for row in result]
+                    to_pick = min(len(participants), int(winners)) if participants else 0
+                    chosen = random.sample(participants, k=to_pick) if to_pick > 0 else []
 
-            # Endstatus & Aufräumen
-            await cur.execute(
-                "UPDATE giveaway_active SET ended = %s WHERE guildID = %s AND channelID = %s and messageID = %s",
-                (1, guild.id, channel.id, messageid),
-            )
-            await cur.execute("DELETE FROM giveway_ids WHERE messageID = %s", (messageid,))
-            await cur.execute("DELETE FROM giveaway_entrys WHERE messageID = %s", (messageid,))
+                    users = []
+                    for uid in chosen:
+                        u = bot.get_user(int(uid))
+                        if not u:
+                            try:
+                                u = await bot.fetch_user(int(uid))
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                u = None
+                        if not u:
+                            continue
+                        win = discord.Embed(
+                            title=" ",
+                            description=(
+                                f"🏆 Preis: {prize}\n"
+                                "`🤖` [Astra Einladen]"
+                                "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
+                                f"`🎉` Du hast ein Gewinnspiel auf [{guild.name}]"
+                                f"(https://discord.com/channels/{guild.id}/{channel.id}/{msg.id}) gewonnen.\n"
+                                f"`⏰` Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}"
+                            ),
+                            colour=discord.Colour.yellow(),
+                        )
+                        if guild.icon:
+                            win.set_thumbnail(url=guild.icon.url)
+                        try:
+                            await u.send("<:Astra_herz:1141303857855594527> **Du hast ein Gewinnspiel gewonnen! Herzlichen Glückwunsch.**", embed=win)
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            pass
+                        users.append(u)
 
-            # Wenn KEIN anderes aktives Gewinnspiel mehr in der Guild läuft -> Message-Counts löschen
-            await cur.execute("SELECT 1 FROM giveaway_active WHERE guildID = %s AND ended = 0 LIMIT 1", (guild.id,))
-            still_active = await cur.fetchone()
-            if not still_active:
-                await cur.execute("DELETE FROM user_message_counts WHERE guildID = %s", (guild.id,))
+                    mentions = ", ".join(u.mention for u in users if u)
+                    if entrys < 1 or not users:
+                        embed = discord.Embed(
+                            title=" ",
+                            description=(
+                                f"🏆 Preis: {prize}\n"
+                                "`🤖` [Astra Einladen]"
+                                "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
+                                "<:Astra_gw_open2:1141303850125504533> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
+                                "<:Astra_arrow:1141303823600717885> Niemand hat das Gewinnspiel gewonnen.\n"
+                                f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
+                                "<:Astra_arrow:1141303823600717885> Es gab **0** Teilnehmer."
+                            ),
+                            colour=discord.Colour.red(),
+                        )
+                        try:
+                            await msg.edit(content="`❌` Giveaway Ended `❌`", embed=embed, view=None)
+                            await msg.reply("<:Astra_x:1141303954555289600> Es gab nicht genügend Teilnehmer. Niemand hat das Gewinnspiel gewonnen.")
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                            logging.warning(f"[Giveaway] Konnte Giveaway-Ende-Nachricht {messageid} nicht aktualisieren: {e}")
+                    else:
+                        embed = discord.Embed(
+                            title=" ",
+                            description=(
+                                f"🏆 Preis: {prize}\n"
+                                "`🤖` [Astra Einladen]"
+                                "(https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands)\n\n"
+                                "<:Astra_gw_open2:1141303850125504533> » __**Wer hat das Gewinnspiel gewonnen?**__\n"
+                                f"<:Astra_arrow:1141303823600717885> {mentions} hat das Gewinnspiel gewonnen.\n"
+                                f"<:Astra_arrow:1141303823600717885> Das Gewinnspiel endete {discord.utils.format_dt(end_dt, 'R')}\n"
+                                f"<:Astra_arrow:1141303823600717885> Es gab **{entrys}** Teilnehmer."
+                            ),
+                            colour=discord.Colour.red(),
+                        )
+                        try:
+                            await msg.edit(content="`❌` Giveaway Ended `❌`", embed=embed, view=None)
+                            await msg.reply(f"<:Astra_gw1:1141303852889550928> {mentions} hat das Gewinnspiel gewonnen! Herzlichen Glückwunsch.")
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                            logging.warning(f"[Giveaway] Konnte Giveaway-Ende-Nachricht {messageid} nicht aktualisieren: {e}")
+
+                # Endstatus & Aufräumen
+                await cur.execute(
+                    "UPDATE giveaway_active SET ended = %s WHERE guildID = %s AND channelID = %s and messageID = %s",
+                    (1, guild.id, channel.id, messageid),
+                )
+                await cur.execute("DELETE FROM giveway_ids WHERE messageID = %s", (messageid,))
+                await cur.execute("DELETE FROM giveaway_entrys WHERE messageID = %s", (messageid,))
+
+                # Wenn KEIN anderes aktives Gewinnspiel mehr in der Guild läuft -> Message-Counts löschen
+                await cur.execute("SELECT 1 FROM giveaway_active WHERE guildID = %s AND ended = 0 LIMIT 1", (guild.id,))
+                still_active = await cur.fetchone()
+                if not still_active:
+                    await cur.execute("DELETE FROM user_message_counts WHERE guildID = %s", (guild.id,))
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logging.exception(f"[Giveaway] Unerwarteter Fehler im gwtimes Task (messageid={messageid}): {e}")
 
 
 # --------------------------- Button View ---------------------------

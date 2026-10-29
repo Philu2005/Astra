@@ -1206,26 +1206,6 @@ class Automod(app_commands.Group):
 
         await view.start(interaction)
 
-        # ── MODLOG ──
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "SELECT channelID FROM modlog WHERE serverID = %s",
-                    (interaction.guild.id,)
-                )
-                modlog = await cursor.fetchone()
-
-                if modlog:
-                    channel = interaction.guild.get_channel(int(modlog[0]))
-                    if channel:
-                        embed = discord.Embed(
-                            title="⚙️ Automod Config geöffnet",
-                            description=f"{interaction.user} (`{interaction.user.id}`) hat das Config-Panel geöffnet.",
-                            colour=discord.Colour.blurple(),
-                            timestamp=discord.utils.utcnow()
-                        )
-                        await channel.send(embed=embed)
-
     # =====================================================
     # RESET
     # =====================================================

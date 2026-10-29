@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import traceback
+import logging
 from typing import Literal
 from datetime import datetime, timezone
 
@@ -406,39 +407,49 @@ class TempChannelCog(commands.Cog):
     async def cleanup_task(self):
         """Wird einmal beim Start ausgeführt, um verwaiste/leere Tempchannels zu löschen."""
         await self.bot.wait_until_ready()
-        async with self.bot.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT guildID, channelID FROM usertempchannels")
-                rows = await cur.fetchall()
+        try:
+            async with self.bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT guildID, channelID FROM usertempchannels")
+                    rows = await cur.fetchall()
 
-                for guild_id, channel_id in rows:
-                    guild = self.bot.get_guild(int(guild_id))
-                    if not guild:
-                        continue
-                    
-                    channel = guild.get_channel(int(channel_id))
-                    
-                    # Wenn der Kanal nicht mehr existiert oder leer ist
-                    if channel is None:
-                        await cur.execute(
-                            "DELETE FROM usertempchannels WHERE guildID = %s AND channelID = %s",
-                            (guild_id, channel_id)
-                        )
-                    elif len(channel.members) == 0:
+                    for guild_id, channel_id in rows:
                         try:
-                            await channel.delete(reason="Bereinigung nach Bot-Neustart (Kanal leer).")
-                        except Exception:
-                            pass
-                        await cur.execute(
-                            "DELETE FROM usertempchannels WHERE guildID = %s AND channelID = %s",
-                            (guild_id, channel_id)
-                        )
-                    else:
-                        # Kanal ist aktiv, in den lokalen Cache aufnehmen
-                        if channel_id not in tempchannels:
-                            tempchannels.append(int(channel_id))
-                
-                await conn.commit()
+                            guild = self.bot.get_guild(int(guild_id))
+                            if not guild:
+                                continue
+                            
+                            channel = guild.get_channel(int(channel_id))
+                            
+                            # Wenn der Kanal nicht mehr existiert oder leer ist
+                            if channel is None:
+                                await cur.execute(
+                                    "DELETE FROM usertempchannels WHERE guildID = %s AND channelID = %s",
+                                    (guild_id, channel_id)
+                                )
+                            elif len(channel.members) == 0:
+                                try:
+                                    await channel.delete(reason="Bereinigung nach Bot-Neustart (Kanal leer).")
+                                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                    pass
+                                await cur.execute(
+                                    "DELETE FROM usertempchannels WHERE guildID = %s AND channelID = %s",
+                                    (guild_id, channel_id)
+                                )
+                            else:
+                                # Kanal ist aktiv, in den lokalen Cache aufnehmen
+                                if channel_id not in tempchannels:
+                                    tempchannels.append(int(channel_id))
+                        except Exception as e:
+                            logging.exception(f"[TempChannel] Fehler bei Bereinigung von Channel {channel_id} (Guild {guild_id}): {e}")
+                    
+                    await conn.commit()
+        except Exception as e:
+            logging.exception(f"[TempChannel] Fehler im cleanup_task: {e}")
+
+    @cleanup_task.error
+    async def cleanup_task_error(self, error: Exception):
+        logging.error(f"[TempChannel] Unerwarteter Fehler im Task cleanup_task: {error}", exc_info=error)
 
     # ---------- Slash Commands ----------
 

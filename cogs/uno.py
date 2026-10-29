@@ -1,6 +1,6 @@
 # cogs/uno.py
 from __future__ import annotations
-import asyncio, json, random
+import asyncio, json, random, logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple, Literal
@@ -408,21 +408,34 @@ class UnoCog(commands.Cog):
             await conn.commit()
 
     async def _recover_views(self):
-        async with self.pool.acquire() as conn, conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute("SELECT * FROM uno_games WHERE status IN ('lobby','active')")
-            rows = await cur.fetchall()
-        for r in rows or []:
-            st = UnoState.from_row(r)
-            ch = self.bot.get_channel(st.channel_id) or await self.bot.fetch_channel(st.channel_id)
-            if st.status == "lobby" and st.lobby_message_id:
+        try:
+            async with self.pool.acquire() as conn, conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("SELECT * FROM uno_games WHERE status IN ('lobby','active')")
+                rows = await cur.fetchall()
+            for r in rows or []:
                 try:
-                    m = await ch.fetch_message(st.lobby_message_id)
-                    await m.edit(view=LobbyView(self, st.game_id), embed=self.emb_lobby(st))
-                except Exception:
-                    pass
-            if st.status == "active":
-                await self._refresh_table(st)
-                await self._refresh_all_hands(st)
+                    st = UnoState.from_row(r)
+                    ch = self.bot.get_channel(st.channel_id)
+                    if ch is None:
+                        try:
+                            ch = await self.bot.fetch_channel(st.channel_id)
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            ch = None
+                    if not ch:
+                        continue
+                    if st.status == "lobby" and st.lobby_message_id:
+                        try:
+                            m = await ch.fetch_message(st.lobby_message_id)
+                            await m.edit(view=LobbyView(self, st.game_id), embed=self.emb_lobby(st))
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            pass
+                    if st.status == "active":
+                        await self._refresh_table(st)
+                        await self._refresh_all_hands(st)
+                except Exception as e:
+                    logging.warning(f"[UnoCog] Fehler beim Wiederherstellen von Uno-Spiel {r.get('game_id')}: {e}")
+        except Exception as e:
+            logging.exception(f"[UnoCog] Fehler in _recover_views: {e}")
 
     def emb_lobby(self, st: UnoState) -> discord.Embed:
         e = discord.Embed(
@@ -700,18 +713,41 @@ class UnoCog(commands.Cog):
     async def _refresh_table(self, st: UnoState):
         if not st.table_message_id:
             return
-        ch = self.bot.get_channel(st.channel_id) or await self.bot.fetch_channel(st.channel_id)
+        ch = self.bot.get_channel(st.channel_id)
+        if ch is None:
+            try:
+                ch = await self.bot.fetch_channel(st.channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                return
+        if not ch:
+            return
         try:
             m = await ch.fetch_message(st.table_message_id)
             await m.edit(embed=self.emb_table(st), view=TableView(self, st.game_id))
-        except Exception:
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
+        except Exception as e:
+            logging.debug(f"[UnoCog] _refresh_table Fehler in Channel {st.channel_id}: {e}")
 
     async def _refresh_all_hands(self, st: UnoState, force_send_to: Optional[int] = None):
         for uid in st.players:
             try:
-                user = self.bot.get_user(uid) or await self.bot.fetch_user(uid)
-                dm = user.dm_channel or await user.create_dm()
+                user = self.bot.get_user(uid)
+                if user is None:
+                    try:
+                        user = await self.bot.fetch_user(uid)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        user = None
+                if not user:
+                    continue
+
+                dm = user.dm_channel
+                if dm is None:
+                    try:
+                        dm = await user.create_dm()
+                    except (discord.Forbidden, discord.HTTPException):
+                        continue
+
                 enabled = uid == st.current_uid()
                 view = HandView(self, st, uid, enabled)
                 emb = self.emb_hand(st, uid)
@@ -725,74 +761,122 @@ class UnoCog(commands.Cog):
                             new_msg = await dm.send(embed=emb, view=view)
                             st.hand_messages[uid] = new_msg.id
                             await self._save(st)
-                    except Exception:
-                        new_msg = await dm.send(embed=emb, view=view)
-                        st.hand_messages[uid] = new_msg.id
-                        await self._save(st)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        try:
+                            new_msg = await dm.send(embed=emb, view=view)
+                            st.hand_messages[uid] = new_msg.id
+                            await self._save(st)
+                        except (discord.Forbidden, discord.HTTPException):
+                            pass
                 else:
                     try:
                         msg = await dm.fetch_message(msg_id)
                         await msg.edit(embed=emb, view=view)
-                    except Exception:
-                        new_msg = await dm.send(embed=emb, view=view)
-                        st.hand_messages[uid] = new_msg.id
-                        await self._save(st)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        try:
+                            new_msg = await dm.send(embed=emb, view=view)
+                            st.hand_messages[uid] = new_msg.id
+                            await self._save(st)
+                        except (discord.Forbidden, discord.HTTPException):
+                            pass
             except Exception:
                 continue
 
     async def _announce_end(self, st: UnoState, winner_id: int):
         if not st.table_message_id:
             return
-        ch = self.bot.get_channel(st.channel_id) or await self.bot.fetch_channel(st.channel_id)
-        try:
-            m = await ch.fetch_message(st.table_message_id)
-            e = discord.Embed(title=f"UNO – Spiel #{st.game_id} beendet", description=f"🏆 Gewinner: <@{winner_id}>", color=UNO_GOLD)
-            await m.edit(embed=e, view=None)
-        except Exception:
-            pass
+        ch = self.bot.get_channel(st.channel_id)
+        if ch is None:
+            try:
+                ch = await self.bot.fetch_channel(st.channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                ch = None
+        if ch:
+            try:
+                m = await ch.fetch_message(st.table_message_id)
+                e = discord.Embed(title=f"UNO – Spiel #{st.game_id} beendet", description=f"🏆 Gewinner: <@{winner_id}>", color=UNO_GOLD)
+                await m.edit(embed=e, view=None)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+            except Exception as e:
+                logging.debug(f"[UnoCog] _announce_end edit Fehler: {e}")
         await self._temp_note(st.channel_id, f"🏁 Spiel #{st.game_id} vorbei – Gewinner: <@{winner_id}>", 8)
 
     async def _temp_note(self, channel_id: int, text: str, delete_after: int = 6):
         try:
-            ch = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+            ch = self.bot.get_channel(channel_id)
+            if ch is None:
+                try:
+                    ch = await self.bot.fetch_channel(channel_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    return
+            if not ch:
+                return
             m = await ch.send(text)
             await asyncio.sleep(delete_after)
-            await m.delete()
-        except Exception:
+            try:
+                await m.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
+        except Exception as e:
+            logging.debug(f"[UnoCog] _temp_note Fehler in Channel {channel_id}: {e}")
 
     @tasks.loop(seconds=5)
     async def maintain_games(self):
-        async with self.pool.acquire() as conn, conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute("SELECT * FROM uno_games WHERE status='active'")
-            rows = await cur.fetchall()
+        try:
+            async with self.pool.acquire() as conn, conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("SELECT * FROM uno_games WHERE status='active'")
+                rows = await cur.fetchall()
+        except Exception as e:
+            logging.exception(f"[UnoCog] Fehler beim Abrufen aktiver Uno-Spiele: {e}")
+            return
+
         now = datetime.now(timezone.utc).timestamp()
         for r in rows or []:
-            st = UnoState.from_row(r)
-            if now - st.last_turn_at > TURN_TIMEOUT:
-                async with self.lock_for(st.game_id):
-                    row2 = await self._fetch_row(st.game_id)
-                    if not row2 or row2["status"] != "active":
+            try:
+                st = UnoState.from_row(r)
+                if st.guild_id:
+                    guild = self.bot.get_guild(st.guild_id)
+                    if guild is None:
+                        # Bot ist nicht mehr auf dem Server -> überspringen
                         continue
-                    st = UnoState.from_row(row2)
-                    uid = st.current_uid()
-                    n = st.draw_stack if st.draw_stack else 1
-                    st.draw(uid, n)
-                    st.draw_stack = 0
-                    st.next_turn(1)
-                    await self._save(st)
-                    await self._refresh_table(st)
-                    await self._refresh_all_hands(st)
-                    await self._temp_note(st.channel_id, f"⏰ <@{uid}> war zu langsam und zieht {n} Karte(n).", 6)
-            else:
-                try:
-                    await self._refresh_table(st)
-                except Exception:
-                    pass
+
+                if now - st.last_turn_at > TURN_TIMEOUT:
+                    async with self.lock_for(st.game_id):
+                        row2 = await self._fetch_row(st.game_id)
+                        if not row2 or row2["status"] != "active":
+                            continue
+                        st = UnoState.from_row(row2)
+                        uid = st.current_uid()
+                        n = st.draw_stack if st.draw_stack else 1
+                        st.draw(uid, n)
+                        st.draw_stack = 0
+                        st.next_turn(1)
+                        await self._save(st)
+                        await self._refresh_table(st)
+                        await self._refresh_all_hands(st)
+                        await self._temp_note(st.channel_id, f"⏰ <@{uid}> war zu langsam und zieht {n} Karte(n).", 6)
+                else:
+                    try:
+                        await self._refresh_table(st)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass
+            except (discord.NotFound, discord.Forbidden) as e:
+                logging.warning(f"[UnoCog] Ressource nicht verfügbar für Uno-Spiel {r.get('game_id')}: {e}")
+            except discord.HTTPException as e:
+                logging.warning(f"[UnoCog] Discord HTTP-Fehler bei Uno-Spiel {r.get('game_id')}: {e}")
+            except Exception as e:
+                logging.exception(f"[UnoCog] Unerwarteter Fehler in maintain_games für Spiel {r.get('game_id')}: {e}")
 
     @maintain_games.before_loop
     async def _wait_ready(self):
         await self.bot.wait_until_ready()
+
+    @maintain_games.error
+    async def maintain_games_error(self, error: Exception):
+        logging.error(f"[UnoCog] Unerwarteter Fehler im Task maintain_games: {error}", exc_info=error)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(UnoCog(bot))

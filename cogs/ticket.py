@@ -4,6 +4,7 @@ import io
 import re
 import html
 import asyncio
+import logging
 from typing import Optional, Literal, List, Tuple
 from discord import ui
 import discord
@@ -1650,64 +1651,83 @@ class TicketCog(commands.Cog):
     @tasks.loop(minutes=5)
     async def autoclose_task(self):
         await self.bot.wait_until_ready()
-        async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT guildID, channelID FROM ticketsystem_channels")
-                rows = await cur.fetchall()
+        try:
+            async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT guildID, channelID FROM ticketsystem_channels")
+                    rows = await cur.fetchall()
+        except Exception as e:
+            logging.exception(f"[TicketCog] Fehler beim Laden der Ticketsystem-Channels: {e}")
+            return
 
         for guild_id, channel_id in rows:
-            guild = self.bot.get_guild(int(guild_id))
-            if not guild:
-                continue
-            ch = guild.get_channel(int(channel_id))
-            if not isinstance(ch, discord.TextChannel):
-                continue
-
-            cfg = await get_guild_config(self.bot.pool, guild.id)  # type: ignore[attr-defined]
-            autoclose_h = int(cfg.get("autoclose_hours", 0))
-            remind_m = int(cfg.get("remind_minutes", 0))
-
-            if autoclose_h <= 0 and remind_m <= 0:
-                continue
-
             try:
-                last_msg = await ch.fetch_message(ch.last_message_id) if ch.last_message_id else None
-            except Exception:
-                last_msg = None
+                g_id = int(guild_id)
+                guild = self.bot.get_guild(g_id)
+                if not guild:
+                    continue
+                ch = guild.get_channel(int(channel_id))
+                if not isinstance(ch, discord.TextChannel):
+                    continue
 
-            last_time = last_msg.created_at if last_msg else ch.created_at
-            delta = discord.utils.utcnow() - last_time
+                cfg = await get_guild_config(self.bot.pool, guild.id)  # type: ignore[attr-defined]
+                autoclose_h = int(cfg.get("autoclose_hours", 0))
+                remind_m = int(cfg.get("remind_minutes", 0))
 
-            # Reminder?
-            if remind_m > 0 and delta.total_seconds() > remind_m * 60:
-                # Check if reminded already
-                async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
-                    async with conn.cursor() as cur:
-                        await cur.execute("SELECT reminded FROM ticket_autoclose_state WHERE channelID=%s", (ch.id,))
-                        r = await cur.fetchone()
-                        if not r or r[0] == 0:
-                            await ch.send("<:Astra_time:1141303932061233202> Erinnerung: Bitte gib uns ein Update, sonst wird dieses Ticket automatisch geschlossen.")
-                            await cur.execute("REPLACE INTO ticket_autoclose_state (channelID, reminded) VALUES (%s, %s)", (ch.id, 1))
+                if autoclose_h <= 0 and remind_m <= 0:
+                    continue
 
-            # Auto-Close?
-            if autoclose_h > 0 and delta.total_seconds() > autoclose_h * 3600:
-                # Simples Close ohne Log-Reopen (Task-Kontext) – ruft Button-Logik nicht erneut
                 try:
-                    await ch.send("<:Astra_locked:1141824745243942912> Dieses Ticket wurde wegen Inaktivität geschlossen.")
-                except Exception:
-                    pass
-                try:
-                    await ch.delete()
-                except Exception:
-                    pass
-                async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
-                    async with conn.cursor() as cur:
-                        await cur.execute("DELETE FROM ticketsystem_channels WHERE channelID=%s", (ch.id,))
-                        await cur.execute("DELETE FROM ticket_autoclose_state WHERE channelID=%s", (ch.id,))
+                    last_msg = await ch.fetch_message(ch.last_message_id) if ch.last_message_id else None
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    last_msg = None
+
+                last_time = last_msg.created_at if last_msg else ch.created_at
+                delta = discord.utils.utcnow() - last_time
+
+                # Reminder?
+                if remind_m > 0 and delta.total_seconds() > remind_m * 60:
+                    # Check if reminded already
+                    async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                        async with conn.cursor() as cur:
+                            await cur.execute("SELECT reminded FROM ticket_autoclose_state WHERE channelID=%s", (ch.id,))
+                            r = await cur.fetchone()
+                            if not r or r[0] == 0:
+                                try:
+                                    await ch.send("<:Astra_time:1141303932061233202> Erinnerung: Bitte gib uns ein Update, sonst wird dieses Ticket automatisch geschlossen.")
+                                    await cur.execute("REPLACE INTO ticket_autoclose_state (channelID, reminded) VALUES (%s, %s)", (ch.id, 1))
+                                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                                    logging.warning(f"[TicketCog] Konnte Reminder in Channel {ch.id} (Guild {g_id}) nicht senden: {e}")
+
+                # Auto-Close?
+                if autoclose_h > 0 and delta.total_seconds() > autoclose_h * 3600:
+                    # Simples Close ohne Log-Reopen (Task-Kontext) – ruft Button-Logik nicht erneut
+                    try:
+                        await ch.send("<:Astra_locked:1141824745243942912> Dieses Ticket wurde wegen Inaktivität geschlossen.")
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass
+                    try:
+                        await ch.delete()
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        pass
+                    async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                        async with conn.cursor() as cur:
+                            await cur.execute("DELETE FROM ticketsystem_channels WHERE channelID=%s", (ch.id,))
+                            await cur.execute("DELETE FROM ticket_autoclose_state WHERE channelID=%s", (ch.id,))
+            except (discord.NotFound, discord.Forbidden) as e:
+                logging.warning(f"[TicketCog] Nicht verfügbar / keine Rechte für Ticket {channel_id} (Guild {guild_id}): {e}")
+            except discord.HTTPException as e:
+                logging.warning(f"[TicketCog] Discord HTTP-Fehler bei Ticket {channel_id} (Guild {guild_id}): {e}")
+            except Exception as e:
+                logging.exception(f"[TicketCog] Unerwarteter Fehler in autoclose_task für Ticket {channel_id} (Guild {guild_id}): {e}")
 
     @autoclose_task.before_loop
     async def before_autoclose(self):
         await self.bot.wait_until_ready()
+
+    @autoclose_task.error
+    async def autoclose_task_error(self, error: Exception):
+        logging.error(f"[TicketCog] Unerwarteter Fehler im Task autoclose_task: {error}", exc_info=error)
 
 # =========================================================
 #                      SETUP ENTRY

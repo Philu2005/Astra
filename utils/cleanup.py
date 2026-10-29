@@ -1,18 +1,22 @@
 import asyncio
+import logging
 
 async def cleanup_logs_task(bot):
     while True:
         try:
-            async with bot.pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute("""
-                        DELETE FROM bot_logs
-                        WHERE created_at < NOW() - INTERVAL 7 DAY
-                    """)
+            if bot.pool:
+                async with bot.pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute("""
+                            DELETE FROM bot_logs
+                            WHERE created_at < NOW() - INTERVAL 7 DAY
+                        """)
 
-            print("[CLEANUP] Alte Logs gelöscht")
+                logging.info("[CLEANUP] Alte Logs gelöscht")
 
+        except asyncio.CancelledError:
+            break
         except Exception as e:
-            print("[CLEANUP ERROR]", e)
+            logging.exception(f"[CLEANUP ERROR] {e}")
 
         await asyncio.sleep(3600)  # 1 Stunde

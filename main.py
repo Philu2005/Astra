@@ -18,6 +18,8 @@ from utils.presence import rotating_presence
 from utils.file_watcher import Watcher
 from events.topgg import setup_topgg_events
 from utils.cleanup import cleanup_logs_task
+from utils.branding import get_current_colour
+from utils.branding import start_branding_task
 
 guild_cache = {}
 guild_cache_lock = Lock()
@@ -63,6 +65,7 @@ class Astra(commands.Bot):
         self.pool = None  # Pool-Objekt hier zentral gespeichert
         self.is_connecting = False
         self.bot_ready = False
+        self.start_branding_task = start_branding_task(self)
         self.initial_extensions = [
             "cogs.reminder",
             "cogs.stats",
@@ -125,6 +128,7 @@ class Astra(commands.Bot):
                     logging.error(f"❌ Fehler beim Starten des Top.gg Webhooks: {e}")
 
             # 4. Hintergrund-Tasks
+            self.start_branding_task()
             self.loop.create_task(rotating_presence(self))
             self.loop.create_task(cleanup_logs_task(self))
             self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
@@ -355,8 +359,13 @@ class Astra(commands.Bot):
     async def clear_automod_cache_task(self):
         """Leert den Automod-Cache periodisch, um Speicherlecks zu vermeiden."""
         while not self.is_closed():
-            await asyncio.sleep(3600)  # Einmal pro Stunde
-            self.automod_deleted_messages.clear()
+            try:
+                await asyncio.sleep(3600)  # Einmal pro Stunde
+                self.automod_deleted_messages.clear()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logging.exception(f"[AutomodCache] Fehler im clear_automod_cache_task: {e}")
 
     async def on_message(self, msg):
         if msg.author.bot:
@@ -372,7 +381,7 @@ class Astra(commands.Bot):
             embed = discord.Embed(
                 title="Astra",
                 url="https://astra-bot.de/support",
-                colour=discord.Colour.blue(),
+                colour=get_current_colour(),
                 description=(
                     f"Hallo Discord! 👋\n"
                     f"Ich bin **Astra**, geboren am <t:{botcreated_ts}:D>. "
@@ -557,7 +566,7 @@ class Astra(commands.Bot):
                         "Der Cooldown von 12h ist vorbei. Es wäre schön, wenn du wieder votest.\n"
                         "Als Belohnung erhältst du eine spezielle Rolle auf unserem Support-Server."
                     ),
-                    colour=discord.Colour.blue(),
+                    colour=get_current_colour(),
                 )
 
                 await user.send(embed=embed)
