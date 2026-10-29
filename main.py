@@ -65,7 +65,7 @@ class Astra(commands.Bot):
         self.pool = None  # Pool-Objekt hier zentral gespeichert
         self.is_connecting = False
         self.bot_ready = False
-        self.start_branding_task = start_branding_task(self)
+        self.branding_task = None
         self.initial_extensions = [
             "cogs.reminder",
             "cogs.stats",
@@ -128,7 +128,7 @@ class Astra(commands.Bot):
                     logging.error(f"❌ Fehler beim Starten des Top.gg Webhooks: {e}")
 
             # 4. Hintergrund-Tasks
-            self.start_branding_task()
+            self.branding_task = start_branding_task(self)
             self.loop.create_task(rotating_presence(self))
             self.loop.create_task(cleanup_logs_task(self))
             self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
