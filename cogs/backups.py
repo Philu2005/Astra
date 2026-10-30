@@ -437,12 +437,12 @@ class BackupCog(commands.Cog):
                     data, _ = await self._fetch_backup(job["code"])
                     created_objs = await self._restore_to_guild(guild, data, job["job_id"])
                     await self._update_job(job["job_id"], status="done", created_objects=dumps(created_objs).decode())
-                    await self._edit_progress_embed(job["job_id"], final_status="Fertig", color=discord.Colour.blue())
+                    await self._edit_progress_embed(job["job_id"], final_status="Fertig", color=get_current_colour())
 
                 elif job["type"] == "undo":
                     await self._undo_restore(guild, job)
                     await self._update_job(job["job_id"], status="done")
-                    await self._edit_progress_embed(job["job_id"], final_status="Undo abgeschlossen", color=discord.Colour.blue())
+                    await self._edit_progress_embed(job["job_id"], final_status="Undo abgeschlossen", color=get_current_colour())
                     await self._delete_job_row(job["job_id"])
 
                 elif job["type"] == "create":
@@ -1186,7 +1186,7 @@ class BackupCog(commands.Cog):
             step=job.get("step", 0),
             total=job.get("total_steps", 0),
             status=status_text,
-            color=color or discord.Colour.blue(),
+            color=color or get_current_colour(),
             error=job.get("last_error")
         )
         try:
@@ -1222,7 +1222,7 @@ class Backup(app_commands.Group):
         emb = discord.Embed(
             title="Backup erstellt",
             description=f"<:Astra_accept:1141303821176422460> **Code:** `{code}`\nEnthält Rollen, Kategorien, Channels & Overwrites.",
-            color=discord.Colour.blue(),
+            color=get_current_colour(),
         )
         await interaction.followup.send(embed=emb, ephemeral=True)
 
@@ -1348,7 +1348,7 @@ class Backup(app_commands.Group):
             e = discord.Embed(
                 title="Astra • Backups (Detailansicht)",
                 description=head,
-                color=discord.Colour.blue()
+                color=get_current_colour()
             )
 
             row1 = " | ".join([
@@ -1424,7 +1424,7 @@ class Backup(app_commands.Group):
         start_embed = build_progress_embed(
             title="Astra • Backup-Wiederherstellung startet …",
             step=0, total=0, status="Wird in die Warteschlange gestellt …",
-            color=discord.Colour.blue()
+            color=get_current_colour()
         )
         await interaction.response.send_message(embed=start_embed, ephemeral=False)
         msg = await interaction.original_response()
@@ -1446,7 +1446,7 @@ class Backup(app_commands.Group):
         last_restore = await cog._fetch_last_restore_job(interaction.guild_id)
         if not last_restore:
             await interaction.response.send_message(
-                embed=discord.Embed(title="📭 Kein Restore-Job gefunden", color=discord.Colour.blue()),
+                embed=discord.Embed(title="📭 Kein Restore-Job gefunden", color=get_current_colour()),
                 ephemeral=True
             )
             return
@@ -1454,7 +1454,7 @@ class Backup(app_commands.Group):
         start_embed = build_progress_embed(
             title=f"Astra • Rückgängig für Restore-Job #{last_restore['job_id']}",
             step=0, total=0, status="Lösche hinzugefügte Objekte …",
-            color=discord.Colour.blue()
+            color=get_current_colour()
         )
         await interaction.response.send_message(embed=start_embed, ephemeral=False)
         msg = await interaction.original_response()
@@ -1486,7 +1486,7 @@ class Backup(app_commands.Group):
         emb = build_progress_embed(
             title=f"Astra • Letzter Job • #{job['job_id']} ({job['type']})",
             step=job.get("step", 0), total=job.get("total_steps", 0),
-            status=job.get("status"), color=discord.Colour.blue(),
+            status=job.get("status"), color=get_current_colour(),
             error=job.get("last_error")
         )
         await interaction.response.send_message(embed=emb, ephemeral=True)
@@ -1537,7 +1537,7 @@ class Backup(app_commands.Group):
             embed=discord.Embed(
                 title="Bereinigung abgeschlossen",
                 description="\n".join(desc),
-                color=discord.Colour.blue()
+                color=get_current_colour()
             ),
             ephemeral=True
         )
@@ -1573,7 +1573,7 @@ class Backup(app_commands.Group):
                 f"Der Datensatz bleibt **in der Datenbank erhalten**. "
                 f"Du kannst ihn separat mit `/backup delete` entfernen."
             ),
-            color=discord.Colour.blue()
+            color=get_current_colour()
         )
         await interaction.response.send_message(embed=emb, file=file, ephemeral=True)
 
@@ -1609,7 +1609,7 @@ class Backup(app_commands.Group):
                 f"Eintrag wurde in der **DB angelegt/aktualisiert** und ist damit lösch-/wiederherstellbar.\n"
                 f"→ Du kannst es jetzt z. B. mit `/backup load code:{code}` laden."
             ),
-            color=discord.Colour.blue()
+            color=get_current_colour()
         )
         await interaction.followup.send(embed=emb, ephemeral=True)
 

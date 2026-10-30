@@ -3,9 +3,6 @@ import psutil
 from discord import app_commands
 from discord.ext import commands
 from datetime import datetime
-from psutil import Process, virtual_memory
-from dotenv import load_dotenv
-import os
 import time
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tkr
@@ -13,13 +10,9 @@ import matplotlib.font_manager as fm
 import numpy as np
 from matplotlib import patheffects
 import platform
-import io
-from PIL import Image
-import asyncio
-import tempfile
-from discord import ui
-from wcwidth import wcswidth
 import aiohttp
+import os
+from utils.branding import get_current_colour
 
 async def get_best_join_channel(guild: discord.Guild) -> discord.TextChannel | None:
     me = guild.me
@@ -200,7 +193,7 @@ class astra(commands.Cog):
                             "Astra ist ein moderner Discord-Bot für **Administration, Moderation und Support**.\n"
                             "Alle Systeme sind **optional**, **server-spezifisch** und lassen sich flexibel konfigurieren."
                         ),
-                        colour=discord.Colour.blurple()
+                        colour=get_current_colour()
                     )
 
                     embed.add_field(
@@ -271,7 +264,7 @@ class astra(commands.Cog):
                         return
 
                     embed = discord.Embed(
-                        colour=discord.Colour.blurple(),
+                        colour=get_current_colour(),
                         title="✨ ASTRA ✨",
                         description=(
                             "Hallo! Ich bin **Astra** – ein modularer Discord-Bot für "
@@ -401,7 +394,7 @@ class astra(commands.Cog):
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def invite(self, interaction: discord.Interaction):
         """Link um Astra einzuladen."""
-        embed = discord.Embed(colour=discord.Colour.blue(), title=f"Nutze Astra auch auf deinem Server!",
+        embed = discord.Embed(colour=get_current_colour(), title=f"Nutze Astra auch auf deinem Server!",
                               description=f"Mit klicken auf [Invite Astra](https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands) kannst du Astra auch auf deinen Server einladen.",
                               url="https://discord.com/oauth2/authorize?client_id=1113403511045107773&permissions=2255511571262711&integration_type=0&scope=bot+applications.commands")
         embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
@@ -412,7 +405,7 @@ class astra(commands.Cog):
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def support(self, interaction: discord.Interaction):
         """Link zu unserem Support Server."""
-        embed = discord.Embed(colour=discord.Colour.blue(), title="Wir freuen uns dir helfen zu können!",
+        embed = discord.Embed(colour=get_current_colour(), title="Wir freuen uns dir helfen zu können!",
                               description="Hast du Fragen oder ein Problem? Wir freuen uns dir auf unserem [support server](https://astra-bot.de/support) helfen zu können.",
                               url="https://astra-bot.de/support")
         embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
@@ -528,7 +521,7 @@ class astra(commands.Cog):
         embed = discord.Embed(
             title="🏓 Astra Ping",
             description=panel,
-            colour=discord.Colour.blue()
+            colour=get_current_colour()
         )
 
         embed.set_footer(

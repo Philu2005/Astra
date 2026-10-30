@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from datetime import datetime, timezone
+from utils.branding import get_current_colour
 
 
 class afk(commands.Cog):
@@ -69,7 +70,7 @@ class afk(commands.Cog):
                                 f"**Grund:** {data['reason']}\n"
                                 f"<:Astra_time:1141303932061233202> Seit {discord.utils.format_dt(data['time'], 'R')}"
                             ),
-                            color=discord.Color.blue()
+                            color=get_current_colour()
                         )
 
                         embed.set_author(
@@ -105,7 +106,7 @@ class afk(commands.Cog):
                             f"{message.author.mention}, du bist nicht mehr AFK\n"
                             f"<:Astra_time:1141303932061233202> AFK seit {discord.utils.format_dt(data['time'], 'R')}"
                         ),
-                        color=discord.Color.blue()
+                        color=get_current_colour()
                     )
 
                     embed.set_author(
@@ -181,7 +182,7 @@ class afk(commands.Cog):
                         f"**Grund:** {grund}\n"
                         f"<:Astra_time:1141303932061233202> Seit {discord.utils.format_dt(now, 'R')}"
                     ),
-                    color=discord.Color.blue()
+                    color=get_current_colour()
                 )
 
                 embed.set_author(

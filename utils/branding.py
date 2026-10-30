@@ -20,6 +20,7 @@ BERLIN_TZ = ZoneInfo("Europe/Berlin")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROFILBILDER_DIR = PROJECT_ROOT / "cogs" / "assets" / "Profilbilder"
 STATE_FILE = PROJECT_ROOT / ".astra_branding_state.json"
+BRANDING_GUILD_ID = 1141116981697859736
 
 
 class BrandingEvent(str, Enum):
@@ -231,6 +232,42 @@ async def update_avatar(
             avatar_path.name,
         )
         await bot.user.edit(avatar=avatar_bytes)
+
+        # Server-Avatar (Icon) des Zielservers ebenfalls anpassen
+        guild = bot.get_guild(BRANDING_GUILD_ID)
+        if guild is None:
+            try:
+                guild = await bot.fetch_guild(BRANDING_GUILD_ID)
+            except (discord.HTTPException, discord.NotFound):
+                logger.warning(
+                    "[Branding] Server %s nicht gefunden; Server-Avatar wird nicht aktualisiert.",
+                    BRANDING_GUILD_ID,
+                )
+
+        if guild is not None:
+            try:
+                logger.info(
+                    "[Branding] Setze Server-Avatar für Server %s auf '%s' (%s).",
+                    BRANDING_GUILD_ID,
+                    branding.name,
+                    avatar_path.name,
+                )
+                await guild.edit(icon=avatar_bytes)
+                logger.info(
+                    "[Branding] Server-Avatar für Server %s erfolgreich auf '%s' gesetzt.",
+                    BRANDING_GUILD_ID,
+                    branding.name,
+                )
+            except discord.Forbidden:
+                logger.warning(
+                    "[Branding] Fehlende Berechtigungen zum Ändern des Server-Avatars für Server %s.",
+                    BRANDING_GUILD_ID,
+                )
+            except discord.HTTPException:
+                logger.exception(
+                    "[Branding] Discord-API-Fehler beim Ändern des Server-Avatars für Server %s.",
+                    BRANDING_GUILD_ID,
+                )
 
         # Erst nach erfolgreicher Discord-Änderung den Status speichern.
         _save_event(event)

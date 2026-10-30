@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-
+from utils.branding import get_current_colour
 
 # =========================================================
 # AUTOROLE VIEW (BOT + MEMBER)
@@ -91,7 +91,7 @@ class AutoroleView(discord.ui.LayoutView):
         self.clear_items()
 
         main = discord.ui.Container(
-            accent_color=discord.Colour.blue().value
+            accent_color=get_current_colour().value
         )
 
         # =====================================================
