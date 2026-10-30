@@ -7,6 +7,7 @@ import discord
 from discord import app_commands, File
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageChops, ImageFont
+from utils.branding import get_current_colour
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Assets & Styles
@@ -407,7 +408,7 @@ class LevelSystemConfigView(discord.ui.LayoutView):
         self.clear_items()
 
         container = discord.ui.Container(
-            accent_color=discord.Colour.from_rgb(88, 101, 242).value
+            accent_color=get_current_colour().value
         )
 
         # ================= HEADER =================
@@ -1104,7 +1105,7 @@ class Level(app_commands.Group):
 
         embed = discord.Embed(
             title=f"Top 10 Level Leaderboard für {interaction.guild.name}",
-            color=discord.Color.blue()
+            color=get_current_colour()
         )
 
         description = ""
@@ -1275,14 +1276,14 @@ class levelsystem(commands.Cog):
                             embed = discord.Embed(
                                 title="Level-UP",
                                 description=f"Weiter so {msg.author.mention}! Du hast Level {int(lvl_start) + 1} erreicht",
-                                color=discord.Color.green()
+                                color=get_current_colour()
                             )
                             await msg.channel.send(msg.author.mention, embed=embed)
                         if not result8:
                             embed = discord.Embed(
                                 title="Level-UP",
                                 description=f"Weiter so {msg.author.mention}! Du hast Level {int(lvl_start) + 1} erreicht",
-                                color=discord.Color.green()
+                                color=get_current_colour()
                             )
                             await msg.channel.send(msg.author.mention, embed=embed)
                     else:
@@ -1299,10 +1300,10 @@ class levelsystem(commands.Cog):
                             member = msg.author
                             if role not in member.roles:
                                 await member.add_roles(role)
-                            embed = discord.Embed(title="Level-UP", description=finalmsg, color=discord.Color.green())
+                            embed = discord.Embed(title="Level-UP", description=finalmsg, color=get_current_colour())
                             await msg.channel.send(msg.author.mention, embed=embed)
                         if not result5:
-                            embed = discord.Embed(title="Level-UP", description=finalmsg, color=discord.Color.green())
+                            embed = discord.Embed(title="Level-UP", description=finalmsg, color=get_current_colour())
                             await msg.channel.send(msg.author.mention, embed=embed)
                     return
 
@@ -1324,7 +1325,7 @@ class levelsystem(commands.Cog):
                         embed = discord.Embed(
                             title="Level-UP",
                             description=f"Weiter so {msg.author.mention}! Du hast Level {int(lvl_start) + 1} erreicht",
-                            color=discord.Color.green()
+                            color=get_current_colour()
                         )
                         await msg.author.send(msg.author.mention, embed=embed)
                     else:
@@ -1341,7 +1342,7 @@ class levelsystem(commands.Cog):
                             member = msg.author
                             if role not in member.roles:
                                 await member.add_roles(role)
-                        embed = discord.Embed(title="Level-UP", description=finalmsg, color=discord.Color.green())
+                        embed = discord.Embed(title="Level-UP", description=finalmsg, color=get_current_colour())
                         await msg.author.send(msg.author.mention, embed=embed)
                     return
 
@@ -1377,7 +1378,7 @@ class levelsystem(commands.Cog):
                         embed = discord.Embed(
                             title="Level-UP",
                             description=f"Weiter so {msg.author.mention}! Du hast Level {int(lvl_start) + 1} erreicht",
-                            color=discord.Color.green()
+                            color=get_current_colour()
                         )
                         await msg.channel.send(msg.author.mention, embed=embed)
                     else:
@@ -1394,7 +1395,7 @@ class levelsystem(commands.Cog):
                             member = msg.author
                             if role not in member.roles:
                                 await member.add_roles(role)
-                        embed = discord.Embed(title="Level-UP", description=finalmsg, color=discord.Color.green())
+                        embed = discord.Embed(title="Level-UP", description=finalmsg, color=get_current_colour())
                         await msg.channel.send(msg.author.mention, embed=embed)
                     return
 
@@ -1429,7 +1430,7 @@ class levelsystem(commands.Cog):
                         embed = discord.Embed(
                             title="Level-UP",
                             description=f"Weiter so {msg.author.mention}! Du hast Level {int(lvl_start) + 1} erreicht.",
-                            color=discord.Color.green()
+                            color=get_current_colour()
                         )
                         try:
                             await channel.send(msg.author.mention, embed=embed)
@@ -1449,7 +1450,7 @@ class levelsystem(commands.Cog):
                             member = msg.author
                             if role not in member.roles:
                                 await member.add_roles(role)
-                        embed = discord.Embed(title="Level-UP", description=finalmsg, color=discord.Color.green())
+                        embed = discord.Embed(title="Level-UP", description=finalmsg, color=get_current_colour())
                         await channel.send(msg.author.mention, embed=embed)
                     return
 

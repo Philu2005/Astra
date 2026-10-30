@@ -10,6 +10,7 @@ import io
 from datetime import datetime, timedelta
 from collections import defaultdict
 import re
+from utils.branding import get_current_colour
 
 def strip_emojis(text):
     return re.sub(r'[^\w\s•.-]', '', text)
@@ -368,7 +369,7 @@ class Analytics(commands.Cog):
 
             embed = discord.Embed(
                 title=f"📊 Statistik • {member.display_name}",
-                color=0x1f6feb
+                color=get_current_colour()
             )
 
             embed.description = (
@@ -493,7 +494,7 @@ class Analytics(commands.Cog):
 
             embed = discord.Embed(
                 title=f"Stats für {guild.name}",
-                color=0x1f6feb
+                color=get_current_colour()
             )
 
             embed.add_field(

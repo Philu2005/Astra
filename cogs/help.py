@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import View
 from datetime import datetime
+from utils.branding import get_current_colour
 
 
 class WebsiteButton(discord.ui.Button):
@@ -48,7 +49,7 @@ class Dropdown(discord.ui.Select):
         embed = discord.Embed(
             title=" ",
             description=description2,
-            colour=discord.Colour.blue()
+            colour=get_current_colour()
         )
         embed.set_author(
             name=f"Command Menü | {self.values[0]}",
@@ -256,7 +257,7 @@ class HelpCog(commands.Cog):
             embed = discord.Embed(
                 title="📘 Alle Commands" if i == 0 else None,
                 description=part,
-                colour=discord.Colour.blue()
+                colour=get_current_colour()
             )
             embed.set_footer(text=f"Astra Development ©2026 • Seite {i + 1}")
             await channel.send(embed=embed)
@@ -303,7 +304,7 @@ class HelpCog(commands.Cog):
         days, hours = divmod(hours, 24)
 
         embed = discord.Embed(
-            colour=discord.Colour.blue(),
+            colour=get_current_colour(),
             title="Help Menü",
             description=(
                 "<:Astra_info:1141303860556738620> **Wichtige Informationen**\n"

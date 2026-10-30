@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from typing import Literal
 import asyncio
-
+from utils.branding import get_current_colour
 
 ##########
 
@@ -99,7 +99,7 @@ class counter(commands.Cog):
                                              (interaction.guild.id, channel.id, number))
                         embed = discord.Embed(title="Counting Spiel wurde aktiviert",
                                               description="Das Counting Spiel wurde für diesen Channel aktiviert!",
-                                              colour=discord.Colour.blue(), timestamp=discord.utils.utcnow())
+                                              colour=get_current_colour(), timestamp=discord.utils.utcnow())
                         embed.add_field(name="Channel:", value=channel.mention)
                         embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar)
                         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -112,7 +112,7 @@ class counter(commands.Cog):
                         await cursor.execute("DELETE FROM counter WHERE guildID = (%s)", interaction.guild.id)
                         embed = discord.Embed(title="Counting Spiel wurde deaktiviert",
                                               description="Das Counting Spiel wurde für diesen Channel deaktiviert!",
-                                              colour=discord.Colour.blue(), timestamp=discord.utils.utcnow())
+                                              colour=get_current_colour(), timestamp=discord.utils.utcnow())
                         embed.add_field(name="Channel:", value=channel.mention)
                         await interaction.response.send_message(embed=embed, ephemeral=True)
 

@@ -10,6 +10,7 @@ from discord import ui
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
+from utils.branding import get_current_colour
 
 ASTRA_BLUE = discord.Colour.blue()
 
@@ -319,7 +320,7 @@ class SetupWizardView(ui.LayoutView):
     def _build_help_container(self):
 
         help_container = discord.ui.Container(
-            accent_color=discord.Colour.blurple().value
+            accent_color=get_current_colour().value
         )
 
         # =====================================================
@@ -649,7 +650,7 @@ class SetupWizardView(ui.LayoutView):
             return
 
         container = discord.ui.Container(
-            accent_color=discord.Colour.blue().value
+            accent_color=get_current_colour().value
         )
 
         def fmt(x):

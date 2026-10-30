@@ -12,6 +12,7 @@ from collections import deque
 from datetime import timezone
 import logging
 from utils.logger import setup_logging
+from utils.branding import get_current_colour
 setup_logging()
 
 def convert(time):
@@ -163,7 +164,7 @@ async def userinfo_context(interaction: discord.Interaction, member: discord.Mem
         activity = f"Keine Aktivität ({user_status})"
 
     # ================= EMBED =================
-    embed = discord.Embed(color=discord.Color.blue())
+    embed = discord.Embed(color=get_current_colour())
 
     embed.set_author(
         name=str(member),
@@ -211,7 +212,7 @@ class InfoGroup(app_commands.Group):
             channels = interaction.channel
         if isinstance(textchannel, discord.TextChannel):
             channel = textchannel
-            embed = discord.Embed(colour=discord.Color.green())
+            embed = discord.Embed(colour=get_current_colour())
             embed.add_field(name=f"🆔 ID", value=f"{channel.id}", inline=False)
             embed.add_field(name="⚙️ Erstellt", value=f"{discord.utils.format_dt(channel.created_at, 'R')}", inline=False)
             embed.add_field(name="🗂 Kategorie", value=f"{channel.category.name if channel.category.name else 'Keine Kategorie.'}", inline=False)
@@ -222,7 +223,7 @@ class InfoGroup(app_commands.Group):
             return
         if isinstance(voicechannels, discord.VoiceChannel):
             channel = voicechannels
-            embed = discord.Embed(colour=discord.Color.green())
+            embed = discord.Embed(colour=get_current_colour())
             embed.add_field(name=f"🆔 ID", value=f"{channel.id}", inline=False)
             embed.add_field(name="⏱️ Erstellt", value=f"{discord.utils.format_dt(channel.created_at, 'R')}", inline=False)
             embed.add_field(name="🗂 Kategorie", value=f"{channel.category.name if channel.category.name else 'Keine Kategorie.'}", inline=False)
@@ -390,7 +391,7 @@ class InfoGroup(app_commands.Group):
             activity = f"Keine Aktivität ({user_status})"
 
         # ================= EMBED =================
-        embed = discord.Embed(color=discord.Color.blue())
+        embed = discord.Embed(color=get_current_colour())
 
         embed.set_author(
             name=str(member),
@@ -445,7 +446,7 @@ class InfoGroup(app_commands.Group):
     async def servericon(self, interaction: discord.Interaction):
         """Zeigt das Server Profilbild."""
         guild = interaction.guild
-        embed = discord.Embed(colour=discord.Colour.green(), description=f"Servericon von {guild.name}")
+        embed = discord.Embed(colour=get_current_colour(), description=f"Servericon von {guild.name}")
         embed.set_author(name=f"Servericon von {guild.name}", icon_url=interaction.guild.icon)
         embed.set_image(url=guild.icon)
         await interaction.response.send_message(embed=embed)
@@ -455,7 +456,7 @@ class InfoGroup(app_commands.Group):
     @app_commands.checks.cooldown(1, 3, key=lambda i: (i.guild_id, i.user.id))
     async def roleinfo(self, interaction: discord.Interaction, role: discord.Role):
         """Get information about a role."""
-        em = discord.Embed(description=f'Info über {role.name}', color=discord.Color.green())
+        em = discord.Embed(description=f'Info über {role.name}', color=get_current_colour())
         em.title = role.name
         thing = str(discord.utils.format_dt(role.created_at, 'R'))
         em.add_field(name="🆔 Role ID", value=f"{str(role.id)}", inline=True)
@@ -474,7 +475,7 @@ class InfoGroup(app_commands.Group):
                 async with cs.get(f"https://api.openweathermap.org/data/2.5/weather?appid=bf254c2299576dc022583728cfaf7971&q=" + stadt.replace(" ", "+")) as r:
                     data = await r.json()
                     icon = data['weather'][0]['icon']
-                    embed = discord.Embed(colour=discord.Colour.green(), title=f"Weather", description=f"Mal sehen...")
+                    embed = discord.Embed(colour=get_current_colour(), title=f"Weather", description=f"Mal sehen...")
                     embed.add_field(name=f"🗽 Standort", value=f"{data['name']}")
                     embed.add_field(name=f"☁️ Wetter", value=f"{data['weather'][0]['main']} - {data['weather'][0]['description']}", inline=False)
                     embed.add_field(name=f"🔥 Temperatur", value=f"{int((float(data['main']['temp']))) - 273}°C")
@@ -506,7 +507,7 @@ class meta(commands.Cog):
         reactions = ['🔵', '🟢', '🟡', '🔴', '🟠', '🟣', '🟤']
         emojis = reactions[:len(optionen_liste)]
 
-        embed = discord.Embed(title=titel, description="Wählen Sie eine Option", color=discord.Color.blue())
+        embed = discord.Embed(title=titel, description="Wählen Sie eine Option", color=get_current_colour())
         embed.add_field(
             name="Optionen",
             value='\n'.join([f"{emoji} - {option}" for emoji, option in zip(emojis, optionen_liste)]),
@@ -562,7 +563,7 @@ class meta(commands.Cog):
                     new_embed = discord.Embed(
                         title=f"Abstimmung Ergebnisse: {titel}",
                         description="Aktuelle Ergebnisse",
-                        color=discord.Color.green()
+                        color=get_current_colour()
                     )
                     new_embed.add_field(name="Optionen", value="\n".join(results), inline=False)
                     await msg.edit(embed=new_embed)
@@ -588,7 +589,7 @@ class meta(commands.Cog):
             embed = discord.Embed(
                 title="Einladungen",
                 description=f"Der User {user.mention} hat insgesamt __**{totalInvites}**__ User auf diesen Server eingeladen.",
-                colour=discord.Colour.blue()
+                colour=get_current_colour()
             )
             embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
             await interaction.response.send_message(embed=embed, ephemeral=False)

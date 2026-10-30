@@ -5,6 +5,7 @@ from discord import app_commands
 from typing import Literal
 from cogs.tempchannel import is_temp_category
 import asyncio
+from utils.branding import get_current_colour
 
 
 ##########
@@ -78,7 +79,7 @@ class modlog(commands.Cog):
                     embed = discord.Embed(
                         title="📝 Mitgliedsupdate",
                         description="Nickname geändert",
-                        colour=discord.Colour.blue(),
+                        colour=discord.Colour.yellow(),
                         timestamp=discord.utils.utcnow()
                     )
                     embed.add_field(name="Vorher", value=before.display_name, inline=True)
@@ -89,7 +90,7 @@ class modlog(commands.Cog):
                     embed = discord.Embed(
                         title="🖼️ Mitgliedsupdate",
                         description="Avatar geändert (unten neuer Avatar)",
-                        colour=discord.Colour.blue(),
+                        colour=discord.Colour.yellow(),
                         timestamp=discord.utils.utcnow()
                     )
                     embed.set_thumbnail(url=before.avatar)
@@ -106,7 +107,7 @@ class modlog(commands.Cog):
                         embed = discord.Embed(
                             title="➖ Mitgliedsupdate",
                             description=f"Rolle entfernt von {entry.user.mention}",
-                            colour=discord.Colour.orange(),
+                            colour=discord.Colour.red(),
                             timestamp=discord.utils.utcnow()
                         )
                         embed.add_field(name="Mitglied", value=before.mention, inline=True)
@@ -231,7 +232,7 @@ class modlog(commands.Cog):
                 embed = discord.Embed(
                     title="✏️ Kanal aktualisiert",
                     description=f"Kanal umbenannt von {entry.user.mention}",
-                    colour=discord.Colour.blue(),
+                    colour=discord.Colour.yellow(),
                     timestamp=discord.utils.utcnow()
                 )
                 embed.add_field(name="Vorher", value=before.name, inline=True)
@@ -320,7 +321,7 @@ class modlog(commands.Cog):
                     embed = discord.Embed(
                         title="✏️ Nachricht bearbeitet",
                         description=f"Nachricht bearbeitet von {after.author.mention}",
-                        colour=discord.Colour.blue(),
+                        colour=discord.Colour.yellow(),
                         timestamp=discord.utils.utcnow()
                     )
                     embed.add_field(name="Vorher", value=before.content or "Leer", inline=True)
@@ -446,7 +447,7 @@ class modlog(commands.Cog):
                         embed1 = discord.Embed(
                             title="✅ Modlog aktiviert",
                             description=f"Das Modlog wird ab sofort in {channel.mention} geführt.",
-                            color=discord.Color.blue()
+                            color=get_current_colour()
                         )
                         await interaction.response.send_message(embed=embed1)
 
@@ -459,7 +460,7 @@ class modlog(commands.Cog):
                         embed = discord.Embed(
                             title="ℹ️ Modlog bereits aktiv",
                             description="Um den Modlog zu ändern, nutze erneut `/modlog`.",
-                            color=discord.Color.green()
+                            color=discord.Color.red()
                         )
                         embed.add_field(name="Aktueller Kanal", value=ch, inline=False)
                         await interaction.response.send_message(embed=embed)

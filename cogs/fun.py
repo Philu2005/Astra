@@ -14,6 +14,7 @@ import os
 import requests
 import random
 import asyncio
+from utils.branding import get_current_colour
 
 
 def convert(time):
@@ -69,7 +70,7 @@ class fun(commands.Cog):
 
         embed = discord.Embed(
             description=f"**Nach {member} wird gefahndet!**",
-            colour=discord.Colour.blue()
+            colour=get_current_colour()
         )
         embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar)
         file = discord.File("profile.jpg", filename="profile.jpg")
@@ -95,7 +96,7 @@ class fun(commands.Cog):
 
         embed = discord.Embed(
             description=f"**{member} wurde verpixelt!**",
-            colour=discord.Colour.blue()
+            colour=get_current_colour()
         )
         embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar)
         file = discord.File("pix.png", filename="pix.png")
@@ -122,7 +123,7 @@ class fun(commands.Cog):
                     return await interaction.followup.send("❌ Fehler bei der API-Anfrage.", ephemeral=True)
                 img_bytes = await resp.read()
                 file = discord.File(io.BytesIO(img_bytes), filename="wasted.png")
-                embed = discord.Embed(description="**Wasted!**", color=discord.Color.dark_gray())
+                embed = discord.Embed(description="**Wasted!**", color=get_current_colour())
                 embed.set_image(url="attachment://wasted.png")
                 await interaction.followup.send(embed=embed, file=file)
 
@@ -145,7 +146,7 @@ class fun(commands.Cog):
                     return await interaction.followup.send("❌ Fehler bei der API-Anfrage.", ephemeral=True)
                 img_bytes = await resp.read()
                 file = discord.File(io.BytesIO(img_bytes), filename="gay.png")
-                embed = discord.Embed(description="🏳️‍🌈 **Gay!**", color=discord.Color.magenta())
+                embed = discord.Embed(description="🏳️‍🌈 **Gay!**", color=get_current_colour())
                 embed.set_image(url="attachment://gay.png")
                 await interaction.followup.send(embed=embed, file=file)
 
@@ -168,7 +169,7 @@ class fun(commands.Cog):
                     return await interaction.followup.send("❌ Fehler bei der API-Anfrage.", ephemeral=True)
                 img_bytes = await resp.read()
                 file = discord.File(io.BytesIO(img_bytes), filename="triggered.gif")
-                embed = discord.Embed(description="**Triggered!**", color=discord.Color.red())
+                embed = discord.Embed(description="**Triggered!**", color=get_current_colour())
                 embed.set_image(url="attachment://triggered.gif")
                 await interaction.followup.send(embed=embed, file=file)
 
@@ -246,7 +247,7 @@ class fun(commands.Cog):
             make_qr("qrcode.png", link)
             embed = discord.Embed(
                 description=f"**QR-Code für:** `{link}`",
-                colour=discord.Colour.blue()
+                colour=get_current_colour()
             )
             embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar)
             file = discord.File("qrcode.png", filename="qrcode.png")
@@ -265,7 +266,7 @@ class fun(commands.Cog):
         """Zufälliger Fun-Wert – reines Entertainment, nicht ernst nehmen!"""
         user = user or interaction.user
         x = random.randint(1, 100)
-        embed = discord.Embed(colour=discord.Color.gold(), description=f"{user.mention} ist zu **{x}%** lost.")
+        embed = discord.Embed(colour=get_current_colour(), description=f"{user.mention} ist zu **{x}%** lost.")
         embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed)
 
@@ -290,7 +291,7 @@ class fun(commands.Cog):
             iq = "**ziemlich smart** …"
         else:
             iq = "ein **SUPERGEHIRN**!"
-        embed = discord.Embed(colour=discord.Color.gold(), description=f"Mit **{x} IQ** ist {user.mention} {iq}")
+        embed = discord.Embed(colour=get_current_colour(), description=f"Mit **{x} IQ** ist {user.mention} {iq}")
         embed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed)
 
@@ -344,7 +345,7 @@ class fun(commands.Cog):
         love_per = random.randint(1, 100)
 
         embed = discord.Embed(
-            color=discord.Color.orange(),
+            color=get_current_colour(),
             description=f"Sieh an, wie sehr {user1.mention} und {user2.mention} sich lieben … <3"
         )
         embed.add_field(name="❤️ Loverator", value="💌 Ich kalkuliere eure Liebe …")
@@ -353,7 +354,7 @@ class fun(commands.Cog):
         await asyncio.sleep(3)
 
         embed2 = discord.Embed(
-            color=discord.Color.orange(),
+            color=get_current_colour(),
             description=f"Sieh an, wie sehr {user1.mention} und {user2.mention} sich lieben … <3"
         )
         embed2.add_field(name="❤️ Loverator", value=f"{user1.mention} und {user2.mention} lieben sich zu **{love_per}%**.")
@@ -371,7 +372,7 @@ class fun(commands.Cog):
         choices = [["||⚪||", "||🔵||", "||⚪||", "||⚪||"] for _ in range(9)]
         grid = [random.choice(row) for row in choices]
         embed = discord.Embed(
-            colour=discord.Colour.dark_blue(),
+            colour=get_current_colour(),
             title="Rubbellos",
             description=f"{grid[0]} {grid[1]} {grid[2]}\n{grid[3]} {grid[4]} {grid[5]}\n{grid[6]} {grid[7]} {grid[8]}\n"
         )
@@ -412,7 +413,7 @@ class fun(commands.Cog):
         pwd = "".join(random.choice(choices) for _ in range(22))
         result = f"||{pwd}||"
 
-        embed = discord.Embed(colour=discord.Colour.green(), title="🔐 Passwort",
+        embed = discord.Embed(colour=get_current_colour(), title="🔐 Passwort",
                               description="**Gib dein Passwort niemals weiter.**")
         embed.set_author(name=user, icon_url=user.avatar)
         embed.add_field(name="Generiertes Passwort:", value=result)

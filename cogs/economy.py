@@ -10,6 +10,7 @@ import random
 from datetime import datetime, timezone, timedelta
 from discord import ui
 import logging
+from utils.branding import get_current_colour
 
 
 logging.basicConfig(
@@ -429,7 +430,7 @@ class SlotView(ui.View):
         for b in frames[:-1]:
             await asyncio.sleep(FRAME_DELAY)
             em = discord.Embed(
-                colour=discord.Colour.blurple(),
+                colour=get_current_colour(),
                 title="🎰 Slots",
                 description=f"Einsatz: **{self.bet}** <:Coin:1359178077011181811>{' (Freespin)' if self.freespins > 0 else ''}",
             )
@@ -480,7 +481,7 @@ class SlotView(ui.View):
                 )
             details = "\n".join(parts)
 
-        end = discord.Embed(colour=discord.Colour.blue(), title="🎰 Slots – Ergebnis ")
+        end = discord.Embed(colour=get_current_colour(), title="🎰 Slots – Ergebnis ")
         end.add_field(name="Walzen", value=board_text, inline=False)
         end.add_field(name="Ergebnis", value=res, inline=False)
         end.add_field(name="Details", value=details, inline=False)
@@ -873,7 +874,7 @@ class BlackjackView(discord.ui.View):
 
         dealer_value_display = "?" if not self.stand_called else str(dealer_value)
 
-        embed = discord.Embed(title="Blackjack", color=discord.Color.blue())
+        embed = discord.Embed(title="Blackjack", color=get_current_colour())
 
         embed.add_field(
             name="<:Astra_user:1141303940365959241> Deine Karten:",
@@ -1064,7 +1065,7 @@ class BlackjackView(discord.ui.View):
         embed = discord.Embed(
             title="Blackjack",
             description="🃏 Der Dealer deckt seine Karte auf...",
-            color=discord.Color.blue(),
+            color=get_current_colour(),
         )
 
         await self.update_message()
@@ -1079,7 +1080,7 @@ class BlackjackView(discord.ui.View):
             embed = discord.Embed(
                 title="Blackjack",
                 description="🎴 Dealer zieht eine Karte...",
-                color=discord.Color.blue(),
+                color=get_current_colour(),
             )
 
             await self.message.edit(embed=embed, view=self)
@@ -1112,7 +1113,7 @@ class JobListView(discord.ui.View):
     def generate_job_embed(self):
         embed = discord.Embed(
             title="<:Astra_file1:1141303837181886494> Jobliste",
-            color=discord.Color.blue(),
+            color=get_current_colour(),
         )
         start_idx = self.page * self.items_per_page
         end_idx = start_idx + self.items_per_page
@@ -1228,7 +1229,7 @@ class EconomyClass(app_commands.Group):
         embed = discord.Embed(
             title=f"{interaction.user}'s Kontostand",
             description="> Erhalte Hier Infos über deinen Kontostand und über deinen aktuellen Beruf.",
-            color=discord.Color.blue(),
+            color=get_current_colour(),
         )
         embed.add_field(
             name="Barvermögen",
@@ -1389,7 +1390,7 @@ class EconomyClass(app_commands.Group):
         view = SlotView(self, interaction, einsatz)
 
         em = discord.Embed(
-            colour=discord.Colour.blurple(),
+            colour=get_current_colour(),
             title="🎰 Slots",
             description=f"Einsatz: **{einsatz}** <:Coin:1359178077011181811>\nViel Glück, {interaction.user.mention}!",
         )
@@ -1438,7 +1439,7 @@ class EconomyClass(app_commands.Group):
         else:
             result = "<:Astra_x:1141303954555289600> Du hast verloren!"
 
-        embed = discord.Embed(title="Schere, Stein, Papier", color=discord.Color.blue())
+        embed = discord.Embed(title="Schere, Stein, Papier", color=get_current_colour())
         embed.add_field(
             name="Deine Wahl", value=f"**{choice.capitalize()}**", inline=False
         )
@@ -1492,7 +1493,7 @@ class EconomyClass(app_commands.Group):
 
         result = random.choice(["Kopf", "Zahl"])
 
-        embed = discord.Embed(title="Münzwurf", color=discord.Color.blue())
+        embed = discord.Embed(title="Münzwurf", color=get_current_colour())
         embed.add_field(
             name="Deine Wahl", value=f"**{guess.capitalize()}**", inline=False
         )
@@ -1660,7 +1661,7 @@ class EconomyClass(app_commands.Group):
                     if scope == "global"
                     else f"<:Astra_users:1141303946602872872> Rangliste ({interaction.guild.name})"
                 ),
-                color=discord.Color.blue(),
+                color=get_current_colour(),
             )
 
             for i, (user_id, gesamt) in enumerate(top_users, start=1):
@@ -1724,7 +1725,7 @@ class EconomyClass(app_commands.Group):
         embed = discord.Embed(
             title="Blackjack wird gestartet!",
             description="Ziehe Karten mit `Hit` oder beende mit `Stand`. Ziel: So nah wie möglich an 21!",
-            color=discord.Color.blue(),
+            color=get_current_colour(),
         )
         embed.add_field(
             name="Einsatz", value=f"{einsatz} <:Coin:1359178077011181811>", inline=False

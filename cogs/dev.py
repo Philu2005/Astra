@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from utils.db_scheme import run_sql_file
+from utils.branding import get_current_colour
 
 
 class AstraEmojis:
@@ -84,7 +85,7 @@ class CommandLogView(discord.ui.View):
         end = start + PAGE_SIZE
         chunk = self.rows[start:end]
 
-        embed = discord.Embed(title=self.title, color=discord.Color.blue())
+        embed = discord.Embed(title=self.title, color=get_current_colour())
 
         for guild_id, user_id, cmd, sub, used_at in chunk:
             guild = self.ctx.bot.get_guild(guild_id)
@@ -263,7 +264,7 @@ def build_most_used_pages(
         embed = discord.Embed(
             title="Command System Usage",
             description="Ranked overview of the most used command systems from the tracked slash command log.",
-            color=discord.Color.blue()
+            color=get_current_colour()
         )
 
         embed.add_field(name="Timeframe", value=f"`{period_label}`", inline=True)
@@ -379,7 +380,7 @@ def build_cmdlog_overview_embed(ctx, title: str, rows: list):
 
     embed = discord.Embed(
         title=title,
-        color=discord.Color.blue()
+        color=get_current_colour()
     )
 
     embed.add_field(
@@ -821,7 +822,7 @@ class CmdLogDashboardView(discord.ui.LayoutView):
         self.clear_items()
 
         # Hauptcontainer für das Dashboard
-        container = discord.ui.Container(accent_color=discord.Color.blue().value)
+        container = discord.ui.Container(accent_color=get_current_colour().value)
         
         # Header Section
         header_section = discord.ui.Section(
@@ -1110,7 +1111,7 @@ def build_guild_embed(guild: discord.Guild, requester: discord.abc.User) -> disc
     e = discord.Embed(
         title=f"Server: {guild.name}",
         description=f"**ID:** `{guild.id}`",
-        color=discord.Color.blue()
+        color=get_current_colour()
     )
     if guild.icon:
         e.set_thumbnail(url=guild.icon.url)
@@ -1306,7 +1307,7 @@ class ServerListView(discord.ui.View):
                 )
                 await interaction.followup.send(embed=new_embed, ephemeral=True)
 
-                msg_embed = discord.Embed(title="Kein Server ausgewählt", color=discord.Color.blue())
+                msg_embed = discord.Embed(title="Kein Server ausgewählt", color=get_current_colour())
                 if self.current_guild_id:
                     current = self.bot.get_guild(self.current_guild_id)
                     if current:
@@ -1405,7 +1406,7 @@ class DevTools(commands.Cog):
                     f"**Uptime:** `{int((time.time() - self.start_time) // 60)} min`\n\n"
                     "_Automatisch getrackt (Slash Commands + Subcommands)_"
                 ),
-                color=discord.Color.blue()
+                color=get_current_colour()
             )
 
             for command, data in items[i:i + PAGE_SIZE]:
@@ -1717,7 +1718,7 @@ class DevTools(commands.Cog):
         """Zeigt ein paar Bot-Statistiken."""
         self.commands_run += 1
         uptime = time.time() - self.start_time
-        embed = discord.Embed(title="Bot Statistiken", color=discord.Color.blue())
+        embed = discord.Embed(title="Bot Statistiken", color=get_current_colour())
         embed.add_field(name="Uptime", value=f"{uptime/60:.2f} Minuten")
         embed.add_field(name="Server (Guilds)", value=str(len(self.bot.guilds)))
         embed.add_field(name="Benutzer", value=str(len(self.bot.users)))
@@ -1868,7 +1869,7 @@ class DevTools(commands.Cog):
 
         embed = discord.Embed(
             title="🔎 Astra Debug",
-            colour=discord.Colour.blurple()
+            colour=get_current_colour()
         )
 
         embed.add_field(

@@ -7,6 +7,7 @@ import random
 import re
 import unicodedata
 import difflib
+from utils.branding import get_current_colour
 
 class Economy(commands.Cog):
     def __init__(self, bot):
@@ -131,7 +132,7 @@ class buttons_emj(discord.ui.View):
                         emojiquiz_embed = discord.Embed(
                             title="Emojiquiz",
                             description="Solltest du Probleme beim Lösen haben, kannst du die Buttons dieser Nachricht benutzen.",
-                            colour=discord.Colour.blue())
+                            colour=get_current_colour())
                         emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210>  Gesuchter Begriff", value=question, inline=True)
                         emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224>  Tipp", value=f"||{hint}||", inline=True)
                         emojiquiz_embed.set_footer(
@@ -316,7 +317,7 @@ class emojiquiz(commands.Cog):
                             emojiquiz_embed = discord.Embed(
                                 title="Emojiquiz",
                                 description="Solltest du Probleme beim Lösen haben, kannst du die Buttons dieser Nachricht benutzen.",
-                                colour=discord.Colour.blue()
+                                colour=get_current_colour()
                             )
 
                             emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210>  Gesuchter Begriff", value=question, inline=True)
@@ -376,7 +377,7 @@ class emojiquiz(commands.Cog):
                             emojiquiz_embed = discord.Embed(
                                 title="Emojiquiz",
                                 description="Solltest du Probleme beim Lösen haben, kannst du die Buttons dieser Nachricht benutzen.",
-                                colour=discord.Colour.blue())
+                                colour=get_current_colour())
                             emojiquiz_embed.add_field(name="<:Astra_support:1141303923752325210>  Gesuchter Begriff", value=question, inline=True)
                             emojiquiz_embed.add_field(name="<:Astra_wichtig:1141303951862534224>  Tipp", value=f"||{hint}||", inline=True)
                             emojiquiz_embed.set_footer(

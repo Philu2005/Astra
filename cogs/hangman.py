@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord.ui import View, Button
 from discord import app_commands
 import random
+from utils.branding import get_current_colour
 
 hangman_game = {
     "current_word": "",
@@ -71,7 +72,7 @@ class HangmanRestartView(View):
 
         display = "⬜ " * len(word)
         ascii_art = HANGMAN_PICS[0]
-        embed = discord.Embed(title="Hangman", description=f"{display.strip()}\n{ascii_art}\n`{' '.join(['_' for _ in word])}`", color=discord.Color.blue())
+        embed = discord.Embed(title="Hangman", description=f"{display.strip()}\n{ascii_art}\n`{' '.join(['_' for _ in word])}`", color=get_current_colour())
         embed.add_field(name="Versuche übrig", value="9", inline=True)
         embed.add_field(name="Geratene Buchstaben", value="Noch keine", inline=False)
 
@@ -140,7 +141,7 @@ class HangmanGameView(View):
         guessed_display = " ".join([l if l in guessed else "⬜" for l in word])
         ascii_art = HANGMAN_PICS[9 - attempts_left]
 
-        embed = discord.Embed(title="Hangman", description=f"{guessed_display}\n{ascii_art}\n`{display}`", color=discord.Color.blue())
+        embed = discord.Embed(title="Hangman", description=f"{guessed_display}\n{ascii_art}\n`{display}`", color=get_current_colour())
         embed.add_field(name="Versuche übrig", value=str(attempts_left), inline=True)
         embed.add_field(name="Geratene Buchstaben", value=" ".join(guessed) if guessed else "Noch keine", inline=False)
 
@@ -172,7 +173,7 @@ class HangmanGameView(View):
             await interaction.response.send_message("Nicht dein Spiel!", ephemeral=True)
             return
 
-        embed = discord.Embed(title="Spiel abgebrochen", description="Das Spiel wurde vom Spieler beendet.", color=discord.Color.orange())
+        embed = discord.Embed(title="Spiel abgebrochen", description="Das Spiel wurde vom Spieler beendet.", color=get_current_colour())
         await interaction.message.edit(embed=embed, view=None)
         hangman_game["game"] = False
         await interaction.response.defer()
@@ -204,7 +205,7 @@ class hangman(commands.Cog):
 
         display = "⬜ " * len(word)
         ascii_art = HANGMAN_PICS[0]
-        embed = discord.Embed(title="Hangman", description=f"{display.strip()}\n{ascii_art}\n`{' '.join(['_' for _ in word])}`", color=discord.Color.blurple())
+        embed = discord.Embed(title="Hangman", description=f"{display.strip()}\n{ascii_art}\n`{' '.join(['_' for _ in word])}`", color=get_current_colour())
         embed.add_field(name="Versuche übrig", value="9", inline=True)
         embed.add_field(name="Geratene Buchstaben", value="Noch keine", inline=False)
 

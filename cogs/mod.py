@@ -10,6 +10,7 @@ from discord.ext import commands
 from discord import app_commands
 from discord.utils import utcnow
 from discord.ui import View
+from utils.branding import get_current_colour
 
 logging.getLogger("discord.http").setLevel(logging.ERROR)
 
@@ -367,7 +368,7 @@ class mod(commands.Cog):
                 bulk_deleted = self._clear_bulk_deleted.pop(job.id, 0)
                 if status_message_id:
                     embed = discord.Embed(
-                        colour=discord.Colour.green(),
+                        colour=get_current_colour(),
                         title="Clear abgeschlossen",
                         description=(
                             "<:Astra_accept:1141303821176422460> Der Clear-Vorgang ist abgeschlossen.\n\n"
@@ -660,7 +661,7 @@ class mod(commands.Cog):
         cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
         total_deleted = 0
         status_embed = discord.Embed(
-            colour=discord.Colour.blue(),
+            colour=get_current_colour(),
             title="Nachrichten werden gelöscht",
             description=(
                 "<:Astra_time:1141303932061233202> Der Clear-Vorgang läuft.\n\n"
@@ -698,7 +699,7 @@ class mod(commands.Cog):
 
             if scheduled > 0:
                 title = "Clear läuft im Hintergrund weiter"
-                colour = discord.Colour.blue()
+                colour = get_current_colour()
                 lines = [
                     "<:Astra_time:1141303932061233202> Der schnelle Teil ist fertig. Alte Nachrichten werden weiter im Hintergrund gelöscht.\n",
                     (
@@ -712,7 +713,7 @@ class mod(commands.Cog):
                 ]
             else:
                 title = "Clear abgeschlossen"
-                colour = discord.Colour.green()
+                colour = get_current_colour()
                 lines = [
                     "<:Astra_accept:1141303821176422460> Der Clear-Vorgang ist abgeschlossen.\n",
                     (
@@ -811,7 +812,7 @@ class mod(commands.Cog):
         text = "\n".join(lines)
         for chunk_start in range(0, len(text), 1800):
             chunk = text[chunk_start:chunk_start + 1800]
-            embed = discord.Embed(title="Bann Liste", description=chunk, color=discord.Color.red())
+            embed = discord.Embed(title="Bann Liste", description=chunk, color=discord.Colour.red())
             if interaction.guild.icon:
                 embed.set_thumbnail(url=interaction.guild.icon.url)
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)

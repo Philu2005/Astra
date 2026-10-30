@@ -12,6 +12,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from dotenv import load_dotenv
+from utils.branding import get_current_colour
 
 load_dotenv(dotenv_path="/root/Astra/.env")
 
@@ -35,7 +36,8 @@ TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 TWITCH_STREAMS_URL = "https://api.twitch.tv/helix/streams?user_login={login}"
 TWITCH_CHANNEL_URL = "https://twitch.tv/{login}"
 
-ASTRA_COLOR = discord.Colour.blue()
+
+ASTRA_COLOR = get_current_colour()
 TWITCH_COLOR = discord.Colour.from_rgb(145, 70, 255)
 YOUTUBE_COLOR = discord.Colour.from_rgb(230, 33, 23)
 

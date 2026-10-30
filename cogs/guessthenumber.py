@@ -4,7 +4,7 @@ from discord import app_commands
 from typing import Literal
 import random
 import json
-
+from utils.branding import get_current_colour
 
 async def get_bank_data():
     with open('mainbank.json', 'r') as f:
@@ -59,7 +59,7 @@ class guessthenumber(commands.Cog):
                         await cursor.execute("UPDATE guessthenumber SET number = (%s) WHERE guildID = (%s)", (number2, msg.guild.id))
                         embed = discord.Embed(title="Guess the number",
                                               description=f"Ich habe eine Nummer zwischen **1** und **{number}** gewählt. Kannst du sie erraten?",
-                                              colour=discord.Colour.blue(), timestamp=discord.utils.utcnow())
+                                              colour=get_current_colour(), timestamp=discord.utils.utcnow())
                         embed.set_footer(text=f"Die letzte Nummer wurde von {msg.author} erraten.", icon_url=msg.author.avatar)
                         won = self.bot.get_emoji(1141319026140790885)
                         if won:
@@ -100,7 +100,7 @@ class guessthenumber(commands.Cog):
                                              (interaction.guild.id, kanal.id, number2))
                         embed = discord.Embed(title="Guess the number",
                                                       description=f"Ich habe eine Nummer zwischen **1** und **{number}** gewählt. Kannst du sie erraten?",
-                                                      colour=discord.Colour.blue(), timestamp=discord.utils.utcnow())
+                                                      colour=get_current_colour(), timestamp=discord.utils.utcnow())
                         await interaction.response.send_message(embed=embed)
                 if modus == "Ausschalten":
                     await cursor.execute("SELECT channelID FROM guessthenumber WHERE guildID = (%s)", interaction.guild.id)

@@ -4,6 +4,7 @@ from discord.app_commands import Group
 from discord.ui import Button, View
 from discord import app_commands
 import random
+from utils.branding import get_current_colour
 
 # Neuer Spielzustand
 snake_game = {
@@ -30,7 +31,7 @@ class SnakeGameView(View):
         self.quit_button = Button(label='❌ Abbrechen', style=discord.ButtonStyle.danger)
 
         # Callback-Methoden für Buttons
-        self.up_button.callback = self.move_up
+        self.up_button.callback = self.move_upF
         self.down_button.callback = self.move_down
         self.left_button.callback = self.move_left
         self.right_button.callback = self.move_right
@@ -97,7 +98,7 @@ class SnakeGameView(View):
         # Highscore wird immer aus der DB geholt
         highscore = await self.get_highscore(interaction.user.id)
 
-        embed = discord.Embed(title="Snake Spiel", description=plot, color=discord.Color.blue())
+        embed = discord.Embed(title="Snake Spiel", description=plot, color=get_current_colour())
         embed.add_field(name="Punkte", value=str(snake_game['current_score']))
         embed.add_field(name="Highscore", value=str(highscore))
 
@@ -188,7 +189,7 @@ class SnakeGameView(View):
         snake_game['game'] = False
         highscore = await self.get_highscore(interaction.user.id)
 
-        embed = discord.Embed(title="Spiel Abgebrochen", description="Das Spiel wurde abgebrochen.", color=discord.Color.orange())
+        embed = discord.Embed(title="Spiel Abgebrochen", description="Das Spiel wurde abgebrochen.", color=discord.Color.red())
         embed.add_field(name="Punkte", value=str(snake_game['current_score']))
         embed.add_field(name="Highscore", value=str(highscore))
 
@@ -255,7 +256,7 @@ class Snake(app_commands.Group):
                     # Highscore wird immer aus der DB geholt
                     highscore = await view.get_highscore(interaction.user.id)
 
-                    embed = discord.Embed(title="Snake Spiel", description=plot, color=discord.Color.blue())
+                    embed = discord.Embed(title="Snake Spiel", description=plot, color=get_current_colour())
                     embed.add_field(name="Punkte", value="0")
                     embed.add_field(name="Highscore", value=str(highscore))
 
@@ -281,7 +282,7 @@ class Snake(app_commands.Group):
                     # Highscore wird immer aus der DB geholt
                     highscore = await view.get_highscore(interaction.user.id)
 
-                    embed = discord.Embed(title="Snake Spiel", description=plot, color=discord.Color.blue())
+                    embed = discord.Embed(title="Snake Spiel", description=plot, color=get_current_colour())
                     embed.add_field(name="Punkte", value="0")
                     embed.add_field(name="Highscore", value=str(highscore))
 
@@ -295,13 +296,13 @@ class Snake(app_commands.Group):
             highscore = await self.get_highscore(player.id)
 
             embed = discord.Embed(title=f"Highscore von {player.name}", description=f"Der Highscore ist {highscore}",
-                                  color=discord.Color.blue())
+                                  color=get_current_colour())
             await interaction.response.send_message(embed=embed)
         else:
             highscore = await self.get_highscore(player.id)
 
             embed = discord.Embed(title=f"Highscore von {player.name}", description=f"Der Highscore ist {highscore}",
-                                  color=discord.Color.blue())
+                                  color=get_current_colour())
             await interaction.response.send_message(embed=embed)
 
     async def spawn_food(self):

@@ -9,6 +9,7 @@ from discord import app_commands
 
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from utils.branding import get_current_colour
 
 STD_MSG = "Lasst uns {mention} zum Geburtstag gratulieren! 🎉"
 FALLBACK_TZ = "Europe/Berlin"
@@ -216,7 +217,7 @@ class Birthday(commands.Cog):
                             embed = discord.Embed(
                                 title="🎂 Geburtstage heute",
                                 description=msg,
-                                colour=discord.Colour.blurple(),
+                                colour=get_current_colour(),
                                 timestamp=datetime.now(tz),
                             )
                             embed.set_footer(text="Alles Gute!")
@@ -336,7 +337,7 @@ class Geburtstag(app_commands.Group):
             ); return
 
         birth_str, next_epoch = row
-        embed = discord.Embed(title="<:Astra_gw1:1141303852889550928>  Dein Geburtstag", colour=discord.Colour.blurple())
+        embed = discord.Embed(title="<:Astra_gw1:1141303852889550928>  Dein Geburtstag", colour=get_current_colour())
         embed.add_field(name="<:Astra_calender:1141303828625489940> Gespeichert als", value=birth_str, inline=False)
         embed.add_field(name="<:Astra_time:1141303932061233202> Nächster Geburtstag", value=f"<t:{next_epoch}:D> • <t:{next_epoch}:R>", inline=False)
         embed.set_footer(text=f"Angefragt von {interaction.user}", icon_url=interaction.user.display_avatar.url)
@@ -446,7 +447,7 @@ class Geburtstag(app_commands.Group):
         hhmm = f"{int(hour):02d}:{int(minute):02d}"
         mode = "Embed" if int(use_embed) == 1 else "Text"
         status = "AN ✅" if int(enabled) == 1 else "AUS ⛔"
-        embed = discord.Embed(title="🎛️ Geburtstag-Setup", colour=discord.Colour.blurple())
+        embed = discord.Embed(title="🎛️ Geburtstag-Setup", colour=get_current_colour())
         embed.add_field(name="Status", value=status, inline=True)
         embed.add_field(name="Channel", value=ch_mention, inline=True)
         embed.add_field(name="Uhrzeit", value=hhmm, inline=True)

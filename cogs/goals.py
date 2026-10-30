@@ -8,6 +8,7 @@ from dateutil import tz
 import re
 from datetime import datetime, timedelta, timezone
 import time
+from utils.branding import get_current_colour
 
 GOAL_TYPES = {
     "messages": ("Nachrichten", "💬"),
@@ -71,7 +72,7 @@ def format_goal_embed(conds, reward_text, ends_at_ts, finished, total, reward_ro
                     + "\n".join(cond_lines)
                     + "\n\n__**Fortschritt insgesamt:**__\n"
                     + bar,
-        color=discord.Color.blurple() if not status else (discord.Color.green() if "GESCHAFFT" in status else discord.Color.red())
+        color=get_current_colour() if not status else (discord.Color.green() if "GESCHAFFT" in status else discord.Color.red())
     )
     if reward_text or reward_role:
         val = reward_text or "*Keine Belohnung angegeben*"
@@ -163,7 +164,7 @@ class GoalModalPage1(discord.ui.Modal, title="Community Goal erstellen (1/2)"):
             title="📋 Zielübersicht (1/2)",
             description=f"**Ende:** <t:{ends_ts}:f>\n\n" + (
                 "\n".join(cond_lines) if cond_lines else "*Noch kein Ziel angegeben*"),
-            color=discord.Color.blurple()
+            color=get_current_colour()
         )
         if data_page1["belohnung_text"]:
             embed.add_field(name="🏱 Belohnung", value=data_page1["belohnung_text"], inline=False)

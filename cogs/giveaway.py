@@ -295,7 +295,7 @@ class GiveawayButton(discord.ui.View):
                             "<:Astra_arrow:1141303823600717885> **Klicke** unten auf den **Button**, um teilzunehmen."
                             f"{req_block}"
                         ),
-                        colour=discord.Colour.blue(),
+                        colour=get_current_colour(),
                     )
                     if guild and guild.icon:
                         e.set_thumbnail(url=guild.icon.url)
@@ -520,7 +520,7 @@ class Giveaway(app_commands.Group):
                         "<:Astra_arrow:1141303823600717885> **Klicke** unten auf den **Button** um teilzunehmen."
                         f"{req_block}"
                     ),
-                    colour=discord.Colour.blue(),
+                    colour=get_current_colour(),
                 )
                 if interaction.guild and interaction.guild.icon:
                     embed.set_thumbnail(url=interaction.guild.icon.url)
@@ -597,7 +597,7 @@ class Giveaway(app_commands.Group):
                     embed = discord.Embed(
                         title=f"Alle Gewinnspiele auf {interaction.guild.name}",
                         description="Um ein Gewinnspiel zu erstellen, nutze `/gewinnspiel starten`.",
-                        color=discord.Color.blue(),
+                        color=get_current_colour(),
                         timestamp=discord.utils.utcnow(),
                     )
                     embed.set_author(name=str(interaction.user), icon_url=(interaction.user.avatar.url if interaction.user.avatar else discord.Embed.Empty))

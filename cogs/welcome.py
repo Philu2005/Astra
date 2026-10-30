@@ -240,7 +240,7 @@ class welcome(commands.Cog):
             card = await generate_banner(member, message)
 
             file = discord.File(card, filename="welcome.png")
-            embed = discord.Embed(color=discord.Color.blurple())
+            embed = discord.Embed(color=discord.Color.blue())
             embed.set_image(url="attachment://welcome.png")
 
             await channel.send(embed=embed, file=file)
@@ -271,7 +271,7 @@ class welcome(commands.Cog):
                                 f"**Betroffener Channel:** <#{channel_id}>\n\n"
                                 f"Mir fehlen dort die nötigen Berechtigungen."
                             ),
-                            color=discord.Color.blue()
+                            color=discord.Color.red()
                         )
 
                         embed.add_field(

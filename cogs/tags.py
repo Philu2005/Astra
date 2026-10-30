@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from typing import Literal
+from utils.branding import get_current_colour
 
 
 # =========================
@@ -35,7 +36,7 @@ class TagCreateModal(discord.ui.Modal, title="Tag erstellen"):
 
         embed = discord.Embed(
             title="✅ Tag erstellt",
-            colour=discord.Colour.blue(),
+            colour=get_current_colour(),
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="Name", value=f"a!{self.tagname.value}", inline=False)
@@ -60,7 +61,7 @@ class TagPaginationView(discord.ui.View):
         embed = discord.Embed(
             title=f"🏷️ a!{tagname}",
             description=tagoutput,
-            colour=discord.Colour.blue(),
+            colour=get_current_colour(),
             timestamp=discord.utils.utcnow()
         )
         embed.set_footer(
@@ -132,7 +133,7 @@ class tags(commands.Cog):
         embed = discord.Embed(
             title=f"__{tagname.upper()}__",
             description=result[0],
-            colour=discord.Colour.blue(),
+            colour=get_current_colour(),
             timestamp=discord.utils.utcnow()
         )
         embed.set_author(name=msg.author, icon_url=msg.author.avatar)

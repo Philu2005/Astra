@@ -4,7 +4,7 @@ from discord import app_commands, ui, Interaction
 from typing import List, Literal
 import aiomysql
 import re
-from discord.ui import RoleSelect as NativeRoleSelect
+from utils.branding import get_current_colour
 
 class RoleConfigModal(ui.Modal, title="Rolle konfigurieren"):
     label_input = ui.TextInput(label="Anzeigename für die Rolle", required=True)
@@ -68,7 +68,7 @@ class ReactionRoleManageView(discord.ui.LayoutView):
         self.clear_items()
 
         container = discord.ui.Container(
-            accent_color=discord.Color.orange().value
+            accent_color=get_current_colour().value
         )
 
         container.add_item(discord.ui.TextDisplay(
@@ -218,7 +218,7 @@ class RoleSelectView(discord.ui.LayoutView):
         self.clear_items()
 
         main = discord.ui.Container(
-            accent_color=discord.Colour.blurple().value
+            accent_color=get_current_colour().value
         )
 
         # ================= HEADER =================

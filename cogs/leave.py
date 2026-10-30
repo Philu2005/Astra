@@ -4,6 +4,8 @@ from discord import app_commands
 from typing import Literal
 import random
 
+from utils.branding import get_current_colour
+
 
 ##########
 
@@ -32,7 +34,7 @@ class Leave(discord.ui.Modal, title="Set your Leave message!"):
 
                     embed1 = discord.Embed(title="Leave Nachricht gesetzt.",
                                            description=f"Die Leave Nachricht findet statt in: {self.channel.mention}.\nNachricht: {self.name.value}.",
-                                           color=discord.Color.blue())
+                                           color=get_current_colour())
                     await interaction.response.send_message(embed=embed1)
                 except:
                     await cursor.execute(f"SELECT channelID FROM leavemsg WHERE guildID = (%s)", interaction.guild.id)
@@ -47,7 +49,7 @@ class Leave(discord.ui.Modal, title="Set your Leave message!"):
 
                     embed = discord.Embed(title="Leave Nachricht",
                                           description=f"Leave Nachrichten bereits aktiv. Um die Nachricht zu ändern nutze `/leavemsg`.",
-                                          color=discord.Color.green())
+                                          color=discord.Color.red())
                     embed.add_field(name="Kanal", value=ch, inline=False)
                     embed.add_field(name="Nachricht", value=come[0], inline=False)
                     await interaction.response.send_message(embed=embed)
@@ -98,7 +100,7 @@ class leave(commands.Cog):
                 if channel is None and message is None:
                     embed = discord.Embed(
                         description=f"Die Leave Nachrichten sind deaktiviert. Füge eine mit `/leavemsg` hinzu.",
-                        color=discord.Color.green())
+                        color=discord.Color.red())
                     await interaction.response.send_message(embed=embed)
                     return
                 else:
@@ -160,7 +162,7 @@ class leave(commands.Cog):
 
                     embed = discord.Embed(title="Leave Nachricht",
                                           description=f"Leave Nachrichten bereits aktiv. Um die Nachricht zu ändern nutze `/leavemsg`.",
-                                          color=discord.Color.green())
+                                          color=discord.Color.red())
                     embed.add_field(name="Kanal", value=ch, inline=False)
                     embed.add_field(name="Nachricht", value=come[0], inline=False)
                     await interaction.response.send_message(embed=embed)

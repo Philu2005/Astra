@@ -6,6 +6,7 @@ from typing import Literal, Optional
 import asyncio
 import os
 from utils.profanity import check_profanity_message
+from utils.branding import get_current_colour
 
 # =========================================================
 # ================= PROFANITY REVIEW VIEW =================
@@ -277,7 +278,7 @@ class AutomodSetupView(discord.ui.LayoutView):
         self.clear_items()
 
         container = discord.ui.Container(
-            accent_color=discord.Colour.orange().value
+            accent_color=get_current_colour().value
         )
 
         container.add_item(discord.ui.TextDisplay(
@@ -800,7 +801,7 @@ class AutomodConfigView(discord.ui.LayoutView):
         self.clear_items()
 
         container = discord.ui.Container(
-            accent_color=discord.Colour.blurple().value
+            accent_color=get_current_colour().value
         )
 
         # =====================================================
@@ -1524,7 +1525,7 @@ class Warn(commands.Cog):
                                 embed = discord.Embed(
                                     title="Bitte unterlasse übermäßige Caps!",
                                     description=f"Die Nachricht hatte `{round(procent)}%` Caps!\nDu wurdest verwarnt {msg.author.mention}!",
-                                    colour=discord.Colour.blue(),
+                                    colour=discord.Colour.red(),
                                     timestamp=discord.utils.utcnow()
                                 )
                                 embed.set_author(name=msg.author, icon_url=msg.author.avatar)
