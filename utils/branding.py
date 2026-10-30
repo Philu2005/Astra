@@ -53,7 +53,7 @@ BRANDING_CONFIGS: dict[BrandingEvent, dict[str, object]] = {
     },
     BrandingEvent.EASTER: {
         "name": "Ostern",
-        "colour": discord.Colour.green(),
+        "colour": discord.Colour.dark_green(),
         "filename": "Astra_ostern.jpg",
     },
     BrandingEvent.CHRISTMAS: {
