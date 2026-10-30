@@ -13,6 +13,7 @@ import discord
 from discord import app_commands
 import gzip
 from discord.ext import commands
+from utils.branding import get_current_colour
 
 
 def is_guild_owner():
