@@ -294,7 +294,7 @@ def setup_topgg_events(bot):   # 👈 DAS IST DER FIX
         embed = discord.Embed(
             title="Test Vote Erfolgreich",
             description=(
-                f"<:Astra_boost:1141303827107164270> `{user_display}` hat für {astra} gevotet.\n"
+                f"<:Astra_boost:1141303827107164270> `{user_display}` hat für {astra} gevotet!\n"
                 f"Wir haben nun `{total_votes}` Votes diesen Monat.\n\n"
                 "Du kannst alle 12 Stunden **[hier](https://top.gg/bot/1113403511045107773/vote)** voten."
             ),
