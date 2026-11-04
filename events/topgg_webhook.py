@@ -163,7 +163,7 @@ async def start_topgg_webhook(bot, secret: str, port: int):
 
     site = web.TCPSite(
         runner,
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=port
     )
 
