@@ -159,71 +159,23 @@ In `main.py` wird die zentrale Bot-Klasse `AstraBot` als Unterklasse von `discor
 ```mermaid
 sequenceDiagram
     autonumber
+    participant Main as main()
+    participant Bot as AstraBot
+    participant DB as MariaDB
+    participant Webhook as Top.gg
+    participant Discord as Discord Gateway
 
-    box rgba(59, 130, 246, 0.08) App Core
-        participant Main as 🚀 main()
-        participant Bot as 🤖 AstraBot
-    end
-
-    box rgba(16, 185, 129, 0.08) Storage & API
-        participant DB as 🗄️ MariaDB (aiomysql)
-        participant Webhook as 🌐 Top.gg Webhook (aiohttp)
-    end
-
-    box rgba(139, 92, 246, 0.08) External
-        participant Discord as 💬 Discord Gateway
-    end
-
-    %% 1. Bootstrap
-    Main->>Main: setup_logging()
-    Main->>Bot: Instanziierung AstraBot(intents=all)
-    Main->>+Bot: bot.run(TOKEN)
-
-    %% 2. Setup Hook
-    Bot->>Bot: setup_hook()
-    
-    rect rgba(16, 185, 129, 0.05)
-        Note over Bot,DB: 1. Datenbank & Schema-Initialisierung
-        Bot->>+DB: aiomysql.create_pool(minsize=5, maxsize=20, ...)
-        DB-->>-Bot: Pool bereitgestellt
-        Bot->>+DB: run_sql_file(pool) [Schema-Check & Migration]
-        DB-->>-Bot: Tabellen & Spalten verifiziert
-    end
-
-    rect rgba(59, 130, 246, 0.05)
-        Note over Bot: 2. Extensions laden (32 Cogs)
-        loop Jede Extension in initial_extensions
-            Bot->>Bot: load_extension(ext)
-        end
-    end
-
-    rect rgba(245, 158, 11, 0.05)
-        Note over Bot,Webhook: 3. Events & Webhooks registrieren
-        Bot->>Bot: setup_topgg_events(bot)
-        Bot->>+Webhook: start_topgg_webhook(bot, DBL_SECRET, DBL_PORT)
-        Webhook-->>-Bot: Webserver aktiv (Port 8082)
-    end
-
-    rect rgba(99, 102, 241, 0.05)
-        Note over Bot: 4. Hintergrund-Tasks & Watchdog starten
-        par Async Background Tasks
-            Bot->>Bot: asyncio.create_task(cleanup_logs_task)
-        and
-            Bot->>Bot: asyncio.create_task(server_count_task)
-        and
-            Bot->>Bot: asyncio.create_task(rotating_presence)
-        and
-            Bot->>Bot: start_branding_task(bot)
-        and
-            Bot->>Bot: Watcher(bot).start()
-        end
-    end
-
-    %% 3. Gateway Connect & Ready
-    Note over Bot,Discord: 5. Discord Gateway Handshake & Ready
-    Bot->>+Discord: Gateway-Verbindung herstellen (WebSocket)
-    Discord-->>-Bot: READY Event empfangen
-    Bot->>Bot: on_ready() (Tree-Sync, Cache-Ready, Log-Summary)
+    Main->>Bot: run(TOKEN)
+    activate Bot
+    Note over Bot: setup_hook()
+    Bot->>DB: Pool erstellen & Schema prüfen
+    DB-->>Bot: bereit
+    Bot->>Bot: 32 Cogs laden
+    Bot->>Webhook: Webhook-Server starten
+    Bot->>Bot: Background-Tasks & Watcher starten
+    Bot->>Discord: Gateway verbinden
+    Discord-->>Bot: READY
+    Bot->>Bot: on_ready() (Tree-Sync)
     deactivate Bot
 ```
 
