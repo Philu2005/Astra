@@ -16,10 +16,11 @@ from utils.db_scheme import run_sql_file
 from utils.logger import setup_logging
 from utils.presence import rotating_presence
 from utils.file_watcher import Watcher
-from events.topgg import setup_topgg_events
 from utils.cleanup import cleanup_logs_task
 from utils.branding import get_current_colour
 from utils.branding import start_branding_task
+from events.topgg import setup_topgg_events
+from events.topgg_webhook import start_topgg_webhook
 
 guild_cache = {}
 guild_cache_lock = Lock()
@@ -37,6 +38,8 @@ db_name = os.getenv("DB_NAME")
 dbl_token = os.getenv("DBL_TOKEN")
 dbl_password = os.getenv("DBL_PASS")
 dbl_port = os.getenv("DBL_PORT")
+dbl_secret_new = os.getenv("DBL_SECRET_NEW")
+
 
 
 class Astra(commands.Bot):
@@ -57,15 +60,17 @@ class Astra(commands.Bot):
             intents=intents,
         )
 
-        pool: aiomysql.Pool
         self.topggpy = None
+        self.topgg_webhook_runner = None
+
         self.task = False
         self.task2 = False
         self.watcher = None
-        self.pool = None  # Pool-Objekt hier zentral gespeichert
+        self.pool = None
         self.is_connecting = False
         self.bot_ready = False
         self.branding_task = None
+
         self.initial_extensions = [
             "cogs.reminder",
             "cogs.stats",
@@ -100,38 +105,49 @@ class Astra(commands.Bot):
             "cogs.levels",
             "cogs.snake",
         ]
+
         self.automod_deleted_messages = set()
 
     async def setup_hook(self):
         try:
-            # Task zum periodischen Leeren des Automod-Caches starten (Sicherheitsmaßnahme)
+            # Automod-Cache regelmäßig leeren
             self.loop.create_task(self.clear_automod_cache_task())
 
-            # 1. Datenbank-Verbindung herstellen (Priorität hoch)
+            # 1. Datenbank verbinden
             await self.connect_db()
             await self.init_tables()
 
             # 2. Cogs laden
             await self.load_cogs()
 
-            # 3. Externe Dienste (Top.gg)
+            # 3. Top.gg einrichten
             if dbl_token:
                 self.topggpy = topgg.DBLClient(self, str(dbl_token))
-            
-            if dbl_password and dbl_port:
-                try:
-                    self.topgg_webhook = topgg.WebhookManager(self).dbl_webhook(
-                        "/webhook/7d9f1c0a-topgg-astrabot", str(dbl_password)
-                    )
-                    await self.topgg_webhook.run(int(dbl_port))
-                except Exception as e:
-                    logging.error(f"❌ Fehler beim Starten des Top.gg Webhooks: {e}")
+
+            if dbl_secret_new and dbl_port:
+                self.topgg_webhook_runner = await start_topgg_webhook(
+                    self,
+                    str(dbl_secret_new),
+                    int(dbl_port)
+                )
+
+                logging.info("[Top.gg] Neuer Webhook erfolgreich gestartet.")
+
+            else:
+                logging.warning(
+                    "[Top.gg] Webhook nicht gestartet. "
+                    "DBL_SECRET_NEW oder DBL_PORT fehlt."
+                )
 
             # 4. Hintergrund-Tasks
             self.branding_task = start_branding_task(self)
+
             self.loop.create_task(rotating_presence(self))
             self.loop.create_task(cleanup_logs_task(self))
-            self.keep_alive_task = self.loop.create_task(self.keep_db_alive())
+
+            self.keep_alive_task = self.loop.create_task(
+                self.keep_db_alive()
+            )
 
             self.watcher = Watcher(self)
             self.watcher.start()
@@ -148,9 +164,22 @@ class Astra(commands.Bot):
             logging.info("██║  ██║███████║   ██║   ██║  ██║██║  ██║ ")
             logging.info("╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ")
             logging.info("───────────────────── ✓ ─────────────────────")
+
         except Exception:
             logging.exception("❌ Kritischer Fehler beim Setup")
             raise
+
+    async def close(self):
+        try:
+            if self.topgg_webhook_runner is not None:
+                await self.topgg_webhook_runner.cleanup()
+                self.topgg_webhook_runner = None
+
+                logging.info("[Top.gg] Webhook wurde beendet.")
+
+        finally:
+            await super().close()
+
 
     async def keep_db_alive(self):
         """Überprüft regelmäßig die MySQL-Verbindung und hält den DB-Pool funktionsfähig."""
@@ -730,8 +759,6 @@ class Astra(commands.Bot):
 
 
 bot = Astra()
-
-
 setup_topgg_events(bot)
 
 
