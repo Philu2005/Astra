@@ -167,7 +167,7 @@ sequenceDiagram
 
     Main->>Main: setup_logging()
     Main->>Bot: Instanziierung AstraBot(intents=all)
-    Main->>Bot: bot.run(DISCORD_TOKEN)
+    Main->>Bot: bot.run(TOKEN)
     Bot->>Bot: setup_hook()
     Note over Bot,DB: 1. Datenbank-Pool aufbauen
     Bot->>DB: aiomysql.create_pool(MYSQL_HOST, MYSQL_USER, ...)
@@ -225,7 +225,7 @@ Im Verlauf des Starts (`setup_hook()`) werden folgende Hintergrund- und Initiali
    - `start_branding_task(bot)` (`utils/branding.py`): Prüft täglich um 00:00 Uhr Berlin-Zeit anstehende Feiertage/Events (Ostern, Halloween, Weihnachten) und tauscht Avatar und Server-Icon automatisch aus.
 3. **Event-Registrierung & Top.gg Webhook-Server:**
    - Registrierung der Event-Handler via `events.topgg.setup_topgg_events(self)`.
-   - Starten des Aiohttp-Webhook-Servers auf Port `DBL_PORT` (Standard: 5000) mit `events.topgg_webhook.start_topgg_webhook(...)`.
+   - Starten des Aiohttp-Webhook-Servers auf Port `DBL_PORT` (Standard: 8082) mit `events.topgg_webhook.start_topgg_webhook(...)`.
 4. **Hot-Reloading Dateiwächter:**
    - Start des Watchdog-Observers `Watcher(self).start()` (`utils/file_watcher.py`) zur Überwachung von Dateiänderungen.
 
@@ -503,7 +503,7 @@ Im Repository existieren **34 Cog-Dateien** unter `cogs/`. 32 davon werden in `m
   - `/levelsystem config`: Einstellungen für Level-Kanäle, Belohnungsrollen und Multiplikatoren.
   - `/levelsystem setlevel <user> <level>`: Manuelle Anpassung durch Moderatoren.
   - `/levelsystem setxp <user> <xp>`: Manuelle Anpassung von XP.
-  - `/setstyle <style>` / `/previewstyle`: Aussehen der Rang-Karte wählen (Assets aus `cogs/assets/Rang/`).
+  - `/setstyle <style>` / `/previewstyle`: Aussehen der Rang-Karte wählen (Assets aus `cogs/assets/Levelcards/`).
 - **Events & Listeners:**
   - `on_message(message)`: Vergibt zufällige XP (mit Cooldown gegen Spam), berechnet Levelaufstiege und weist konfigurierte Rollen zu.
 - **Datenbankzugriff:**
@@ -867,19 +867,39 @@ Die Konfiguration wird primär über Umgebungsvariablen gesteuert, die über `py
 
 ### 7.1 Env-Variablen-Referenz
 
-| Variablenname | Verwendungszweck | Betroffenes Modul | Status | Standardwert (Fallback) |
-|---|---|---|---|---|
-| `DISCORD_TOKEN` / `DISCORD_TOKEN_DEV` | Authentifizierungs-Token für die Discord Gateway API | `main.py` | **Erforderlich** | `None` (Wirft Fehler bei Start) |
-| `ENVIRONMENT` | Steuert, ob Production (`PROD`) oder Development Token genutzt wird | `main.py` | Optional | `None` (Nimmt `DISCORD_TOKEN`) |
-| `MYSQL_HOST` | Hostname/IP-Adresse des MariaDB/MySQL-Datenbankservers | `main.py` | **Erforderlich** | `None` |
-| `MYSQL_USER` | Benutzername für die Datenbankverbindung | `main.py` | **Erforderlich** | `None` |
-| `MYSQL_PASSWORD` | Passwort für die Datenbankverbindung | `main.py` | **Erforderlich** | `None` |
-| `MYSQL_DATABASE` | Name der zu verwendenden Datenbank | `main.py` | **Erforderlich** | `None` |
-| `MYSQL_PORT` | Port des Datenbankservers | `main.py` | Optional | `3306` |
-| `DBL_SECRET_NEW` | HMAC-Geheimschlüssel zur Verifizierung von Top.gg Webhooks | `main.py`, `events/topgg_webhook.py` | **Erforderlich für Webhook** | `None` |
-| `DBL_PORT` | Lokaler TCP-Port für den aiohttp Top.gg Webhook-Server | `main.py`, `events/topgg_webhook.py` | Optional | `5000` |
+| Variablenname | Verwendungszweck | Betroffenes Modul | Status | Standardwert (Fallback)            |
+|---|---|---|---|------------------------------------|
+| `DISCORD_TOKEN` / `DISCORD_TOKEN_DEV` | Authentifizierungs-Token für die Discord Gateway API | `main.py` | **Erforderlich** | `None` (Wirft Fehler bei Start)    |
+| `ENVIRONMENT` | Steuert, ob Production (`PROD`) oder Development Token genutzt wird | `main.py` | Optional | `None` (Nimmt `DISCORD_TOKEN`)     |
+| `MYSQL_HOST` | Hostname/IP-Adresse des MariaDB/MySQL-Datenbankservers | `main.py` | **Erforderlich** | `None`                             |
+| `MYSQL_USER` | Benutzername für die Datenbankverbindung | `main.py` | **Erforderlich** | `None`                             |
+| `MYSQL_PASSWORD` | Passwort für die Datenbankverbindung | `main.py` | **Erforderlich** | `None`                             |
+| `MYSQL_DATABASE` | Name der zu verwendenden Datenbank | `main.py` | **Erforderlich** | `None`                             |
+| `MYSQL_PORT` | Port des Datenbankservers | `main.py` | Optional | `3306`                             |
+| `DBL_SECRET_NEW` | HMAC-Geheimschlüssel zur Verifizierung von Top.gg Webhooks | `main.py`, `events/topgg_webhook.py` | **Erforderlich für Webhook** | `None`                             |
+| `DBL_PORT` | Lokaler TCP-Port für den aiohttp Top.gg Webhook-Server | `main.py`, `events/topgg_webhook.py` | Optional | `8082`                             |
 | `SCHEMA_PATH` | Dateipfad zur SQL-Initialisierungs-/Migrationsdatei | `utils/db_scheme.py` | Optional | `opt/schema.sql` (relativ zu Root) |
-| `Version` | Aktuelle Versionsnummer des Bots | `cogs/.env`, `cogs/astra.py` | Optional | `"1.7.3"` |
+| `Version` | Aktuelle Versionsnummer des Bots | `cogs/.env`, `cogs/astra.py` | Optional | `"1.7.3"`                          |
+
+#### Discord-Token-Konfiguration und Initialisierung
+
+Der Zusammenhang zwischen der Konfigurationsdatei und der Bot-Ausführung gestaltet sich wie folgt:
+1. **Definition in `.env`:** In der `.env`-Datei wird das Discord-Token unter dem Variablennamen `DISCORD_TOKEN` hinterlegt.
+2. **Einlesen in `main.py`:** In `main.py` wird der Wert über `TOKEN = os.getenv("DISCORD_TOKEN")` in die Variable `TOKEN` geladen.
+3. **Start des Bots:** Der Bot-Prozess wird anschließend mit `bot.run(TOKEN)` ausgeführt.
+
+```python
+# main.py
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+# ...
+if __name__ == "__main__":
+    bot.run(TOKEN)
+```
 
 ---
 
