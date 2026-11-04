@@ -2,6 +2,7 @@
 
 Diese Dokumentation beschreibt den exakten **IST-Zustand** des Discord-Bots **Astra** auf Basis einer vollständigen statischen Quellcode- und Konfigurationsanalyse des gesamten Repositorys.
 
+---
 
 ## Inhaltsverzeichnis
 
@@ -36,6 +37,7 @@ Diese Dokumentation beschreibt den exakten **IST-Zustand** des Discord-Bots **As
 12. [Technische Besonderheiten und Architekturentscheidungen](#12-technische-besonderheiten-und-architekturentscheidungen)
 13. [Offene Punkte, Diskrepanzen und Technische Risiken](#13-offene-punkte-diskrepanzen-und-technische-risiken)
 
+---
 
 ## 1. Vollständige Projektübersicht
 
@@ -135,6 +137,7 @@ Das Astra-Repository ist modular in vier Hauptschichten aufgebaut:
    - Stellt modulübergreifende Logik bereit (Schema-Migrationen, Logging-Filter, Schimpfwort-Prüfungen, Presence-Updates).
    - Der Dateiwächter (`file_watcher.py`) beobachtet das Dateisystem und lädt geänderte Cogs zur Laufzeit automatisch neu (`bot.reload_extension`).
 
+---
 
 ## 2. Hauptarchitektur und Bot-Lifecycle
 
@@ -278,6 +281,7 @@ Im Verlauf des Starts (`setup_hook()`) werden folgende Hintergrund- und Initiali
    - Abbruch aller verbleibenden Tasks in `self.tasks` via `task.cancel()`.
    - Aufruf von `super().close()` zur sauberen Trennung vom Discord-Gateway.
 
+---
 
 ## 3. Sämtliche Cogs und Features
 
@@ -739,6 +743,7 @@ Im Repository existieren **34 Cog-Dateien** unter `cogs/`. 32 davon werden in `m
 - **Datenbankzugriff:**
   - Tabellen: `welcome` (`guild_id`, `channel_id`, `message`, `banner_enabled`, `banner_bg`, `embed_enabled`).
 
+---
 
 ## 4. Events und externe Integrationen
 
@@ -787,6 +792,7 @@ sequenceDiagram
 4. Signaturberechnung: `hmac.new(secret.encode('utf-8'), signed_payload, hashlib.sha256).hexdigest()`.
 5. Konstante Vergleichszeit via `hmac.compare_digest`.
 
+---
 
 ## 5. Utilities und Hintergrundsysteme
 
@@ -802,6 +808,7 @@ sequenceDiagram
 | `utils/presence.py` | `rotating_presence(client)` | Rotiert alle 30s zwischen 4 Activities (`🔹 {server} Server`, `🔹 {members} Mitglieder`, `⚙️ Interaktives Setup`, `🎫 Modernes Ticket-System`). Formatiert deutsche Zahlen mit Tausendertrennpunkten. Setzt zwischen 00:00 und 06:00 Uhr Berliner Zeit den Status auf `idle`, sonst `online`. |
 | `utils/profanity.py` | `check_profanity_message(content)`, `profanity_filter` | Dreistufiger Kontextfilter: `ACTION` (direkte Beleidigung der 2. Person `du/ihr + insult` -> Löschen & Warn), `REVIEW` (Beleidigungen Dritter / freistehend -> Modlog), `IGNORE` (Selbstabwertung, "Hurensohn-Move", "fucking geil", milde Flüche -> kein Eingriff). |
 
+---
 
 ## 6. Datenbankdokumentation
 
@@ -889,6 +896,7 @@ Die folgende Matrix zeigt auf einen Blick, welche Subsysteme und Cogs auf welche
    - Beim Bot-Start liest Astra die SQL-Datei aus `SCHEMA_PATH` (Standard: `opt/schema.sql`).
    - Astra parst alle `CREATE TABLE`- und `ALTER TABLE`-Anweisungen. Vor der Ausführung wird über `information_schema.TABLES`, `information_schema.COLUMNS` und `information_schema.STATISTICS` geprüft, ob die Tabelle, Spalte oder der Index bereits vorhanden ist. Dies garantiert eine idempotente Migration ohne Datenverlust oder Laufzeitfehler bei Re-Deployments.
 
+---
 
 ## 7. Konfiguration und Umgebungsvariablen
 
@@ -930,6 +938,7 @@ if __name__ == "__main__":
     bot.run(TOKEN)
 ```
 
+---
 
 ## 8. Externe Dienste und Infrastruktur
 
@@ -948,6 +957,7 @@ if __name__ == "__main__":
    - Zielplattform im Code: Linux/Unix (`/usr/bin/systemctl restart astrabot.service`).
    - Lokale Windows-Unterstützung (Dateipfad-Normalisierung, Fallback-Logging bei Restart).
 
+---
 
 ## 9. Abhängigkeiten
 
@@ -967,6 +977,7 @@ Die Datei `requirements.txt` definiert die zentralen Third-Party-Abhängigkeiten
 
 **Empfohlene Python-Version:** Python 3.10 oder höher (Verwendung von `match/case`, Typ-Unionen `|`, `zoneinfo`).
 
+---
 
 ## 10. Kritische Abläufe und Datenflüsse
 
@@ -1029,6 +1040,7 @@ sequenceDiagram
     end
 ```
 
+---
 
 ## 11. Fehlerbehandlung und Stabilität
 
@@ -1043,6 +1055,7 @@ sequenceDiagram
 4. **Graceful Reloads:**
    - `utils/file_watcher.py` blockiert Neustarts und Reloads, solange der Bot sich im Verbindungsprozess befindet (`getattr(bot, "is_connecting", False)`).
 
+---
 
 ## 12. Technische Besonderheiten und Architekturentscheidungen
 
@@ -1050,6 +1063,7 @@ sequenceDiagram
 - **Saisonales Branding ohne Neustart:** `utils/branding.py` ändert den Bot-Avatar und das Server-Icon im laufenden Betrieb und merkt sich den Zustand in `.astra_branding_state.json`, um Discord-Rate-Limits bei Reconnects zu vermeiden.
 - **Kontextbasierte Schimpfwort-Erkennung:** Statt simpler Substring-Prüfungen analysiert `utils/profanity.py` Satzstrukturen, Pronomen der 2. Person, Verneinungen und umgangssprachliche Floskeln ("Hurensohn-Move"), um Fehlalarme bei Selbstabwertung oder Lob drastisch zu reduzieren.
 
+---
 
 ## 13. Offene Punkte, Diskrepanzen und Technische Risiken
 
