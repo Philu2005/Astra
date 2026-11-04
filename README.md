@@ -290,7 +290,7 @@ Astra liest sensible Konfigurationsdaten über Umgebungsvariablen aus der `.env`
 # ==========================================
 
 # Discord Bot Authentifizierung (Erforderlich)
-DISCORD_TOKEN=MTA4NzY1NDMyMTA5ODc2NTQzMjE.G_XyZa.abc123def456ghi789jkl012mno345pqr678stu
+DISCORD_TOKEN=DEIN_DISCORD_BOT_TOKEN
 
 # Datenbankverbindung (Erforderlich)
 DB_HOST=127.0.0.1
