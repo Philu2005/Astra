@@ -166,11 +166,10 @@ class EmbedModal(discord.ui.Modal, title="Set Embed Welcome Message"):
                 await cursor.execute(
                     """
                     INSERT INTO welcome (guildID, channelID, message, mode)
-                    VALUES (%s,%s,%s,'embed')
-                    ON DUPLICATE KEY UPDATE
-                        channelID=VALUES(channelID),
-                        message=VALUES(message),
-                        mode='embed'
+                        VALUES (%s, %s, %s, 'embed') AS new
+                    ON DUPLICATE KEY UPDATE channelID = new.channelID,
+                                            message   = new.message,
+                                            mode      = 'embed'
                     """,
                     (interaction.guild.id, self.channel.id, self.text.value)
                 )
@@ -200,11 +199,10 @@ class BannerModal(discord.ui.Modal, title="Banner Welcome konfigurieren"):
                 await cursor.execute(
                     """
                     INSERT INTO welcome (guildID, channelID, message, mode)
-                    VALUES (%s,%s,%s,'banner')
-                    ON DUPLICATE KEY UPDATE
-                        channelID=VALUES(channelID),
-                        message=VALUES(message),
-                        mode='banner'
+                        VALUES (%s, %s, %s, 'banner') AS new
+                    ON DUPLICATE KEY UPDATE channelID = new.channelID,
+                                            message   = new.message,
+                                            mode      = 'banner'
                     """,
                     (interaction.guild.id, self.channel.id, subtitle_text)
                 )

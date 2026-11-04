@@ -587,10 +587,10 @@ class SetupWizardView(ui.LayoutView):
                 await cur.execute(
                     """
                     INSERT INTO ticketsystem(guildID, channelID, thema, roleID, categoryID)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE thema      = VALUES(thema),
-                                            roleID     = VALUES(roleID),
-                                            categoryID = VALUES(categoryID)
+                        VALUES (%s, %s, %s, %s, %s) AS new
+                    ON DUPLICATE KEY UPDATE thema      = new.thema,
+                                            roleID     = new.roleID,
+                                            categoryID = new.categoryID
                     """,
                     (guild.id, chan.id, self.panel_title, role.id, cat.id),
                 )
