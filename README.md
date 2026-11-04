@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.9.4-4b46c8?style=flat&logo=git&logoColor=white" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-2.9.6-4b46c8?style=flat&logo=git&logoColor=white" alt="Version" />
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Library-discord.py-5865F2?style=flat&logo=discord&logoColor=white" alt="discord.py" />
   <img src="https://img.shields.io/badge/Database-MySQL-4479A1?style=flat&logo=mysql&logoColor=white" alt="MySQL" />
