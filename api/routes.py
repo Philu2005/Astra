@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import datetime
 from flask import Blueprint, jsonify, request, current_app
 from api.auth import require_service_auth
 from api.permissions import validate_user_id, check_user_guild_permissions
@@ -109,6 +110,26 @@ def _validate_guild_payload(guild: dict) -> bool:
     return True
 
 
+def _validate_stats_payload(stats: dict) -> bool:
+    if not isinstance(stats, dict):
+        return False
+    for key in ("users", "guilds", "commands"):
+        value = stats.get(key)
+        if not isinstance(value, int) or value < 0:
+            return False
+    return True
+
+
+def _validate_last_updated(value: str) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return True
+    except ValueError:
+        return False
+
+
 @api_bp.route("/status", methods=["GET"])
 def status():
     """Liefert den zuletzt bekannten Bot-Status auf Basis eingehender Heartbeats."""
@@ -161,30 +182,22 @@ def guild_sync():
         return jsonify(success=False, error="Invalid sync payload"), 400
 
     mode = payload.get("mode")
-    if mode not in {"full", "upsert", "delete"}:
+    if mode != "full_snapshot":
         return jsonify(success=False, error="Invalid sync payload"), 400
 
-    if mode == "full":
-        guilds = payload.get("guilds")
-        if not isinstance(guilds, list) or not all(_validate_guild_payload(g) for g in guilds):
-            return jsonify(success=False, error="Invalid sync payload"), 400
-        result = guild_state_store.replace_all(guilds)
-        return jsonify(success=True, mode="full", guilds=result["guilds"]), 200
+    guilds = payload.get("guilds")
+    stats = payload.get("stats")
+    last_updated = payload.get("last_updated")
 
-    if mode == "upsert":
-        guild = payload.get("guild")
-        if not _validate_guild_payload(guild):
-            return jsonify(success=False, error="Invalid sync payload"), 400
-        saved = guild_state_store.upsert_guild(guild)
-        if not saved:
-            return jsonify(success=False, error="Invalid sync payload"), 400
-        return jsonify(success=True, mode="upsert"), 200
-
-    guild_id = validate_user_id(payload.get("guild_id"))
-    if guild_id is None:
+    if not isinstance(guilds, list) or not all(_validate_guild_payload(g) for g in guilds):
         return jsonify(success=False, error="Invalid sync payload"), 400
-    removed = guild_state_store.remove_guild(guild_id)
-    return jsonify(success=True, mode="delete", removed=removed), 200
+    if not _validate_stats_payload(stats):
+        return jsonify(success=False, error="Invalid sync payload"), 400
+    if not _validate_last_updated(last_updated):
+        return jsonify(success=False, error="Invalid sync payload"), 400
+
+    result = guild_state_store.replace_all(guilds, stats, last_updated)
+    return jsonify(success=True, mode="full_snapshot", guilds=result["guilds"]), 200
 
 
 def _get_server_data_state() -> tuple[bool, str | None]:
@@ -195,6 +208,20 @@ def _get_server_data_state() -> tuple[bool, str | None]:
     if (time.time() - full_sync_ts) > max_age:
         return False, "Guild data is stale"
     return True, None
+
+
+@api_bp.route("/dashboard/stats", methods=["GET"])
+@require_service_auth
+def get_dashboard_stats():
+    stats, last_successful_sync, full_sync_ts = guild_state_store.stats_snapshot()
+    stale_after = float(current_app.config.get("GUILD_SNAPSHOT_STALE_AFTER_SECONDS", 120))
+    is_stale = full_sync_ts is None or (time.time() - full_sync_ts) > stale_after
+    return jsonify(
+        success=True,
+        stats=stats,
+        last_successful_sync=last_successful_sync,
+        stale=is_stale,
+    ), 200
 
 
 @api_bp.route("/servers", methods=["GET"])

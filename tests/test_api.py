@@ -93,6 +93,19 @@ class InternalApiTestCase(unittest.TestCase):
             ],
         }
 
+    @staticmethod
+    def _full_sync_payload(guilds: list[dict]) -> dict:
+        return {
+            "mode": "full_snapshot",
+            "last_updated": "2026-01-01T00:00:00+00:00",
+            "stats": {
+                "users": sum(int(g.get("member_count") or 0) for g in guilds),
+                "guilds": len(guilds),
+                "commands": 0,
+            },
+            "guilds": guilds,
+        }
+
     def setUp(self):
         self.test_api_key = "test_super_secret_api_key_12345"
         self.guild_cache = {}
@@ -129,13 +142,10 @@ class InternalApiTestCase(unittest.TestCase):
         self.guild_cache[111] = self.guild1
         self.guild_cache[222] = self.guild2
 
-        sync_payload = {
-            "mode": "full",
-            "guilds": [
-                self._guild_to_sync_payload(self.guild1),
-                self._guild_to_sync_payload(self.guild2),
-            ],
-        }
+        sync_payload = self._full_sync_payload([
+            self._guild_to_sync_payload(self.guild1),
+            self._guild_to_sync_payload(self.guild2),
+        ])
         sync_res = self.client.post("/guild-sync", headers=self.auth_headers, json=sync_payload)
         self.assertEqual(sync_res.status_code, 200)
 
@@ -298,7 +308,7 @@ class InternalApiTestCase(unittest.TestCase):
         res_sync = self.client.post(
             "/guild-sync",
             headers=self.auth_headers,
-            json={"mode": "full", "guilds": []},
+            json=self._full_sync_payload([]),
         )
         self.assertEqual(res_sync.status_code, 200)
 
@@ -384,7 +394,10 @@ class InternalApiTestCase(unittest.TestCase):
         res_sync = self.client.post(
             "/guild-sync",
             headers=self.auth_headers,
-            json={"mode": "upsert", "guild": updated_guild1},
+            json=self._full_sync_payload([
+                updated_guild1,
+                self._guild_to_sync_payload(self.guild2),
+            ]),
         )
         self.assertEqual(res_sync.status_code, 200)
 
@@ -411,7 +424,11 @@ class InternalApiTestCase(unittest.TestCase):
         res_sync = self.client.post(
             "/guild-sync",
             headers=self.auth_headers,
-            json={"mode": "upsert", "guild": broken_guild},
+            json=self._full_sync_payload([
+                self._guild_to_sync_payload(self.guild1),
+                self._guild_to_sync_payload(self.guild2),
+                broken_guild,
+            ]),
         )
         self.assertEqual(res_sync.status_code, 200)
 

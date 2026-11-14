@@ -43,6 +43,7 @@ bot_heartbeat_url = internal_api_base_url + "/heartbeat"
 bot_guild_sync_url = internal_api_base_url + "/guild-sync"
 bot_heartbeat_interval = max(5, int(os.getenv("ASTRA_HEARTBEAT_INTERVAL_SECONDS", "30")))
 bot_sync_retries = max(1, int(os.getenv("ASTRA_GUILD_SYNC_RETRIES", "3")))
+bot_snapshot_sync_interval = max(30, int(os.getenv("ASTRA_GUILD_SNAPSHOT_INTERVAL_SECONDS", "60")))
 
 
 
@@ -75,7 +76,10 @@ class Astra(commands.Bot):
         self.bot_ready = False
         self.branding_task = None
         self.heartbeat_task = None
+        self.guild_snapshot_task = None
         self.guild_sync_lock = asyncio.Lock()
+        self.command_count_lock = asyncio.Lock()
+        self.command_count = 0
 
         self.initial_extensions = [
             "cogs.reminder",
@@ -177,6 +181,14 @@ class Astra(commands.Bot):
 
     async def close(self):
         try:
+            if self.guild_snapshot_task is not None:
+                self.guild_snapshot_task.cancel()
+                try:
+                    await self.guild_snapshot_task
+                except asyncio.CancelledError:
+                    pass
+                self.guild_snapshot_task = None
+
             if self.topgg_webhook_runner is not None:
                 await self.topgg_webhook_runner.cleanup()
                 self.topgg_webhook_runner = None
@@ -465,9 +477,12 @@ class Astra(commands.Bot):
             for g in self.guilds:
                 guild_cache[g.id] = g
 
+        await self._ensure_website_stats_row()
+        await self._load_command_count()
+
         servercount = len(self.guilds)
         usercount = sum(guild.member_count or 0 for guild in self.guilds)
-        commandCount = len(self.all_app_commands())
+        commandCount = self.command_count
         channelCount = sum(len(guild.channels) for guild in self.guilds)
 
         async with self.pool.acquire() as conn:
@@ -486,7 +501,42 @@ class Astra(commands.Bot):
         if self.heartbeat_task is None or self.heartbeat_task.done():
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
+        if self.guild_snapshot_task is None or self.guild_snapshot_task.done():
+            self.guild_snapshot_task = asyncio.create_task(self._guild_snapshot_loop())
+
         asyncio.create_task(self._sync_full_guild_snapshot())
+
+    async def _ensure_website_stats_row(self):
+        if self.pool is None:
+            return
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    INSERT IGNORE INTO website_stats (id, servercount, usercount, commandCount, channelCount)
+                    VALUES (1, 0, 0, 0, 0)
+                """)
+
+    async def _load_command_count(self):
+        if self.pool is None:
+            return
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT commandCount FROM website_stats WHERE id = 1 LIMIT 1")
+                row = await cur.fetchone()
+                value = 0
+                if row and row[0] is not None:
+                    try:
+                        value = int(row[0])
+                    except (TypeError, ValueError):
+                        value = 0
+                self.command_count = max(0, value)
+
+    def _build_global_stats(self) -> dict:
+        return {
+            "users": int(sum(guild.member_count or 0 for guild in self.guilds)),
+            "guilds": int(len(self.guilds)),
+            "commands": int(self.command_count),
+        }
 
     async def _serialize_guild_for_sync(self, guild: discord.Guild) -> dict:
         channels = []
@@ -556,68 +606,78 @@ class Astra(commands.Bot):
         async with self.guild_sync_lock:
             try:
                 guilds = [await self._serialize_guild_for_sync(guild) for guild in self.guilds]
-                ok = await self._post_internal_api({"mode": "full", "guilds": guilds})
+                payload = {
+                    "mode": "full_snapshot",
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                    "stats": self._build_global_stats(),
+                    "guilds": guilds,
+                }
+                ok = await self._post_internal_api(payload)
                 if ok:
-                    logging.info("[GuildSync] Vollständiger Guild-Snapshot übertragen (%s Guilds).", len(guilds))
+                    logging.info("[GuildSync] Vollständiger Snapshot übertragen (%s Guilds).", len(guilds))
             except Exception:
                 logging.exception("[GuildSync] Fehler bei vollständiger Guild-Synchronisation.")
 
-    async def _sync_single_guild(self, guild: discord.Guild):
-        async with self.guild_sync_lock:
+    async def _guild_snapshot_loop(self):
+        while not self.is_closed():
             try:
-                payload = await self._serialize_guild_for_sync(guild)
-                await self._post_internal_api({"mode": "upsert", "guild": payload})
+                await self._sync_full_guild_snapshot()
+            except asyncio.CancelledError:
+                raise
             except Exception:
-                logging.exception("[GuildSync] Fehler bei Guild-Teilupdate (guild=%s).", getattr(guild, "id", "unknown"))
-
-    async def _delete_single_guild(self, guild_id: int):
-        async with self.guild_sync_lock:
-            try:
-                await self._post_internal_api({"mode": "delete", "guild_id": str(guild_id)})
-            except Exception:
-                logging.exception("[GuildSync] Fehler beim Entfernen einer Guild aus API-Store.")
+                logging.exception("[GuildSync] Fehler im Snapshot-Loop.")
+            await asyncio.sleep(bot_snapshot_sync_interval)
 
     async def on_guild_join(self, guild: discord.Guild):
-        asyncio.create_task(self._sync_single_guild(guild))
+        return
 
     async def on_guild_remove(self, guild: discord.Guild):
-        asyncio.create_task(self._delete_single_guild(guild.id))
+        return
 
     async def on_guild_update(self, before: discord.Guild, after: discord.Guild):
-        asyncio.create_task(self._sync_single_guild(after))
+        return
 
     async def on_member_join(self, member: discord.Member):
-        asyncio.create_task(self._sync_single_guild(member.guild))
+        return
 
     async def on_member_remove(self, member: discord.Member):
-        asyncio.create_task(self._sync_single_guild(member.guild))
+        return
 
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        asyncio.create_task(self._sync_single_guild(after.guild))
+        return
 
     async def on_guild_role_create(self, role: discord.Role):
-        asyncio.create_task(self._sync_single_guild(role.guild))
+        return
 
     async def on_guild_role_delete(self, role: discord.Role):
-        asyncio.create_task(self._sync_single_guild(role.guild))
+        return
 
     async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
-        asyncio.create_task(self._sync_single_guild(after.guild))
+        return
 
     async def on_guild_channel_create(self, channel):
-        guild = getattr(channel, "guild", None)
-        if guild is not None:
-            asyncio.create_task(self._sync_single_guild(guild))
+        return
 
     async def on_guild_channel_delete(self, channel):
-        guild = getattr(channel, "guild", None)
-        if guild is not None:
-            asyncio.create_task(self._sync_single_guild(guild))
+        return
 
     async def on_guild_channel_update(self, before, after):
-        guild = getattr(after, "guild", None)
-        if guild is not None:
-            asyncio.create_task(self._sync_single_guild(guild))
+        return
+
+    async def on_app_command_completion(self, interaction: discord.Interaction, command):
+        if interaction.user and interaction.user.bot:
+            return
+        if self.pool is None:
+            return
+        async with self.command_count_lock:
+            self.command_count += 1
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        UPDATE website_stats
+                        SET commandCount = commandCount + 1
+                        WHERE id = 1
+                    """)
 
     async def _send_heartbeat(self):
         if not internal_api_key:
