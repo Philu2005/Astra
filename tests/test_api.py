@@ -318,6 +318,65 @@ class InternalApiTestCase(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["count"], 0)
 
+    def test_dashboard_stats_requires_auth(self):
+        res = self.client.get("/dashboard/stats")
+        self.assertEqual(res.status_code, 401)
+
+    def test_dashboard_stats_returns_synced_data(self):
+        res = self.client.get("/dashboard/stats", headers=self.auth_headers)
+        self.assertEqual(res.status_code, 200)
+
+        data = res.get_json()
+        self.assertTrue(data["success"])
+        self.assertIn("stats", data)
+        self.assertIn("last_successful_sync", data)
+        self.assertIn("stale", data)
+        self.assertEqual(data["stats"]["users"], 150)
+        self.assertEqual(data["stats"]["guilds"], 2)
+        self.assertEqual(data["stats"]["commands"], 0)
+        self.assertEqual(data["last_successful_sync"], "2026-01-01T00:00:00+00:00")
+        self.assertFalse(data["stale"])
+
+    def test_dashboard_stats_stale_when_snapshot_old(self):
+        with patch("api.routes.time.time") as time_mock:
+            time_mock.return_value = 100.0
+            sync_payload = self._full_sync_payload([
+                self._guild_to_sync_payload(self.guild1),
+                self._guild_to_sync_payload(self.guild2),
+            ])
+            sync_res = self.client.post("/guild-sync", headers=self.auth_headers, json=sync_payload)
+            self.assertEqual(sync_res.status_code, 200)
+
+            time_mock.return_value = 500.0
+            res = self.client.get("/dashboard/stats", headers=self.auth_headers)
+
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["stale"])
+
+    def test_dashboard_stats_empty_when_no_sync_yet(self):
+        app = create_app(
+            bot=self.mock_bot,
+            guild_cache=self.guild_cache,
+            guild_cache_lock=self.guild_cache_lock,
+            config={"ASTRA_INTERNAL_API_KEY": self.test_api_key, "TESTING": True},
+        )
+        client = app.test_client()
+
+        from api.guild_state import guild_state_store
+        guild_state_store._guilds = {}
+        guild_state_store._stats = {"users": 0, "guilds": 0, "commands": 0}
+        guild_state_store._last_full_sync_ts = None
+        guild_state_store._last_update_ts = None
+        guild_state_store._last_successful_sync_at = None
+
+        res = client.get("/dashboard/stats", headers=self.auth_headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["stats"], {"users": 0, "guilds": 0, "commands": 0})
+        self.assertIsNone(data["last_successful_sync"])
+        self.assertTrue(data["stale"])
+
     # --- 3. Benutzerautorisierung: 'Meine Server' (GET /servers) ---
 
     def test_get_servers_owner(self):
@@ -377,7 +436,7 @@ class InternalApiTestCase(unittest.TestCase):
         res_sync = self.client.post(
             "/guild-sync",
             headers=self.auth_headers,
-            json={"mode": "full", "guilds": []},
+            json=self._full_sync_payload([]),
         )
         self.assertEqual(res_sync.status_code, 200)
 
