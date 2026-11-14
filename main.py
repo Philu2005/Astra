@@ -612,9 +612,6 @@ class Astra(commands.Bot):
                     "stats": self._build_global_stats(),
                     "guilds": guilds,
                 }
-                ok = await self._post_internal_api(payload)
-                if ok:
-                    logging.info("[GuildSync] Vollständiger Snapshot übertragen (%s Guilds).", len(guilds))
             except Exception:
                 logging.exception("[GuildSync] Fehler bei vollständiger Guild-Synchronisation.")
 
