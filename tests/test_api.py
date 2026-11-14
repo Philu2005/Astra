@@ -1,5 +1,6 @@
 import os
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 import discord
 from threading import Lock
@@ -51,6 +52,12 @@ class MockGuild:
 
     def get_member(self, user_id: int):
         return self._members.get(user_id)
+
+    async def fetch_member(self, user_id: int):
+        member = self.get_member(user_id)
+        if member is None:
+            raise discord.NotFound(MagicMock(), "User not found")
+        return member
 
 
 class InternalApiTestCase(unittest.TestCase):
@@ -265,6 +272,52 @@ class InternalApiTestCase(unittest.TestCase):
         self.assertEqual(data["count"], 0)
         self.assertEqual(data["servers"], [])
 
+    def test_get_servers_member_not_in_cache_skips_api_fetch(self):
+        """Bei /servers dürfen Member-Cache-Misses keinen Discord-API-Fetch auslösen."""
+        self.guild1._members.pop(123, None)
+
+        with patch("api.permissions.fetch_member_threadsafe") as fetch_mock:
+            res = self.client.get("/servers?user_id=123", headers=self.auth_headers)
+
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["count"], 0)
+        fetch_mock.assert_not_called()
+
+    def test_get_servers_continues_when_single_guild_errors(self):
+        """Ein Fehler in einer Guild darf die Gesamtliste nicht blockieren."""
+        broken_guild = MockGuild(333, "Broken", owner_id=777)
+        self.guild_cache[333] = broken_guild
+
+        with patch("api.routes.check_user_guild_permissions") as permission_mock:
+            def side_effect(bot, guild, user_id, allow_api_fetch=True):
+                if guild.id == 333:
+                    raise RuntimeError("broken guild")
+                return {"owner": True, "permissions": {"administrator": True, "manage_guild": True}, "can_manage": True} if guild.id == 111 and user_id == 999 else None
+
+            permission_mock.side_effect = side_effect
+            res = self.client.get("/servers?user_id=999", headers=self.auth_headers)
+
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["servers"][0]["id"], "111")
+
+    def test_get_servers_concurrent_requests(self):
+        """Gleichzeitige Dashboard-Anfragen sollen konsistent beantwortet werden."""
+        app = self.app
+        headers = self.auth_headers
+
+        def do_request(user_id: int):
+            with app.test_client() as client:
+                response = client.get(f"/servers?user_id={user_id}", headers=headers)
+                return response.status_code, response.get_json()["count"]
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(do_request, [999, 123, 456, 789]))
+
+        self.assertEqual(results, [(200, 1), (200, 1), (200, 1), (200, 1)])
+
     # --- 4. Server-Details (GET /servers/<guild_id>) ---
 
     def test_server_detail_authorized(self):
@@ -359,7 +412,11 @@ class PermissionsHelperTestCase(unittest.TestCase):
         with patch("asyncio.run_coroutine_threadsafe") as mock_run:
             mock_future = MagicMock()
             mock_future.result.side_effect = discord.NotFound(MagicMock(), "User not found")
-            mock_run.return_value = mock_future
+            def close_and_return(coro, loop):
+                coro.close()
+                return mock_future
+
+            mock_run.side_effect = close_and_return
             
             res = check_user_guild_permissions(mock_bot, mock_guild, 12345)
             self.assertIsNone(res)
@@ -375,7 +432,11 @@ class PermissionsHelperTestCase(unittest.TestCase):
         with patch("asyncio.run_coroutine_threadsafe") as mock_run:
             mock_future = MagicMock()
             mock_future.result.side_effect = discord.Forbidden(MagicMock(), "Forbidden")
-            mock_run.return_value = mock_future
+            def close_and_return(coro, loop):
+                coro.close()
+                return mock_future
+
+            mock_run.side_effect = close_and_return
             
             res = fetch_member_threadsafe(mock_bot, mock_guild, 12345)
             self.assertIsNone(res)
@@ -391,10 +452,51 @@ class PermissionsHelperTestCase(unittest.TestCase):
         with patch("asyncio.run_coroutine_threadsafe") as mock_run:
             mock_future = MagicMock()
             mock_future.result.side_effect = TimeoutError("Timeout")
-            mock_run.return_value = mock_future
+            def close_and_return(coro, loop):
+                coro.close()
+                return mock_future
+
+            mock_run.side_effect = close_and_return
             
             res = fetch_member_threadsafe(mock_bot, mock_guild, 12345)
             self.assertIsNone(res)
+
+    def test_check_user_guild_permissions_without_api_fetch(self):
+        mock_guild = MockGuild(111, "Test", owner_id=999)
+        mock_bot = MagicMock()
+
+        with patch("api.permissions.fetch_member_threadsafe") as fetch_mock:
+            res = check_user_guild_permissions(mock_bot, mock_guild, 123, allow_api_fetch=False)
+
+        self.assertIsNone(res)
+        fetch_mock.assert_not_called()
+
+    def test_check_user_guild_permissions_event_loop_unavailable(self):
+        mock_guild = MockGuild(111, "Test", owner_id=999)
+        mock_guild._members = {}
+        mock_bot = MagicMock()
+        mock_bot.loop = None
+
+        res = check_user_guild_permissions(mock_bot, mock_guild, 123, allow_api_fetch=True)
+        self.assertIsNone(res)
+
+    def test_check_user_guild_permissions_timeout_with_api_fetch(self):
+        mock_guild = MockGuild(111, "Test", owner_id=999)
+        mock_bot = MagicMock()
+        mock_bot.loop.is_closed.return_value = False
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            mock_future = MagicMock()
+            mock_future.result.side_effect = TimeoutError("Timeout")
+            def close_and_return(coro, loop):
+                coro.close()
+                return mock_future
+
+            mock_run.side_effect = close_and_return
+
+            res = check_user_guild_permissions(mock_bot, mock_guild, 123, allow_api_fetch=True)
+
+        self.assertIsNone(res)
 
 
 if __name__ == "__main__":

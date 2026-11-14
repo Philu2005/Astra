@@ -1,4 +1,5 @@
 import logging
+import time
 from flask import Blueprint, jsonify, request, current_app
 from api.auth import require_service_auth
 from api.permissions import validate_user_id, check_user_guild_permissions
@@ -44,6 +45,7 @@ def status():
 @require_service_auth
 def get_user_servers():
     """Gibt alle Discord-Server zurück, auf denen der Bot ist und der Benutzer Verwaltungsrechte hat."""
+    started = time.perf_counter()
     if not is_bot_ready():
         return jsonify(success=False, error="Bot not ready"), 503
 
@@ -67,14 +69,38 @@ def get_user_servers():
         guilds_list = list(cache.values())
 
     user_servers = []
+    total_guilds = len(guilds_list)
+    owner_hits = 0
+    cache_member_hits = 0
+    permission_matches = 0
+    errors = 0
+
     for guild in guilds_list:
         try:
-            perm_info = check_user_guild_permissions(bot, guild, user_id)
+            if getattr(guild, "owner_id", None) == user_id:
+                owner_hits += 1
+            elif guild.get_member(user_id) is not None:
+                cache_member_hits += 1
+
+            perm_info = check_user_guild_permissions(bot, guild, user_id, allow_api_fetch=False)
             if perm_info is not None:
+                permission_matches += 1
                 user_servers.append(serialize_guild_summary(guild, perm_info))
         except Exception as e:
-            logger.error(f"Fehler bei Berechtigungsprüfung für Guild {guild.id}: {e}")
+            errors += 1
+            logger.error(f"Fehler bei Berechtigungsprüfung in einer Guild: {e}")
             continue
+
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    logger.info(
+        "/servers Anfrage verarbeitet: guilds=%s owner_cache_hits=%s member_cache_hits=%s authorized=%s errors=%s duration_ms=%s",
+        total_guilds,
+        owner_hits,
+        cache_member_hits,
+        permission_matches,
+        errors,
+        duration_ms,
+    )
 
     return jsonify(success=True, count=len(user_servers), servers=user_servers), 200
 

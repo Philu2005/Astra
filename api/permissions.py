@@ -5,6 +5,17 @@ import discord
 logger = logging.getLogger("astra.api.permissions")
 
 
+def _build_manage_permissions(owner: bool, administrator: bool, manage_guild: bool) -> dict:
+    return {
+        "owner": owner,
+        "permissions": {
+            "administrator": administrator,
+            "manage_guild": manage_guild,
+        },
+        "can_manage": True,
+    }
+
+
 def validate_user_id(raw_id: str | int | None) -> int | None:
     """Validiert eine Discord-User-ID (Snowflake).
     
@@ -59,7 +70,7 @@ def fetch_member_threadsafe(bot, guild: discord.Guild, user_id: int, timeout: fl
         return None
 
 
-def check_user_guild_permissions(bot, guild: discord.Guild, user_id: int) -> dict | None:
+def check_user_guild_permissions(bot, guild: discord.Guild, user_id: int, allow_api_fetch: bool = True) -> dict | None:
     """Prüft, ob der Benutzer Mitglied der Guild ist und Verwaltungsrechte besitzt.
     
     Berücksichtigte Berechtigungen:
@@ -75,30 +86,19 @@ def check_user_guild_permissions(bot, guild: discord.Guild, user_id: int) -> dic
 
     # Schnellprüfung: Ist der Benutzer der Serverbesitzer?
     if getattr(guild, "owner_id", None) == user_id:
-        return {
-            "owner": True,
-            "permissions": {
-                "administrator": True,
-                "manage_guild": True,
-            },
-            "can_manage": True,
-        }
+        return _build_manage_permissions(owner=True, administrator=True, manage_guild=True)
 
     # Mitglied ermitteln
-    member = fetch_member_threadsafe(bot, guild, user_id)
+    member = guild.get_member(user_id)
+    if member is None and allow_api_fetch:
+        member = fetch_member_threadsafe(bot, guild, user_id)
+
     if member is None:
         return None
 
     # Besitzer-Check über Member-Objekt (Fallback)
     if getattr(guild, "owner_id", None) == member.id:
-        return {
-            "owner": True,
-            "permissions": {
-                "administrator": True,
-                "manage_guild": True,
-            },
-            "can_manage": True,
-        }
+        return _build_manage_permissions(owner=True, administrator=True, manage_guild=True)
 
     # Guild-Berechtigungen auswerten
     perms = getattr(member, "guild_permissions", None)
@@ -106,13 +106,6 @@ def check_user_guild_permissions(bot, guild: discord.Guild, user_id: int) -> dic
     manage_guild = bool(perms.manage_guild) if perms else False
 
     if admin or manage_guild:
-        return {
-            "owner": False,
-            "permissions": {
-                "administrator": admin,
-                "manage_guild": manage_guild,
-            },
-            "can_manage": True,
-        }
+        return _build_manage_permissions(owner=False, administrator=admin, manage_guild=manage_guild)
 
     return None
