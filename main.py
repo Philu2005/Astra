@@ -612,6 +612,7 @@ class Astra(commands.Bot):
                     "stats": self._build_global_stats(),
                     "guilds": guilds,
                 }
+                await self._post_internal_api(payload)
             except Exception:
                 logging.exception("[GuildSync] Fehler bei vollständiger Guild-Synchronisation.")
 
