@@ -1,8 +1,6 @@
 import discord
-from waitress import serve
 import threading
 from discord.ext import commands
-from flask import Flask, jsonify
 import traceback
 import asyncio
 import topgg
@@ -21,6 +19,7 @@ from utils.branding import get_current_colour
 from utils.branding import start_branding_task
 from events.topgg import setup_topgg_events
 from events.topgg_webhook import start_topgg_webhook
+from api import create_app, run_flask
 
 guild_cache = {}
 guild_cache_lock = Lock()
@@ -804,82 +803,9 @@ async def sync(ctx, serverid: int = None):
             )
 
 
-def serialize_guild(guild: discord.Guild):
-    return {
-        "id": str(guild.id).strip(),
-        "name": guild.name,
-        "icon": guild.icon.key if guild.icon else None,
-        "memberCount": guild.member_count,
-    }
-
-
-app = Flask(__name__)
-
-
-@app.route("/status")
-def status():
-    return jsonify(online=True)
-
-
-@app.route("/servers")
-def servers():
-    if not bot.is_ready():
-        return jsonify(success=False, error="Bot not ready"), 503
-
-    with guild_cache_lock:
-        servers = [serialize_guild(g) for g in guild_cache.values()]
-
-    return jsonify(success=True, count=len(servers), servers=servers)
-
-
-@app.route("/servers/<int:guild_id>")
-def server_detail(guild_id):
-    if not bot.bot_ready:
-        return jsonify(success=False, error="Bot not ready"), 503
-    with guild_cache_lock:
-        guild = guild_cache.get(guild_id)
-
-    if not guild:
-        return jsonify(success=False, error="Server not found"), 404
-
-    return jsonify(
-        success=True,
-        server={
-            "id": str(guild.id),
-            "name": guild.name,
-            "icon": guild.icon.key if guild.icon else None,
-            "memberCount": guild.member_count,
-            "channelCount": len(guild.channels),
-            "roleCount": len(guild.roles),
-            "ownerId": str(guild.owner_id),
-        },
-    )
-
-
-@app.route("/servers/<int:guild_id>/roles")
-def server_roles(guild_id):
-    if not bot.bot_ready:
-        return jsonify(success=False, error="Bot not ready"), 503
-
-    with guild_cache_lock:
-        guild = guild_cache.get(guild_id)
-
-    if not guild:
-        return jsonify(success=False, error="Server not found"), 404
-
-    roles = [
-        {"id": str(role.id), "name": role.name}
-        for role in guild.roles
-        if role.name != "@everyone"
-    ]
-
-    return jsonify(success=True, count=len(roles), roles=roles)
-
-
-def run_flask():
-    serve(app, host="localhost", port=5000)  # produktionsreif, keine Warning
+app = create_app(bot=bot, guild_cache=guild_cache, guild_cache_lock=guild_cache_lock)
 
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
+    threading.Thread(target=run_flask, args=(app, "127.0.0.1", 5000), daemon=True).start()
     bot.run(TOKEN)
