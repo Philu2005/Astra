@@ -2,7 +2,7 @@ import logging
 import time
 from datetime import datetime
 from flask import Blueprint, jsonify, request, current_app
-from api.auth import require_service_auth
+from api.auth import require_service_auth, get_expected_api_key
 from api.permissions import validate_user_id, check_user_guild_permissions
 from api.serializers import serialize_guild_summary, serialize_guild_detail, serialize_role
 from api.heartbeat import heartbeat_state, derive_bot_status
@@ -139,10 +139,29 @@ def status():
     return jsonify(status_data), 200
 
 
-@api_bp.route("/health", methods=["GET"])
+@api_bp.route("/health", methods=["GET"]) 
 def health():
     """Öffentlicher API-Healthcheck (nur Prozess-Erreichbarkeit)."""
     return jsonify(success=True, api="online"), 200
+
+
+@api_bp.route("/health/live", methods=["GET"])
+def health_live():
+    """Liveness-Check: Prozess läuft und kann Anfragen beantworten."""
+    return jsonify(success=True, status="live"), 200
+
+
+@api_bp.route("/health/ready", methods=["GET"])
+def health_ready():
+    """Readiness-Check: API ist bereit, Anfragen entgegenzunehmen.
+
+    Keine Datenbankprüfung – es wird lediglich geprüft, ob die
+    notwendige Konfiguration (interner Service-Token) vorhanden ist,
+    sodass geschützte Endpunkte benutzt werden können.
+    """
+    key_present = bool(get_expected_api_key())
+    # Minimaler, unkritischer Output ohne Geheimnisse
+    return jsonify(success=True, ready=key_present), 200
 
 
 @api_bp.route("/heartbeat", methods=["POST"])

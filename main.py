@@ -37,11 +37,32 @@ dbl_token = os.getenv("DBL_TOKEN")
 dbl_password = os.getenv("DBL_PASS")
 dbl_port = os.getenv("DBL_PORT")
 dbl_secret_new = os.getenv("DBL_SECRET_NEW")
-internal_api_key = (os.getenv("ASTRA_INTERNAL_API_KEY") or "").strip()
-internal_api_base_url = (os.getenv("ASTRA_INTERNAL_API_BASE_URL") or "http://127.0.0.1:5000").rstrip("/")
-bot_heartbeat_url = internal_api_base_url + "/heartbeat"
-bot_guild_sync_url = internal_api_base_url + "/guild-sync"
-bot_heartbeat_interval = max(5, int(os.getenv("ASTRA_HEARTBEAT_INTERVAL_SECONDS", "30")))
+
+# Heartbeat-/Status-API Konfiguration
+# Bevorzugt die neuen Variablen (ASTRA_STATUS_*), mit Fallback auf bestehende interne Variablen,
+# damit bestehende Deployments weiterhin funktionieren.
+status_api_base_url = (
+    os.getenv("ASTRA_STATUS_API_URL")
+    or os.getenv("ASTRA_INTERNAL_API_BASE_URL")
+    or "http://127.0.0.1:5000"
+).rstrip("/")
+internal_api_key = (
+    os.getenv("ASTRA_STATUS_API_TOKEN")
+    or os.getenv("ASTRA_INTERNAL_API_KEY")
+    or ""
+).strip()
+
+# Ziel-URLs
+bot_heartbeat_url = status_api_base_url + "/heartbeat"
+bot_guild_sync_url = status_api_base_url + "/guild-sync"
+
+# Intervalle/Konfiguration
+bot_heartbeat_interval = max(
+    5,
+    int(os.getenv("ASTRA_STATUS_HEARTBEAT_INTERVAL")
+        or os.getenv("ASTRA_HEARTBEAT_INTERVAL_SECONDS")
+        or "60"),
+)
 bot_sync_retries = max(1, int(os.getenv("ASTRA_GUILD_SYNC_RETRIES", "3")))
 bot_snapshot_sync_interval = max(30, int(os.getenv("ASTRA_GUILD_SNAPSHOT_INTERVAL_SECONDS", "60")))
 
@@ -181,6 +202,20 @@ class Astra(commands.Bot):
 
     async def close(self):
         try:
+            # Best-effort: letzten Heartbeat mit Shutdown-Flag senden
+            try:
+                await asyncio.wait_for(self._send_heartbeat(shutting_down=True), timeout=5)
+            except Exception:
+                pass
+
+            if self.heartbeat_task is not None:
+                self.heartbeat_task.cancel()
+                try:
+                    await self.heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+                self.heartbeat_task = None
+
             if self.guild_snapshot_task is not None:
                 self.guild_snapshot_task.cancel()
                 try:
@@ -677,9 +712,13 @@ class Astra(commands.Bot):
                         WHERE id = 1
                     """)
 
-    async def _send_heartbeat(self):
+    async def _send_heartbeat(self, *, shutting_down: bool = False) -> bool:
+        """Sendet einen Heartbeat an die Astra-Status-API.
+
+        Gibt True zurück, wenn die Anfrage erfolgreich (HTTP < 400) war, sonst False.
+        """
         if not internal_api_key:
-            return
+            return False
 
         ws = getattr(self, "ws", None)
         gateway_connected = bool(ws is not None and not self.is_closed() and not self.is_connecting)
@@ -689,6 +728,9 @@ class Astra(commands.Bot):
             "is_connecting": bool(self.is_connecting),
             "last_heartbeat": datetime.now(timezone.utc).isoformat(),
         }
+
+        if shutting_down:
+            payload["shutting_down"] = True
 
         shard_count = getattr(self, "shard_count", None)
         if shard_count:
@@ -703,15 +745,35 @@ class Astra(commands.Bot):
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(bot_heartbeat_url, json=payload, headers=headers) as response:
-                    if response.status >= 400:
-                        logging.warning("[Heartbeat] API antwortete mit HTTP %s.", response.status)
+                    if response.status < 400:
+                        return True
+                    logging.warning("[Heartbeat] API antwortete mit HTTP %s.", response.status)
+                    return False
         except Exception as e:
             logging.warning("[Heartbeat] API nicht erreichbar: %s", e)
+            return False
 
     async def _heartbeat_loop(self):
+        """Regelmäßiger Heartbeat mit begrenztem, nicht-blockierendem Backoff bei Fehlern."""
+        backoff = 5  # Start mit 5s bei Fehlern
+        max_backoff = min(max(30, bot_heartbeat_interval), 60)
         while not self.is_closed():
-            await self._send_heartbeat()
-            await asyncio.sleep(bot_heartbeat_interval)
+            try:
+                ok = await self._send_heartbeat()
+                if ok:
+                    # Bei Erfolg normales Intervall und Backoff zurücksetzen
+                    backoff = 5
+                    await asyncio.sleep(bot_heartbeat_interval)
+                else:
+                    # Bei Fehler kurzer Backoff, begrenzt und exponentiell ansteigend
+                    await asyncio.sleep(backoff)
+                    backoff = min(max_backoff, backoff * 2)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.exception("[Heartbeat] Unerwarteter Fehler im Heartbeat-Loop")
+                await asyncio.sleep(backoff)
+                backoff = min(max_backoff, backoff * 2)
 
     def all_app_commands(self):
         global_commands = self.tree.get_commands()
