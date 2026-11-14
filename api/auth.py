@@ -3,19 +3,41 @@ import os
 import logging
 from functools import wraps
 from flask import request, jsonify, current_app
+from dotenv import dotenv_values
 
 logger = logging.getLogger("astra.api.auth")
 
+ENV_FILE_PATH = "/root/Astra/.env"
 ENV_API_KEY_NAME = "ASTRA_INTERNAL_API_KEY"
 
 
-def get_expected_api_key() -> str | None:
-    """Ruft den konfigurierten internen API-Schlüssel ab."""
+def get_expected_api_key(env_path: str = ENV_FILE_PATH) -> str | None:
+    """Lädt den internen API-Schlüssel ausschließlich aus /root/Astra/.env.
+    
+    Verwendet python-dotenv zum gezielten Einlesen der Datei.
+    Gibt None zurück, wenn die Datei nicht existiert oder der Schlüssel fehlt/leer ist.
+    """
     if current_app:
-        app_key = current_app.config.get("ASTRA_INTERNAL_API_KEY")
+        app_key = current_app.config.get(ENV_API_KEY_NAME)
         if app_key:
-            return app_key
-    return os.getenv(ENV_API_KEY_NAME)
+            app_key_str = str(app_key).strip()
+            if app_key_str:
+                return app_key_str
+
+    if not os.path.exists(env_path):
+        return None
+
+    try:
+        env_values = dotenv_values(dotenv_path=env_path)
+        raw_key = env_values.get(ENV_API_KEY_NAME)
+        if raw_key:
+            clean_key = str(raw_key).strip()
+            if clean_key:
+                return clean_key
+        return None
+    except Exception as e:
+        logger.error(f"Fehler beim Einlesen der .env-Datei '{env_path}': {e}")
+        return None
 
 
 def verify_service_token(token: str | None) -> bool:

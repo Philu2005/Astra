@@ -24,7 +24,9 @@ Dieses Dokument definiert den verbindlichen API-Vertrag zwischen dem **Astra Dis
 
 Alle geschützten Endpoints erfordern eine Service-Authentifizierung via Secret Token im HTTP-Header.
 
-- **Umgebungsvariable:** `ASTRA_INTERNAL_API_KEY`
+- **Quelle auf dem Host:** `/root/Astra/.env`
+- **Konfigurationsvariable:** `ASTRA_INTERNAL_API_KEY=...`
+- **Ladevorgang:** Wird beim Start der internen Flask-API explizit aus `/root/Astra/.env` eingelesen. Falls die Datei oder der Schlüssel fehlt/leer ist, bleibt der interne API-Port geschlossen.
 - **Header:**
   ```http
   Authorization: Bearer <ASTRA_INTERNAL_API_KEY>

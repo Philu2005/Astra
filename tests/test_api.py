@@ -3,7 +3,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 import discord
 from threading import Lock
-from api.app import create_app
+from api.app import create_app, run_flask
+from api.auth import get_expected_api_key, verify_service_token
 from api.permissions import validate_user_id, check_user_guild_permissions, fetch_member_threadsafe
 
 
@@ -129,13 +130,49 @@ class InternalApiTestCase(unittest.TestCase):
         data = res.get_json()
         self.assertTrue(data["success"])
 
-    def test_auth_via_env_var(self):
-        """Service-Authentifizierung funktioniert auch über die Umgebungsvariable ASTRA_INTERNAL_API_KEY."""
-        with patch.dict(os.environ, {"ASTRA_INTERNAL_API_KEY": "env_secret_key_999"}):
+    def test_auth_via_dotenv_file(self):
+        """Service-Authentifizierung lädt Schlüssel aus /root/Astra/.env."""
+        with patch("os.path.exists", return_value=True), \
+             patch("api.auth.dotenv_values", return_value={"ASTRA_INTERNAL_API_KEY": "env_file_secret_key"}):
             app = create_app(bot=self.mock_bot, guild_cache=self.guild_cache, guild_cache_lock=self.guild_cache_lock)
             client = app.test_client()
-            res = client.get("/servers?user_id=999", headers={"Authorization": "Bearer env_secret_key_999"})
+            res = client.get("/servers?user_id=999", headers={"Authorization": "Bearer env_file_secret_key"})
             self.assertEqual(res.status_code, 200)
+
+    def test_get_expected_api_key_missing_file(self):
+        """Wenn /root/Astra/.env nicht existiert, gibt get_expected_api_key None zurück."""
+        with patch("os.path.exists", return_value=False):
+            key = get_expected_api_key(env_path="/root/Astra/.env")
+            self.assertIsNone(key)
+
+    def test_get_expected_api_key_empty_or_missing_in_file(self):
+        """Wenn Schlüssel in .env fehlt oder leer ist, gibt get_expected_api_key None zurück."""
+        with patch("os.path.exists", return_value=True), \
+             patch("api.auth.dotenv_values", return_value={"ASTRA_INTERNAL_API_KEY": "   "}):
+            key = get_expected_api_key(env_path="/root/Astra/.env")
+            self.assertIsNone(key)
+
+        with patch("os.path.exists", return_value=True), \
+             patch("api.auth.dotenv_values", return_value={}):
+            key = get_expected_api_key(env_path="/root/Astra/.env")
+            self.assertIsNone(key)
+
+    def test_run_flask_aborts_when_api_key_missing(self):
+        """run_flask startet Waitress nicht, wenn der API-Schlüssel fehlt oder leer ist."""
+        with patch("os.path.exists", return_value=False), \
+             patch("api.app.serve") as mock_serve:
+            app = create_app(bot=self.mock_bot, guild_cache=self.guild_cache, guild_cache_lock=self.guild_cache_lock)
+            run_flask(app, host="127.0.0.1", port=5000)
+            mock_serve.assert_not_called()
+
+    def test_run_flask_starts_when_api_key_valid(self):
+        """run_flask startet Waitress, wenn ein gültiger API-Schlüssel vorhanden ist."""
+        with patch("os.path.exists", return_value=True), \
+             patch("api.auth.dotenv_values", return_value={"ASTRA_INTERNAL_API_KEY": "valid_key"}), \
+             patch("api.app.serve") as mock_serve:
+            app = create_app(bot=self.mock_bot, guild_cache=self.guild_cache, guild_cache_lock=self.guild_cache_lock)
+            run_flask(app, host="127.0.0.1", port=5000)
+            mock_serve.assert_called_once_with(app, host="127.0.0.1", port=5000)
 
     # --- 2. Benutzer-Validierung und Bot-Status Tests ---
 

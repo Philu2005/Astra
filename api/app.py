@@ -2,6 +2,7 @@ import logging
 from flask import Flask, jsonify
 from waitress import serve
 from api.routes import api_bp
+from api.auth import get_expected_api_key
 
 logger = logging.getLogger("astra.api")
 
@@ -44,6 +45,20 @@ def create_app(bot=None, guild_cache=None, guild_cache_lock=None, config=None) -
 
 
 def run_flask(app: Flask, host: str = "127.0.0.1", port: int = 5000):
-    """Startet den Waitress-WSGI-Server für die interne Flask-API gebunden an 127.0.0.1."""
+    """Startet den Waitress-WSGI-Server für die interne Flask-API gebunden an 127.0.0.1.
+    
+    Überprüft vor dem Start, ob ein gültiger API-Schlüssel in '/root/Astra/.env' vorhanden ist.
+    Falls nicht, bleibt der API-Server geschlossen.
+    """
+    with app.app_context():
+        api_key = get_expected_api_key()
+
+    if not api_key:
+        logger.error(
+            "❌ Interne API wird nicht gestartet: 'ASTRA_INTERNAL_API_KEY' fehlt oder ist leer in '/root/Astra/.env'. "
+            "Die interne API bleibt aus Sicherheitsgründen geschlossen."
+        )
+        return
+
     logger.info(f"🚀 Interne Flask-API startet auf http://{host}:{port}")
     serve(app, host=host, port=port)
