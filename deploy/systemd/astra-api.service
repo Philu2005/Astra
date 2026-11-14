@@ -1,0 +1,15 @@
+[Unit]
+Description=Astra Internal API Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Astra
+EnvironmentFile=/root/Astra/.env
+ExecStart=/root/Astra/.venv/bin/python -m api.run_api
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

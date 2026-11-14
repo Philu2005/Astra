@@ -7,15 +7,16 @@ from dotenv import dotenv_values
 
 logger = logging.getLogger("astra.api.auth")
 
-ENV_FILE_PATH = "/root/Astra/.env"
+ENV_FILE_PATH = os.getenv("ASTRA_ENV_FILE", ".env")
 ENV_API_KEY_NAME = "ASTRA_INTERNAL_API_KEY"
 
 
 def get_expected_api_key(env_path: str = ENV_FILE_PATH) -> str | None:
-    """Lädt den internen API-Schlüssel ausschließlich aus /root/Astra/.env.
+    """Lädt den internen API-Schlüssel aus Konfiguration oder optionaler .env-Datei.
     
-    Verwendet python-dotenv zum gezielten Einlesen der Datei.
-    Gibt None zurück, wenn die Datei nicht existiert oder der Schlüssel fehlt/leer ist.
+    Verwendet bevorzugt App-Konfiguration/Umgebungsvariablen und optional
+    einen Dateifallback über python-dotenv. Gibt None zurück, wenn kein
+    gültiger Schlüssel verfügbar ist.
     """
     if current_app:
         app_key = current_app.config.get(ENV_API_KEY_NAME)

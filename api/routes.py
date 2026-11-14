@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, request, current_app
 from api.auth import require_service_auth
 from api.permissions import validate_user_id, check_user_guild_permissions
 from api.serializers import serialize_guild_summary, serialize_guild_detail, serialize_role
+from api.heartbeat import heartbeat_state, derive_bot_status
 
 logger = logging.getLogger("astra.api.routes")
 
@@ -34,11 +35,46 @@ def get_guild_cache_lock():
 
 @api_bp.route("/status", methods=["GET"])
 def status():
-    """Öffentlicher, minimaler Healthcheck-Endpoint.
-    
-    Gibt bewusst keine internen Systemdaten, Secrets oder Guild-Infos preis.
-    """
-    return jsonify(online=True), 200
+    """Liefert den zuletzt bekannten Bot-Status auf Basis eingehender Heartbeats."""
+    stale_after = float(current_app.config.get("HEARTBEAT_STALE_AFTER_SECONDS", 90))
+    payload, received_ts = heartbeat_state.snapshot()
+    status_data = derive_bot_status(payload, received_ts, stale_after)
+    return jsonify(status_data), 200
+
+
+@api_bp.route("/health", methods=["GET"])
+def health():
+    """Öffentlicher API-Healthcheck (nur Prozess-Erreichbarkeit)."""
+    return jsonify(success=True, api="online"), 200
+
+
+@api_bp.route("/heartbeat", methods=["POST"])
+@require_service_auth
+def heartbeat():
+    """Nimmt einen authentifizierten Bot-Heartbeat entgegen."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, error="Invalid heartbeat payload"), 400
+
+    required_fields = ("gateway_connected", "is_ready", "is_connecting", "last_heartbeat")
+    if any(field not in payload for field in required_fields):
+        return jsonify(success=False, error="Invalid heartbeat payload"), 400
+
+    if not isinstance(payload.get("gateway_connected"), bool):
+        return jsonify(success=False, error="Invalid heartbeat payload"), 400
+    if not isinstance(payload.get("is_ready"), bool):
+        return jsonify(success=False, error="Invalid heartbeat payload"), 400
+    if not isinstance(payload.get("is_connecting"), bool):
+        return jsonify(success=False, error="Invalid heartbeat payload"), 400
+    if not isinstance(payload.get("last_heartbeat"), str) or not payload.get("last_heartbeat").strip():
+        return jsonify(success=False, error="Invalid heartbeat payload"), 400
+
+    shards = payload.get("shards")
+    if shards is not None and not isinstance(shards, list):
+        return jsonify(success=False, error="Invalid heartbeat payload"), 400
+
+    heartbeat_state.update(payload)
+    return jsonify(success=True), 200
 
 
 @api_bp.route("/servers", methods=["GET"])

@@ -1,10 +1,10 @@
 import discord
-import threading
 from discord.ext import commands
 import traceback
 import asyncio
 import topgg
 import aiomysql
+import aiohttp
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timezone
@@ -19,7 +19,6 @@ from utils.branding import get_current_colour
 from utils.branding import start_branding_task
 from events.topgg import setup_topgg_events
 from events.topgg_webhook import start_topgg_webhook
-from api import create_app, run_flask
 
 guild_cache = {}
 guild_cache_lock = Lock()
@@ -38,6 +37,9 @@ dbl_token = os.getenv("DBL_TOKEN")
 dbl_password = os.getenv("DBL_PASS")
 dbl_port = os.getenv("DBL_PORT")
 dbl_secret_new = os.getenv("DBL_SECRET_NEW")
+internal_api_key = (os.getenv("ASTRA_INTERNAL_API_KEY") or "").strip()
+bot_heartbeat_url = (os.getenv("ASTRA_INTERNAL_API_BASE_URL") or "http://127.0.0.1:5000").rstrip("/") + "/heartbeat"
+bot_heartbeat_interval = max(5, int(os.getenv("ASTRA_HEARTBEAT_INTERVAL_SECONDS", "30")))
 
 
 
@@ -69,6 +71,7 @@ class Astra(commands.Bot):
         self.is_connecting = False
         self.bot_ready = False
         self.branding_task = None
+        self.heartbeat_task = None
 
         self.initial_extensions = [
             "cogs.reminder",
@@ -445,6 +448,10 @@ class Astra(commands.Bot):
         self.is_connecting = False
         logging.info("♻️ WebSocket-Sitzung erfolgreich fortgesetzt.")
 
+    async def on_disconnect(self):
+        self.is_connecting = True
+        logging.warning("⚠️ Verbindung zum Discord-Gateway unterbrochen.")
+
     async def on_ready(self):
         self.is_connecting = False
         if self.pool is None:
@@ -471,6 +478,45 @@ class Astra(commands.Bot):
                       servercount, usercount, commandCount, channelCount))
                 
                 self.bot_ready = True
+
+        if self.heartbeat_task is None or self.heartbeat_task.done():
+            self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+    async def _send_heartbeat(self):
+        if not internal_api_key:
+            return
+
+        ws = getattr(self, "ws", None)
+        gateway_connected = bool(ws is not None and not self.is_closed() and not self.is_connecting)
+        payload = {
+            "gateway_connected": gateway_connected,
+            "is_ready": bool(self.is_ready()),
+            "is_connecting": bool(self.is_connecting),
+            "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+        }
+
+        shard_count = getattr(self, "shard_count", None)
+        if shard_count:
+            payload["shards"] = [
+                {"id": shard_id, "latency": round(latency, 4)}
+                for shard_id, latency in self.latencies
+            ]
+
+        timeout = aiohttp.ClientTimeout(total=10)
+        headers = {"Authorization": f"Bearer {internal_api_key}"}
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(bot_heartbeat_url, json=payload, headers=headers) as response:
+                    if response.status >= 400:
+                        logging.warning("[Heartbeat] API antwortete mit HTTP %s.", response.status)
+        except Exception as e:
+            logging.warning("[Heartbeat] API nicht erreichbar: %s", e)
+
+    async def _heartbeat_loop(self):
+        while not self.is_closed():
+            await self._send_heartbeat()
+            await asyncio.sleep(bot_heartbeat_interval)
 
     def all_app_commands(self):
         global_commands = self.tree.get_commands()
@@ -803,9 +849,5 @@ async def sync(ctx, serverid: int = None):
             )
 
 
-app = create_app(bot=bot, guild_cache=guild_cache, guild_cache_lock=guild_cache_lock)
-
-
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, args=(app, "127.0.0.1", 5000), daemon=True).start()
     bot.run(TOKEN)

@@ -100,11 +100,63 @@ class InternalApiTestCase(unittest.TestCase):
     # --- 1. Service-Authentifizierung Tests ---
 
     def test_status_endpoint_unauthenticated(self):
-        """GET /status muss ohne Authentifizierung erreichbar sein und minimal antworten."""
+        """GET /status muss ohne Authentifizierung erreichbar sein und Bot-Status liefern."""
         res = self.client.get("/status")
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
-        self.assertEqual(data, {"online": True})
+        self.assertFalse(data["online"])
+        self.assertEqual(data["status"], "unknown")
+
+    def test_health_endpoint(self):
+        res = self.client.get("/health")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data, {"success": True, "api": "online"})
+
+    def test_heartbeat_endpoint_requires_auth(self):
+        res = self.client.post("/heartbeat", json={})
+        self.assertEqual(res.status_code, 401)
+
+    def test_heartbeat_endpoint_invalid_payload(self):
+        res = self.client.post("/heartbeat", headers=self.auth_headers, json={"foo": "bar"})
+        self.assertEqual(res.status_code, 400)
+
+    def test_status_online_after_valid_heartbeat(self):
+        payload = {
+            "gateway_connected": True,
+            "is_ready": True,
+            "is_connecting": False,
+            "last_heartbeat": "2026-01-01T00:00:00+00:00",
+        }
+        hb_res = self.client.post("/heartbeat", headers=self.auth_headers, json=payload)
+        self.assertEqual(hb_res.status_code, 200)
+
+        res = self.client.get("/status")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["online"])
+        self.assertEqual(data["status"], "online")
+
+    def test_status_offline_when_heartbeat_is_stale(self):
+        payload = {
+            "gateway_connected": True,
+            "is_ready": True,
+            "is_connecting": False,
+            "last_heartbeat": "2026-01-01T00:00:00+00:00",
+        }
+
+        with patch("api.heartbeat.time.time") as time_mock:
+            time_mock.return_value = 100.0
+            hb_res = self.client.post("/heartbeat", headers=self.auth_headers, json=payload)
+            self.assertEqual(hb_res.status_code, 200)
+
+            time_mock.return_value = 300.0
+            res = self.client.get("/status")
+
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertFalse(data["online"])
+        self.assertEqual(data["status"], "offline")
 
     def test_missing_auth_header(self):
         """Geschützte Endpoints müssen ohne Auth-Header HTTP 401 liefern."""

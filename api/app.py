@@ -47,7 +47,7 @@ def create_app(bot=None, guild_cache=None, guild_cache_lock=None, config=None) -
 def run_flask(app: Flask, host: str = "127.0.0.1", port: int = 5000):
     """Startet den Waitress-WSGI-Server für die interne Flask-API gebunden an 127.0.0.1.
     
-    Überprüft vor dem Start, ob ein gültiger API-Schlüssel in '/root/Astra/.env' vorhanden ist.
+    Überprüft vor dem Start, ob ein gültiger API-Schlüssel vorhanden ist.
     Falls nicht, bleibt der API-Server geschlossen.
     """
     with app.app_context():
@@ -55,7 +55,7 @@ def run_flask(app: Flask, host: str = "127.0.0.1", port: int = 5000):
 
     if not api_key:
         logger.error(
-            "❌ Interne API wird nicht gestartet: 'ASTRA_INTERNAL_API_KEY' fehlt oder ist leer in '/root/Astra/.env'. "
+            "❌ Interne API wird nicht gestartet: 'ASTRA_INTERNAL_API_KEY' fehlt oder ist leer. "
             "Die interne API bleibt aus Sicherheitsgründen geschlossen."
         )
         return
