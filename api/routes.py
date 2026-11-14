@@ -5,6 +5,7 @@ from api.auth import require_service_auth
 from api.permissions import validate_user_id, check_user_guild_permissions
 from api.serializers import serialize_guild_summary, serialize_guild_detail, serialize_role
 from api.heartbeat import heartbeat_state, derive_bot_status
+from api.guild_state import guild_state_store
 
 logger = logging.getLogger("astra.api.routes")
 
@@ -12,25 +13,100 @@ api_bp = Blueprint("internal_api", __name__)
 
 
 def is_bot_ready() -> bool:
-    """Prüft, ob die Bot-Instanz bereit ist."""
-    bot = current_app.config.get("DISCORD_BOT")
-    if bot is None:
+    """Prüft, ob ein verwertbarer Guild-Snapshot vorhanden und aktuell ist."""
+    _, full_sync_ts, _ = guild_state_store.snapshot()
+    if full_sync_ts is None:
         return False
-    if hasattr(bot, "is_ready") and not bot.is_ready():
+    max_age = float(current_app.config.get("GUILD_SNAPSHOT_STALE_AFTER_SECONDS", 120))
+    return (time.time() - full_sync_ts) <= max_age
+
+
+def get_guild_cache() -> dict:
+    """Gibt den synchronisierten Guild-Cache zurück."""
+    guilds, _, _ = guild_state_store.snapshot()
+    return guilds
+
+
+def get_guild_cache_lock():
+    """Kompatibilitäts-Stub: Lock wird intern im Store verwaltet."""
+    return None
+
+
+def _validate_member_payload(member: dict) -> bool:
+    if not isinstance(member, dict):
         return False
-    if hasattr(bot, "bot_ready") and not bot.bot_ready:
+    member_id = validate_user_id(member.get("id"))
+    if member_id is None:
+        return False
+    permissions = member.get("permissions")
+    if not isinstance(permissions, dict):
+        return False
+    for key in ("administrator", "manage_guild"):
+        if not isinstance(permissions.get(key), bool):
+            return False
+    return True
+
+
+def _validate_role_payload(role: dict) -> bool:
+    if not isinstance(role, dict):
+        return False
+    role_id = validate_user_id(role.get("id"))
+    if role_id is None:
+        return False
+    name = role.get("name")
+    if not isinstance(name, str):
+        return False
+    permissions = role.get("permissions")
+    if permissions is not None and not isinstance(permissions, dict):
         return False
     return True
 
 
-def get_guild_cache() -> dict:
-    """Gibt den Guild-Cache zurück."""
-    return current_app.config.get("GUILD_CACHE", {})
+def _validate_channel_payload(channel: dict) -> bool:
+    if not isinstance(channel, dict):
+        return False
+    channel_id = validate_user_id(channel.get("id"))
+    if channel_id is None:
+        return False
+    if not isinstance(channel.get("name", ""), str):
+        return False
+    if not isinstance(channel.get("type", ""), str):
+        return False
+    return True
 
 
-def get_guild_cache_lock():
-    """Gibt den Guild-Cache-Lock zurück."""
-    return current_app.config.get("GUILD_CACHE_LOCK")
+def _validate_guild_payload(guild: dict) -> bool:
+    if not isinstance(guild, dict):
+        return False
+
+    guild_id = validate_user_id(guild.get("id"))
+    owner_id = validate_user_id(guild.get("owner_id"))
+    if guild_id is None or owner_id is None:
+        return False
+
+    if not isinstance(guild.get("name", ""), str):
+        return False
+
+    members = guild.get("members")
+    roles = guild.get("roles")
+    channels = guild.get("channels")
+
+    if not isinstance(members, list) or not all(_validate_member_payload(m) for m in members):
+        return False
+    if not isinstance(roles, list) or not all(_validate_role_payload(r) for r in roles):
+        return False
+    if channels is not None and (not isinstance(channels, list) or not all(_validate_channel_payload(c) for c in channels)):
+        return False
+
+    member_count = guild.get("member_count")
+    if member_count is not None and not isinstance(member_count, int):
+        return False
+
+    icon = guild.get("icon")
+    if icon is not None and not isinstance(icon, str):
+        return False
+
+    return True
 
 
 @api_bp.route("/status", methods=["GET"])
@@ -77,13 +153,58 @@ def heartbeat():
     return jsonify(success=True), 200
 
 
+@api_bp.route("/guild-sync", methods=["POST"])
+@require_service_auth
+def guild_sync():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, error="Invalid sync payload"), 400
+
+    mode = payload.get("mode")
+    if mode not in {"full", "upsert", "delete"}:
+        return jsonify(success=False, error="Invalid sync payload"), 400
+
+    if mode == "full":
+        guilds = payload.get("guilds")
+        if not isinstance(guilds, list) or not all(_validate_guild_payload(g) for g in guilds):
+            return jsonify(success=False, error="Invalid sync payload"), 400
+        result = guild_state_store.replace_all(guilds)
+        return jsonify(success=True, mode="full", guilds=result["guilds"]), 200
+
+    if mode == "upsert":
+        guild = payload.get("guild")
+        if not _validate_guild_payload(guild):
+            return jsonify(success=False, error="Invalid sync payload"), 400
+        saved = guild_state_store.upsert_guild(guild)
+        if not saved:
+            return jsonify(success=False, error="Invalid sync payload"), 400
+        return jsonify(success=True, mode="upsert"), 200
+
+    guild_id = validate_user_id(payload.get("guild_id"))
+    if guild_id is None:
+        return jsonify(success=False, error="Invalid sync payload"), 400
+    removed = guild_state_store.remove_guild(guild_id)
+    return jsonify(success=True, mode="delete", removed=removed), 200
+
+
+def _get_server_data_state() -> tuple[bool, str | None]:
+    _, full_sync_ts, _ = guild_state_store.snapshot()
+    if full_sync_ts is None:
+        return False, "Guild data not synchronized"
+    max_age = float(current_app.config.get("GUILD_SNAPSHOT_STALE_AFTER_SECONDS", 120))
+    if (time.time() - full_sync_ts) > max_age:
+        return False, "Guild data is stale"
+    return True, None
+
+
 @api_bp.route("/servers", methods=["GET"])
 @require_service_auth
 def get_user_servers():
     """Gibt alle Discord-Server zurück, auf denen der Bot ist und der Benutzer Verwaltungsrechte hat."""
     started = time.perf_counter()
-    if not is_bot_ready():
-        return jsonify(success=False, error="Bot not ready"), 503
+    server_data_ready, error = _get_server_data_state()
+    if not server_data_ready:
+        return jsonify(success=False, error=error), 503
 
     raw_user_id = request.args.get("user_id") or request.headers.get("X-User-ID")
     if not raw_user_id:
@@ -93,16 +214,8 @@ def get_user_servers():
     if user_id is None:
         return jsonify(success=False, error="Invalid user_id format"), 400
 
-    bot = current_app.config.get("DISCORD_BOT")
     cache = get_guild_cache()
-    lock = get_guild_cache_lock()
-
-    # Snapshot der Guilds unter Lock ziehen, um Lock nicht während Berechtigungsabfragen zu blockieren
-    if lock:
-        with lock:
-            guilds_list = list(cache.values())
-    else:
-        guilds_list = list(cache.values())
+    guilds_list = list(cache.values())
 
     user_servers = []
     total_guilds = len(guilds_list)
@@ -113,12 +226,12 @@ def get_user_servers():
 
     for guild in guilds_list:
         try:
-            if getattr(guild, "owner_id", None) == user_id:
+            if validate_user_id(guild.get("owner_id")) == user_id:
                 owner_hits += 1
-            elif guild.get_member(user_id) is not None:
+            elif any(validate_user_id(m.get("id")) == user_id for m in guild.get("members", [])):
                 cache_member_hits += 1
 
-            perm_info = check_user_guild_permissions(bot, guild, user_id, allow_api_fetch=False)
+            perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
             if perm_info is not None:
                 permission_matches += 1
                 user_servers.append(serialize_guild_summary(guild, perm_info))
@@ -145,8 +258,9 @@ def get_user_servers():
 @require_service_auth
 def get_server_detail(guild_id: int):
     """Gibt Detailinformationen zu einem Discord-Server zurück, falls der Benutzer berechtigt ist."""
-    if not is_bot_ready():
-        return jsonify(success=False, error="Bot not ready"), 503
+    server_data_ready, error = _get_server_data_state()
+    if not server_data_ready:
+        return jsonify(success=False, error=error), 503
 
     raw_user_id = request.args.get("user_id") or request.headers.get("X-User-ID")
     if not raw_user_id:
@@ -156,21 +270,13 @@ def get_server_detail(guild_id: int):
     if user_id is None:
         return jsonify(success=False, error="Invalid user_id format"), 400
 
-    bot = current_app.config.get("DISCORD_BOT")
     cache = get_guild_cache()
-    lock = get_guild_cache_lock()
-
-    guild = None
-    if lock:
-        with lock:
-            guild = cache.get(guild_id)
-    else:
-        guild = cache.get(guild_id)
+    guild = cache.get(guild_id)
 
     if not guild:
         return jsonify(success=False, error="Server not found"), 404
 
-    perm_info = check_user_guild_permissions(bot, guild, user_id)
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
     if perm_info is None:
         return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
 
@@ -184,8 +290,9 @@ def get_server_detail(guild_id: int):
 @require_service_auth
 def get_server_roles(guild_id: int):
     """Gibt die Rollen eines Servers zurück, falls der Benutzer berechtigt ist."""
-    if not is_bot_ready():
-        return jsonify(success=False, error="Bot not ready"), 503
+    server_data_ready, error = _get_server_data_state()
+    if not server_data_ready:
+        return jsonify(success=False, error=error), 503
 
     raw_user_id = request.args.get("user_id") or request.headers.get("X-User-ID")
     if not raw_user_id:
@@ -195,29 +302,21 @@ def get_server_roles(guild_id: int):
     if user_id is None:
         return jsonify(success=False, error="Invalid user_id format"), 400
 
-    bot = current_app.config.get("DISCORD_BOT")
     cache = get_guild_cache()
-    lock = get_guild_cache_lock()
-
-    guild = None
-    if lock:
-        with lock:
-            guild = cache.get(guild_id)
-    else:
-        guild = cache.get(guild_id)
+    guild = cache.get(guild_id)
 
     if not guild:
         return jsonify(success=False, error="Server not found"), 404
 
-    perm_info = check_user_guild_permissions(bot, guild, user_id)
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
     if perm_info is None:
         return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
 
-    guild_roles = getattr(guild, "roles", [])
+    guild_roles = guild.get("roles", [])
     roles = [
         serialize_role(role)
         for role in guild_roles
-        if getattr(role, "name", "") != "@everyone"
+        if role.get("name", "") != "@everyone"
     ]
 
     return jsonify(success=True, count=len(roles), roles=roles), 200

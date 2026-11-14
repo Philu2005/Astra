@@ -18,6 +18,7 @@ def create_app(bot=None, guild_cache=None, guild_cache_lock=None, config=None) -
     app.config["DISCORD_BOT"] = bot
     app.config["GUILD_CACHE"] = guild_cache if guild_cache is not None else {}
     app.config["GUILD_CACHE_LOCK"] = guild_cache_lock
+    app.config.setdefault("GUILD_SNAPSHOT_STALE_AFTER_SECONDS", 120)
 
     # Blueprint registrieren
     app.register_blueprint(api_bp)

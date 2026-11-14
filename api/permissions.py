@@ -84,6 +84,9 @@ def check_user_guild_permissions(bot, guild: discord.Guild, user_id: int, allow_
     if guild is None or not user_id:
         return None
 
+    if isinstance(guild, dict):
+        return _check_user_serialized_guild_permissions(guild, user_id)
+
     # Schnellprüfung: Ist der Benutzer der Serverbesitzer?
     if getattr(guild, "owner_id", None) == user_id:
         return _build_manage_permissions(owner=True, administrator=True, manage_guild=True)
@@ -107,5 +110,32 @@ def check_user_guild_permissions(bot, guild: discord.Guild, user_id: int, allow_
 
     if admin or manage_guild:
         return _build_manage_permissions(owner=False, administrator=admin, manage_guild=manage_guild)
+
+    return None
+
+
+def _check_user_serialized_guild_permissions(guild_data: dict, user_id: int) -> dict | None:
+    owner_id = validate_user_id(guild_data.get("owner_id"))
+    if owner_id == user_id:
+        return _build_manage_permissions(owner=True, administrator=True, manage_guild=True)
+
+    members = guild_data.get("members")
+    if not isinstance(members, list):
+        return None
+
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+
+        member_id = validate_user_id(member.get("id"))
+        if member_id != user_id:
+            continue
+
+        perms = member.get("permissions") if isinstance(member.get("permissions"), dict) else {}
+        admin = bool(perms.get("administrator", False))
+        manage_guild = bool(perms.get("manage_guild", False))
+        if admin or manage_guild:
+            return _build_manage_permissions(owner=False, administrator=admin, manage_guild=manage_guild)
+        return None
 
     return None

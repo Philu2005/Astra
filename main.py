@@ -38,8 +38,11 @@ dbl_password = os.getenv("DBL_PASS")
 dbl_port = os.getenv("DBL_PORT")
 dbl_secret_new = os.getenv("DBL_SECRET_NEW")
 internal_api_key = (os.getenv("ASTRA_INTERNAL_API_KEY") or "").strip()
-bot_heartbeat_url = (os.getenv("ASTRA_INTERNAL_API_BASE_URL") or "http://127.0.0.1:5000").rstrip("/") + "/heartbeat"
+internal_api_base_url = (os.getenv("ASTRA_INTERNAL_API_BASE_URL") or "http://127.0.0.1:5000").rstrip("/")
+bot_heartbeat_url = internal_api_base_url + "/heartbeat"
+bot_guild_sync_url = internal_api_base_url + "/guild-sync"
 bot_heartbeat_interval = max(5, int(os.getenv("ASTRA_HEARTBEAT_INTERVAL_SECONDS", "30")))
+bot_sync_retries = max(1, int(os.getenv("ASTRA_GUILD_SYNC_RETRIES", "3")))
 
 
 
@@ -72,6 +75,7 @@ class Astra(commands.Bot):
         self.bot_ready = False
         self.branding_task = None
         self.heartbeat_task = None
+        self.guild_sync_lock = asyncio.Lock()
 
         self.initial_extensions = [
             "cogs.reminder",
@@ -481,6 +485,139 @@ class Astra(commands.Bot):
 
         if self.heartbeat_task is None or self.heartbeat_task.done():
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+        asyncio.create_task(self._sync_full_guild_snapshot())
+
+    async def _serialize_guild_for_sync(self, guild: discord.Guild) -> dict:
+        channels = []
+        for channel in getattr(guild, "channels", []):
+            channels.append({
+                "id": str(channel.id),
+                "name": str(channel.name),
+                "type": str(channel.type),
+            })
+
+        roles = []
+        for role in getattr(guild, "roles", []):
+            perms = getattr(role, "permissions", None)
+            roles.append({
+                "id": str(role.id),
+                "name": str(role.name),
+                "permissions": {
+                    "administrator": bool(getattr(perms, "administrator", False)),
+                    "manage_guild": bool(getattr(perms, "manage_guild", False)),
+                },
+            })
+
+        members = []
+        for member in getattr(guild, "members", []):
+            perms = getattr(member, "guild_permissions", None)
+            members.append({
+                "id": str(member.id),
+                "permissions": {
+                    "administrator": bool(getattr(perms, "administrator", False)),
+                    "manage_guild": bool(getattr(perms, "manage_guild", False)),
+                },
+            })
+
+        return {
+            "id": str(guild.id),
+            "name": str(guild.name),
+            "owner_id": str(guild.owner_id),
+            "icon": guild.icon.key if guild.icon else None,
+            "member_count": guild.member_count,
+            "channels": channels,
+            "roles": roles,
+            "members": members,
+        }
+
+    async def _post_internal_api(self, payload: dict) -> bool:
+        if not internal_api_key:
+            return False
+
+        headers = {"Authorization": f"Bearer {internal_api_key}"}
+        timeout = aiohttp.ClientTimeout(total=10)
+        for attempt in range(1, bot_sync_retries + 1):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(bot_guild_sync_url, json=payload, headers=headers) as response:
+                        if response.status < 400:
+                            return True
+                        logging.warning("[GuildSync] API antwortete mit HTTP %s (Versuch %s/%s).", response.status, attempt, bot_sync_retries)
+            except Exception as e:
+                logging.warning("[GuildSync] API nicht erreichbar (Versuch %s/%s): %s", attempt, bot_sync_retries, e)
+
+            if attempt < bot_sync_retries:
+                await asyncio.sleep(min(5, attempt))
+
+        return False
+
+    async def _sync_full_guild_snapshot(self):
+        async with self.guild_sync_lock:
+            try:
+                guilds = [await self._serialize_guild_for_sync(guild) for guild in self.guilds]
+                ok = await self._post_internal_api({"mode": "full", "guilds": guilds})
+                if ok:
+                    logging.info("[GuildSync] Vollständiger Guild-Snapshot übertragen (%s Guilds).", len(guilds))
+            except Exception:
+                logging.exception("[GuildSync] Fehler bei vollständiger Guild-Synchronisation.")
+
+    async def _sync_single_guild(self, guild: discord.Guild):
+        async with self.guild_sync_lock:
+            try:
+                payload = await self._serialize_guild_for_sync(guild)
+                await self._post_internal_api({"mode": "upsert", "guild": payload})
+            except Exception:
+                logging.exception("[GuildSync] Fehler bei Guild-Teilupdate (guild=%s).", getattr(guild, "id", "unknown"))
+
+    async def _delete_single_guild(self, guild_id: int):
+        async with self.guild_sync_lock:
+            try:
+                await self._post_internal_api({"mode": "delete", "guild_id": str(guild_id)})
+            except Exception:
+                logging.exception("[GuildSync] Fehler beim Entfernen einer Guild aus API-Store.")
+
+    async def on_guild_join(self, guild: discord.Guild):
+        asyncio.create_task(self._sync_single_guild(guild))
+
+    async def on_guild_remove(self, guild: discord.Guild):
+        asyncio.create_task(self._delete_single_guild(guild.id))
+
+    async def on_guild_update(self, before: discord.Guild, after: discord.Guild):
+        asyncio.create_task(self._sync_single_guild(after))
+
+    async def on_member_join(self, member: discord.Member):
+        asyncio.create_task(self._sync_single_guild(member.guild))
+
+    async def on_member_remove(self, member: discord.Member):
+        asyncio.create_task(self._sync_single_guild(member.guild))
+
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        asyncio.create_task(self._sync_single_guild(after.guild))
+
+    async def on_guild_role_create(self, role: discord.Role):
+        asyncio.create_task(self._sync_single_guild(role.guild))
+
+    async def on_guild_role_delete(self, role: discord.Role):
+        asyncio.create_task(self._sync_single_guild(role.guild))
+
+    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
+        asyncio.create_task(self._sync_single_guild(after.guild))
+
+    async def on_guild_channel_create(self, channel):
+        guild = getattr(channel, "guild", None)
+        if guild is not None:
+            asyncio.create_task(self._sync_single_guild(guild))
+
+    async def on_guild_channel_delete(self, channel):
+        guild = getattr(channel, "guild", None)
+        if guild is not None:
+            asyncio.create_task(self._sync_single_guild(guild))
+
+    async def on_guild_channel_update(self, before, after):
+        guild = getattr(after, "guild", None)
+        if guild is not None:
+            asyncio.create_task(self._sync_single_guild(guild))
 
     async def _send_heartbeat(self):
         if not internal_api_key:

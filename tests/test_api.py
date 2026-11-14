@@ -61,6 +61,38 @@ class MockGuild:
 
 
 class InternalApiTestCase(unittest.TestCase):
+    @staticmethod
+    def _guild_to_sync_payload(guild: MockGuild) -> dict:
+        return {
+            "id": str(guild.id),
+            "name": guild.name,
+            "owner_id": str(guild.owner_id),
+            "icon": guild.icon.key if guild.icon else None,
+            "member_count": guild.member_count,
+            "channels": [
+                {"id": str(ch.id), "name": str(getattr(ch, "name", "channel")), "type": "text"}
+                for ch in guild.channels
+            ],
+            "roles": [
+                {
+                    "id": str(role.id),
+                    "name": role.name,
+                    "permissions": {"administrator": False, "manage_guild": False},
+                }
+                for role in guild.roles
+            ],
+            "members": [
+                {
+                    "id": str(member.id),
+                    "permissions": {
+                        "administrator": bool(member.guild_permissions.administrator),
+                        "manage_guild": bool(member.guild_permissions.manage_guild),
+                    },
+                }
+                for member in guild._members.values()
+            ],
+        }
+
     def setUp(self):
         self.test_api_key = "test_super_secret_api_key_12345"
         self.guild_cache = {}
@@ -96,6 +128,16 @@ class InternalApiTestCase(unittest.TestCase):
 
         self.guild_cache[111] = self.guild1
         self.guild_cache[222] = self.guild2
+
+        sync_payload = {
+            "mode": "full",
+            "guilds": [
+                self._guild_to_sync_payload(self.guild1),
+                self._guild_to_sync_payload(self.guild2),
+            ],
+        }
+        sync_res = self.client.post("/guild-sync", headers=self.auth_headers, json=sync_payload)
+        self.assertEqual(sync_res.status_code, 200)
 
     # --- 1. Service-Authentifizierung Tests ---
 
@@ -252,14 +294,19 @@ class InternalApiTestCase(unittest.TestCase):
         self.assertEqual(res2.status_code, 400)
 
     def test_bot_not_ready(self):
-        """Wenn Bot nicht ready ist, müssen geschützte Endpoints HTTP 503 zurückgeben."""
-        self.mock_bot.is_ready.return_value = False
-        self.mock_bot.bot_ready = False
+        """Ein leerer, aber gültiger Vollsync liefert leere Serverliste."""
+        res_sync = self.client.post(
+            "/guild-sync",
+            headers=self.auth_headers,
+            json={"mode": "full", "guilds": []},
+        )
+        self.assertEqual(res_sync.status_code, 200)
+
         res = self.client.get("/servers?user_id=999", headers=self.auth_headers)
-        self.assertEqual(res.status_code, 503)
+        self.assertEqual(res.status_code, 200)
         data = res.get_json()
-        self.assertFalse(data["success"])
-        self.assertIn("Bot not ready", data["error"])
+        self.assertTrue(data["success"])
+        self.assertEqual(data["count"], 0)
 
     # --- 3. Benutzerautorisierung: 'Meine Server' (GET /servers) ---
 
@@ -317,7 +364,13 @@ class InternalApiTestCase(unittest.TestCase):
 
     def test_get_servers_empty_cache(self):
         """Wenn Guild-Cache leer ist, wird leere Liste zurückgegeben."""
-        self.guild_cache.clear()
+        res_sync = self.client.post(
+            "/guild-sync",
+            headers=self.auth_headers,
+            json={"mode": "full", "guilds": []},
+        )
+        self.assertEqual(res_sync.status_code, 200)
+
         res = self.client.get("/servers?user_id=999", headers=self.auth_headers)
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
@@ -327,6 +380,13 @@ class InternalApiTestCase(unittest.TestCase):
     def test_get_servers_member_not_in_cache_skips_api_fetch(self):
         """Bei /servers dürfen Member-Cache-Misses keinen Discord-API-Fetch auslösen."""
         self.guild1._members.pop(123, None)
+        updated_guild1 = self._guild_to_sync_payload(self.guild1)
+        res_sync = self.client.post(
+            "/guild-sync",
+            headers=self.auth_headers,
+            json={"mode": "upsert", "guild": updated_guild1},
+        )
+        self.assertEqual(res_sync.status_code, 200)
 
         with patch("api.permissions.fetch_member_threadsafe") as fetch_mock:
             res = self.client.get("/servers?user_id=123", headers=self.auth_headers)
@@ -338,14 +398,29 @@ class InternalApiTestCase(unittest.TestCase):
 
     def test_get_servers_continues_when_single_guild_errors(self):
         """Ein Fehler in einer Guild darf die Gesamtliste nicht blockieren."""
-        broken_guild = MockGuild(333, "Broken", owner_id=777)
-        self.guild_cache[333] = broken_guild
+        broken_guild = {
+            "id": "333",
+            "name": "Broken",
+            "owner_id": "777",
+            "icon": None,
+            "member_count": 1,
+            "channels": [],
+            "roles": [{"id": "333", "name": "@everyone", "permissions": {"administrator": False, "manage_guild": False}}],
+            "members": [{"id": "777", "permissions": {"administrator": True, "manage_guild": True}}],
+        }
+        res_sync = self.client.post(
+            "/guild-sync",
+            headers=self.auth_headers,
+            json={"mode": "upsert", "guild": broken_guild},
+        )
+        self.assertEqual(res_sync.status_code, 200)
 
         with patch("api.routes.check_user_guild_permissions") as permission_mock:
             def side_effect(bot, guild, user_id, allow_api_fetch=True):
-                if guild.id == 333:
+                guild_id = int(guild.get("id")) if isinstance(guild, dict) else guild.id
+                if guild_id == 333:
                     raise RuntimeError("broken guild")
-                return {"owner": True, "permissions": {"administrator": True, "manage_guild": True}, "can_manage": True} if guild.id == 111 and user_id == 999 else None
+                return {"owner": True, "permissions": {"administrator": True, "manage_guild": True}, "can_manage": True} if guild_id == 111 and user_id == 999 else None
 
             permission_mock.side_effect = side_effect
             res = self.client.get("/servers?user_id=999", headers=self.auth_headers)
