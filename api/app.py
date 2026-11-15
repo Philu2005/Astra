@@ -2,6 +2,7 @@ import logging
 from flask import Flask, jsonify
 from waitress import serve
 from api.routes import api_bp
+from api.db import api_db
 from api.auth import get_expected_api_key
 
 logger = logging.getLogger("astra.api")
@@ -19,6 +20,12 @@ def create_app(bot=None, guild_cache=None, guild_cache_lock=None, config=None) -
     app.config["GUILD_CACHE"] = guild_cache if guild_cache is not None else {}
     app.config["GUILD_CACHE_LOCK"] = guild_cache_lock
     app.config.setdefault("GUILD_SNAPSHOT_STALE_AFTER_SECONDS", 120)
+
+    # Eigenen DB‑Pool für die Internal API starten (idempotent)
+    try:
+        api_db.start()
+    except Exception as e:
+        logger.error(f"Konnte internen DB‑Pool nicht starten: {type(e).__name__}")
 
     # Blueprint registrieren
     app.register_blueprint(api_bp)

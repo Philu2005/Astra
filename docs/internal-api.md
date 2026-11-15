@@ -228,7 +228,7 @@ Liefert die globale Anzahl der ausgeführten Commands pro Kalendertag (UTC) für
 - Authentifizierung erforderlich: Ja (`Authorization: Bearer <ASTRA_INTERNAL_API_KEY>`)
 - Parameter: Keine (keine `guild_id`, keine `user_id`).
 - Datenquelle:
-  Aggregation aus der Tabelle `command_usage` über den bestehenden MySQL-Pool (Spalten u. a.: `used_at`).
+  Aggregation aus der Tabelle `command_usage` über den eigenständigen MySQL‑Pool der Internal API (Spalten u. a.: `used_at`).
 
 #### Request
 ```http
@@ -260,7 +260,7 @@ Hinweise:
 - `total` ist die Summe aller `count`-Werte.
 
 Fehlercodes:
-- `503 Service Unavailable` – Bot/DB‑Pool nicht verfügbar oder Event-Loop nicht nutzbar.
+- `503 Service Unavailable` – API‑eigener DB‑Pool nicht verfügbar.
 - `504 Gateway Timeout` – Zeitüberschreitung beim Abruf der Statistik aus dem Upstream (DB/Loop).
 - `500 Internal Server Error` – allgemeiner Fehler ohne interne Details/Secrets.
 

@@ -5,6 +5,7 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, jsonify, request, current_app
 from api.auth import require_service_auth, get_expected_api_key
+from api.db import api_db
 from api.permissions import validate_user_id, check_user_guild_permissions
 from api.serializers import serialize_guild_summary, serialize_guild_detail, serialize_role
 from api.heartbeat import heartbeat_state, derive_bot_status
@@ -423,10 +424,9 @@ def get_global_command_stats():
     - Keine guild- oder user-spezifische Berechtigungsprüfung (globale Aggregation)
     - Parametrisierte SQL-Abfrage (über aiomysql) ohne guild_id-Filter
     """
-    # DB-Pool des Bots abrufen
-    bot = current_app.config.get("DISCORD_BOT")
-    if bot is None or getattr(bot, "pool", None) is None:
-        # Keine internen Details leaken
+    # Eigenen API‑DB‑Pool abrufen
+    pool = api_db.get_pool()
+    if pool is None:
         return jsonify(success=False, error="Service temporarily unavailable"), 503
 
     # Zeitfenster bestimmen: letzte 7 vollen Kalendertage in UTC inkl. heute
@@ -435,20 +435,13 @@ def get_global_command_stats():
     start_utc = today_utc - timedelta(days=6)
     end_utc = today_utc + timedelta(days=1)  # exklusive Obergrenze, verhindert Zukunftsdaten
 
-    # Asynchrone DB-Abfrage im Event-Loop des Bots ausführen
+    # Asynchrone DB-Abfrage im eigenen API‑Event‑Loop ausführen
     try:
-        if getattr(bot, "loop", None) is None or (hasattr(bot.loop, "is_closed") and bot.loop.is_closed()):
-            return jsonify(success=False, error="Service temporarily unavailable"), 503
-
-        fut = asyncio.run_coroutine_threadsafe(
-            _fetch_command_usage_7d_global_async(bot.pool, start_utc, end_utc), bot.loop
+        result_map = api_db.run_coro(
+            _fetch_command_usage_7d_global_async(pool, start_utc, end_utc),
+            timeout=float(current_app.config.get("DB_QUERY_TIMEOUT_SECONDS", 5.0)),
         )
-        result_map = fut.result(timeout=float(current_app.config.get("DB_QUERY_TIMEOUT_SECONDS", 5.0)))
     except FuturesTimeoutError:
-        try:
-            fut.cancel()
-        except Exception:
-            pass
         return jsonify(success=False, error="Upstream timeout while fetching statistics"), 504
     except Exception:
         # Keine DB-Fehlerdetails nach außen geben
