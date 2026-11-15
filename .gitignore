@@ -29,10 +29,14 @@ index.php
 # local / server-only
 dbl_webhook.py
 opt/
-*.save
+ *.save
  
 # Tests: exclude accidental local file
 test_apy.py
 /tests/test_apy.py
+ 
+# Also exclude tracked changes for specific test file if needed
+test_api.py
+/tests/test_api.py
 echo "__pycache__/" >> .gitignore
 echo "*.pyc" >> .gitignore
