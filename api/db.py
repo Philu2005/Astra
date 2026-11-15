@@ -25,13 +25,18 @@ class _ApiDBManager:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._pool = None
-        self._started = False
+        self._started = False  # True nur, wenn Thread/Loop läuft UND Pool vorhanden ist
         self._lock = threading.Lock()
+        # Start-Signalisierung
+        self._start_ok_event: Optional[threading.Event] = None
+        self._start_fail_event: Optional[threading.Event] = None
 
     # ---- öffentliche API ----
     def start(self) -> None:
+        # Mehrfachstart vermeiden, aber auch fehlerhafte Vorstarts zurücksetzen
         with self._lock:
-            if self._started:
+            # Wenn bereits erfolgreich gestartet und Thread lebt -> nichts tun
+            if self._started and self._thread is not None and self._thread.is_alive():
                 return
 
             # .env vom VPS (falls vorhanden) laden, ohne bestehende Variablen zu überschreiben
@@ -41,9 +46,34 @@ class _ApiDBManager:
                 # Nicht kritisch im lokalen/test Umfeld
                 pass
 
+            # Events pro Startdurchlauf neu anlegen
+            self._start_ok_event = threading.Event()
+            self._start_fail_event = threading.Event()
+
             # Event-Loop in separatem Thread aufbauen
             self._thread = threading.Thread(target=self._thread_main, name="astra-api-db-loop", daemon=True)
             self._thread.start()
+
+        # Auf erstes Ergebnis der Initialisierung warten (ohne dauerhaft zu blockieren)
+        # 10 Sekunden sind ausreichend, um Netzwerkfehler/Fehlkonfig zu erkennen.
+        ok_event = self._start_ok_event
+        fail_event = self._start_fail_event
+        if ok_event is None or fail_event is None:
+            return
+
+        signaled = ok_event.wait(timeout=10) or fail_event.wait(timeout=0)
+        if not signaled:
+            # Keine Entscheidung innerhalb des Timeouts – Thread könnte weiter initialisieren.
+            # In diesem Fall markieren wir nicht als gestartet, bis der OK-Event gesetzt wird.
+            return
+
+        # Wenn Fehlerereignis gesetzt wurde, sicherstellen, dass als nicht gestartet gilt
+        if fail_event.is_set():
+            with self._lock:
+                self._started = False
+            return
+        # Erfolgreich initialisiert
+        with self._lock:
             self._started = True
 
     def stop(self) -> None:
@@ -55,6 +85,8 @@ class _ApiDBManager:
             self._loop = None
             self._thread = None
             self._pool = None
+            self._start_ok_event = None
+            self._start_fail_event = None
 
         if loop is None:
             return
@@ -94,14 +126,27 @@ class _ApiDBManager:
     def get_pool(self):
         return self._pool
 
+    def is_ready(self) -> bool:
+        return self._pool is not None and self._loop is not None and not self._loop.is_closed()
+
     # ---- interner Thread/Loop ----
     def _thread_main(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._loop = loop
         try:
-            loop.run_until_complete(self._init_pool())
-            loop.run_forever()
+            # Versuch: Pool initialisieren
+            success = loop.run_until_complete(self._init_pool())
+            if success:
+                # Erfolg signalisieren
+                if self._start_ok_event is not None:
+                    self._start_ok_event.set()
+                loop.run_forever()
+            else:
+                # Fehlstart signalisieren und Loop beenden
+                if self._start_fail_event is not None:
+                    self._start_fail_event.set()
+                return
         finally:
             try:
                 pending = asyncio.all_tasks(loop=loop)
@@ -112,17 +157,65 @@ class _ApiDBManager:
             except Exception:
                 pass
             finally:
-                loop.close()
+                try:
+                    loop.close()
+                finally:
+                    # Sicherstellen, dass Status zurückgesetzt wird
+                    with self._lock:
+                        self._started = False
+                        self._loop = None
+                        self._thread = None
 
     async def _init_pool(self):
         import aiomysql  # lokale Importzeit im Loop
 
-        # Konfiguration aus Umgebungsvariablen
-        host = os.getenv("ASTRA_API_DB_HOST", "127.0.0.1")
-        port = int(os.getenv("ASTRA_API_DB_PORT", "3306"))
-        user = os.getenv("ASTRA_API_DB_USER", "astra_api")
-        password = os.getenv("ASTRA_API_DB_PASSWORD", "")
-        db = os.getenv("ASTRA_API_DB_NAME", "AstraDB")
+        # Konfiguration aus Umgebungsvariablen (keine geheimen Fallbacks erfinden)
+        host = os.getenv("ASTRA_API_DB_HOST")
+        port_str = os.getenv("ASTRA_API_DB_PORT")
+        user = os.getenv("ASTRA_API_DB_USER")
+        password = os.getenv("ASTRA_API_DB_PASSWORD")
+        db = os.getenv("ASTRA_API_DB_NAME")
+
+        minsize_str = os.getenv("ASTRA_API_DB_MIN_SIZE", "1")
+        maxsize_str = os.getenv("ASTRA_API_DB_MAX_SIZE", "10")
+
+        # Validierung der Pflichtparameter
+        missing = [
+            name for name, val in (
+                ("ASTRA_API_DB_HOST", host),
+                ("ASTRA_API_DB_PORT", port_str),
+                ("ASTRA_API_DB_USER", user),
+                ("ASTRA_API_DB_PASSWORD", password),
+                ("ASTRA_API_DB_NAME", db),
+            ) if not val
+        ]
+        if missing:
+            logger.error(
+                "DB-Konfiguration unvollständig: fehlende Variablen: %s",
+                ", ".join(missing),
+            )
+            self._pool = None
+            return False
+
+        # Typ-/Bereichsprüfungen
+        try:
+            port = int(port_str)
+            if not (1 <= port <= 65535):
+                raise ValueError("port out of range")
+        except Exception:
+            logger.error("Ungültiger ASTRA_API_DB_PORT: %r", port_str)
+            self._pool = None
+            return False
+
+        try:
+            minsize = int(minsize_str)
+            maxsize = int(maxsize_str)
+            if minsize < 1 or maxsize < 1 or minsize > maxsize:
+                raise ValueError("invalid pool size range")
+        except Exception:
+            logger.error("Ungültige Pool-Größen: min=%r max=%r", minsize_str, maxsize_str)
+            self._pool = None
+            return False
 
         # Pool erstellen; keine Credentials loggen
         try:
@@ -133,14 +226,23 @@ class _ApiDBManager:
                 password=password,
                 db=db,
                 autocommit=True,
-                minsize=int(os.getenv("ASTRA_API_DB_MIN_SIZE", "1")),
-                maxsize=int(os.getenv("ASTRA_API_DB_MAX_SIZE", "10")),
+                minsize=minsize,
+                maxsize=maxsize,
                 charset="utf8mb4",
             )
             logger.info("Astra API DB-Pool initialisiert")
+            return True
         except Exception as e:
-            logger.error(f"Astra API DB-Pool konnte nicht initialisiert werden: {type(e).__name__}")
-            # Pool bleibt None; Aufrufer behandeln 503
+            # Aussagekräftiges, aber sicheres Logging inkl. Stacktrace
+            safe_msg = str(e).splitlines()[0][:500]
+            logger.exception(
+                "Astra API DB-Pool konnte nicht initialisiert werden (%s): %s",
+                type(e).__name__,
+                safe_msg,
+            )
+            # Pool bleibt None – Aufrufer behandeln 503
+            self._pool = None
+            return False
 
 
 # Singleton-Instanz
