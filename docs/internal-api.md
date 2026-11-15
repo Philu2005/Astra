@@ -221,6 +221,51 @@ Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
 
 ---
 
+### `GET /statistics/commands`
+
+Liefert die globale Anzahl der ausgeführten Commands pro Kalendertag (UTC) für die letzten sieben Tage über alle Guilds.
+
+- Authentifizierung erforderlich: Ja (`Authorization: Bearer <ASTRA_INTERNAL_API_KEY>`)
+- Parameter: Keine (keine `guild_id`, keine `user_id`).
+- Datenquelle:
+  Aggregation aus der Tabelle `command_usage` über den bestehenden MySQL-Pool (Spalten u. a.: `used_at`).
+
+#### Request
+```http
+GET /statistics/commands HTTP/1.1
+Host: 127.0.0.1:5000
+Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
+```
+
+#### Response (`200 OK`)
+```json
+{
+  "period": "7d",
+  "total": 1250,
+  "data": [
+    {"date": "2026-11-09", "weekday": "Montag", "count": 120},
+    {"date": "2026-11-10", "weekday": "Dienstag", "count": 180},
+    {"date": "2026-11-11", "weekday": "Mittwoch", "count": 0},
+    {"date": "2026-11-12", "weekday": "Donnerstag", "count": 210},
+    {"date": "2026-11-13", "weekday": "Freitag", "count": 190},
+    {"date": "2026-11-14", "weekday": "Samstag", "count": 250},
+    {"date": "2026-11-15", "weekday": "Sonntag", "count": 300}
+  ]
+}
+```
+
+Hinweise:
+- Immer genau sieben Tage in chronologischer Reihenfolge, fehlende Tage mit `count = 0`.
+- `weekday` sind volle deutsche Wochentagsnamen; `date` ist UTC (Format `YYYY-MM-DD`).
+- `total` ist die Summe aller `count`-Werte.
+
+Fehlercodes:
+- `503 Service Unavailable` – Bot/DB‑Pool nicht verfügbar oder Event-Loop nicht nutzbar.
+- `504 Gateway Timeout` – Zeitüberschreitung beim Abruf der Statistik aus dem Upstream (DB/Loop).
+- `500 Internal Server Error` – allgemeiner Fehler ohne interne Details/Secrets.
+
+---
+
 ## 5. Thread-Sicherheit & Discord-Kommunikation
 
 - Die API läuft im Waitress WSGI-Server in einem separaten Thread.

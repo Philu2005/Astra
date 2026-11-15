@@ -1,6 +1,8 @@
 import logging
 import time
-from datetime import datetime
+import asyncio
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from datetime import datetime, timezone, timedelta
 from flask import Blueprint, jsonify, request, current_app
 from api.auth import require_service_auth, get_expected_api_key
 from api.permissions import validate_user_id, check_user_guild_permissions
@@ -366,3 +368,108 @@ def get_server_roles(guild_id: int):
     ]
 
     return jsonify(success=True, count=len(roles), roles=roles), 200
+
+
+# ---------------------------------------------
+# Command-Nutzungsstatistik (letzte 7 Tage)
+# ---------------------------------------------
+
+def _weekday_label_de(dt: datetime) -> str:
+    # Montag=0 ... Sonntag=6 – volle deutsche Namen
+    labels = [
+        "Montag",
+        "Dienstag",
+        "Mittwoch",
+        "Donnerstag",
+        "Freitag",
+        "Samstag",
+        "Sonntag",
+    ]
+    return labels[dt.weekday()]
+
+
+async def _fetch_command_usage_7d_global_async(pool, start_utc: datetime, end_utc: datetime):
+    # Globale Aggregation nach UTC-Kalendertag (DATE(used_at)) im Intervall [start_utc, end_utc)
+    # WICHTIG: kein guild_id-Filter
+    sql = (
+        """
+        SELECT DATE(used_at) AS d, COUNT(*) AS c
+        FROM command_usage
+        WHERE used_at >= %s AND used_at < %s
+        GROUP BY d
+        ORDER BY d ASC
+        """
+    )
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                sql,
+                (
+                    start_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                    end_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+            rows = await cur.fetchall()
+            return {str(r[0]): int(r[1]) for r in rows}
+
+
+@api_bp.route("/statistics/commands", methods=["GET"])
+@require_service_auth
+def get_global_command_stats():
+    """Liefert die tägliche Anzahl ausgeführter Commands (letzte 7 UTC-Tage) global über alle Guilds.
+
+    Sicherheitsanforderungen:
+    - Service-Auth via Bearer Token
+    - Keine guild- oder user-spezifische Berechtigungsprüfung (globale Aggregation)
+    - Parametrisierte SQL-Abfrage (über aiomysql) ohne guild_id-Filter
+    """
+    # DB-Pool des Bots abrufen
+    bot = current_app.config.get("DISCORD_BOT")
+    if bot is None or getattr(bot, "pool", None) is None:
+        # Keine internen Details leaken
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    # Zeitfenster bestimmen: letzte 7 vollen Kalendertage in UTC inkl. heute
+    now_utc = datetime.now(timezone.utc)
+    today_utc = datetime(year=now_utc.year, month=now_utc.month, day=now_utc.day, tzinfo=timezone.utc)
+    start_utc = today_utc - timedelta(days=6)
+    end_utc = today_utc + timedelta(days=1)  # exklusive Obergrenze, verhindert Zukunftsdaten
+
+    # Asynchrone DB-Abfrage im Event-Loop des Bots ausführen
+    try:
+        if getattr(bot, "loop", None) is None or (hasattr(bot.loop, "is_closed") and bot.loop.is_closed()):
+            return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+        fut = asyncio.run_coroutine_threadsafe(
+            _fetch_command_usage_7d_global_async(bot.pool, start_utc, end_utc), bot.loop
+        )
+        result_map = fut.result(timeout=float(current_app.config.get("DB_QUERY_TIMEOUT_SECONDS", 5.0)))
+    except FuturesTimeoutError:
+        try:
+            fut.cancel()
+        except Exception:
+            pass
+        return jsonify(success=False, error="Upstream timeout while fetching statistics"), 504
+    except Exception:
+        # Keine DB-Fehlerdetails nach außen geben
+        return jsonify(success=False, error="Failed to fetch statistics"), 500
+
+    # Sieben Datenpunkte generieren, fehlende Tage mit 0 auffüllen
+    data_points = []
+    total = 0
+    for i in range(7):
+        day = start_utc + timedelta(days=i)
+        date_str = day.strftime("%Y-%m-%d")
+        count = int(result_map.get(date_str, 0))
+        total += count
+        data_points.append({
+            "date": date_str,
+            "weekday": _weekday_label_de(day),
+            "count": count,
+        })
+
+    return jsonify(
+        period="7d",
+        total=total,
+        data=data_points,
+    ), 200
