@@ -10,6 +10,14 @@ from api.permissions import validate_user_id, check_user_guild_permissions
 from api.serializers import serialize_guild_summary, serialize_guild_detail, serialize_role
 from api.heartbeat import heartbeat_state, derive_bot_status
 from api.guild_state import guild_state_store
+from api.moderation_services import (
+    fetch_warns as svc_fetch_warns,
+    delete_warns as svc_delete_warns,
+    load_automod_config as svc_load_automod,
+    save_automod_config as svc_save_automod,
+    get_modlog_channel as svc_get_modlog,
+    set_modlog_channel as svc_set_modlog,
+)
 
 logger = logging.getLogger("astra.api.routes")
 
@@ -466,3 +474,320 @@ def get_global_command_stats():
         total=total,
         data=data_points,
     ), 200
+
+
+# ---------------------------------------------
+# Moderation: Warnungen
+# ---------------------------------------------
+
+
+@api_bp.route("/moderation/warns/<int:guild_id>/<int:member_id>", methods=["GET"])
+@require_service_auth
+def get_member_warns(guild_id: int, member_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")  # aufrufender Benutzer
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        warns = api_db.run_coro(svc_fetch_warns(pool, guild_id, member_id), timeout=5.0)
+    except Exception:
+        return jsonify(success=False, error="Failed to fetch warns"), 500
+
+    return jsonify(success=True, count=len(warns), warns=warns), 200
+
+
+@api_bp.route("/moderation/warns/<int:guild_id>/<int:member_id>", methods=["DELETE"])
+@require_service_auth
+def delete_member_warns(guild_id: int, member_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    # Entweder einzelner warn_id oder alle
+    warn_id_param = request.args.get("warn_id")
+    all_flag = request.args.get("all")
+    warn_id_val = None
+    if warn_id_param is not None:
+        try:
+            warn_id_val = int(str(warn_id_param).strip())
+            if warn_id_val < 0:
+                raise ValueError()
+        except Exception:
+            return jsonify(success=False, error="Invalid warn_id"), 400
+
+    if warn_id_val is None and not (isinstance(all_flag, str) and all_flag.lower() in ("1", "true", "yes")):
+        return jsonify(success=False, error="Missing warn_id or all=true"), 400
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        deleted = api_db.run_coro(svc_delete_warns(pool, guild_id, member_id, warn_id_val), timeout=5.0)
+    except Exception:
+        return jsonify(success=False, error="Failed to delete warns"), 500
+
+    return jsonify(success=True, deleted=int(deleted)), 200
+
+
+# ---------------------------------------------
+# Moderation: AutoMod
+# ---------------------------------------------
+
+
+@api_bp.route("/moderation/automod/<int:guild_id>", methods=["GET"])
+@require_service_auth
+def get_automod_config(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        config = api_db.run_coro(svc_load_automod(pool, guild_id), timeout=5.0)
+    except Exception:
+        return jsonify(success=False, error="Failed to load automod config"), 500
+
+    return jsonify(success=True, config=config), 200
+
+
+@api_bp.route("/moderation/automod/<int:guild_id>", methods=["PUT"])
+@require_service_auth
+def put_automod_config(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    payload = request.get_json(silent=True) or {}
+
+    # Validierung
+    rules = payload.get("rules")
+    if rules is not None:
+        if not isinstance(rules, list):
+            return jsonify(success=False, error="Invalid rules format"), 400
+        for r in rules:
+            if not isinstance(r, dict):
+                return jsonify(success=False, error="Invalid rule item"), 400
+            try:
+                _ = int(r.get("warns"))
+                _a = str(r.get("action"))
+                t = r.get("timeout_seconds")
+                if t is not None:
+                    _ = int(t)
+            except Exception:
+                return jsonify(success=False, error="Invalid rule values"), 400
+
+    capslock = payload.get("capslock")
+    if capslock is not None:
+        if not isinstance(capslock, dict):
+            return jsonify(success=False, error="Invalid capslock format"), 400
+        try:
+            if capslock.get("percent") is not None:
+                _ = int(capslock.get("percent"))
+            if capslock.get("enabled") is not None:
+                _ = bool(capslock.get("enabled"))
+        except Exception:
+            return jsonify(success=False, error="Invalid capslock values"), 400
+
+    blacklist = payload.get("blacklist")
+    if blacklist is not None:
+        if not isinstance(blacklist, dict):
+            return jsonify(success=False, error="Invalid blacklist format"), 400
+        if blacklist.get("words") is not None and not isinstance(blacklist.get("words"), list):
+            return jsonify(success=False, error="Invalid blacklist words"), 400
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        api_db.run_coro(
+            svc_save_automod(pool, guild_id, rules=rules, capslock=capslock, blacklist=blacklist),
+            timeout=10.0,
+        )
+    except Exception:
+        return jsonify(success=False, error="Failed to save automod config"), 500
+
+    # Nach Speicherung aktuelle Konfig zurückgeben
+    try:
+        config = api_db.run_coro(svc_load_automod(pool, guild_id), timeout=5.0)
+    except Exception:
+        config = None
+
+    return jsonify(success=True, config=config), 200
+
+
+# ---------------------------------------------
+# Moderation: Modlog
+# ---------------------------------------------
+
+
+@api_bp.route("/moderation/modlog/<int:guild_id>", methods=["GET"])
+@require_service_auth
+def get_modlog(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        channel_id = api_db.run_coro(svc_get_modlog(pool, guild_id), timeout=5.0)
+    except Exception:
+        return jsonify(success=False, error="Failed to load modlog config"), 500
+
+    return jsonify(success=True, channelId=(str(channel_id) if channel_id else None)), 200
+
+
+@api_bp.route("/moderation/modlog/<int:guild_id>", methods=["PUT"])
+@require_service_auth
+def put_modlog(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    payload = request.get_json(silent=True) or {}
+    raw_channel_id = payload.get("channel_id")
+    try:
+        channel_id = int(str(raw_channel_id).strip()) if raw_channel_id is not None else None
+        if channel_id is not None and channel_id <= 0:
+            raise ValueError()
+    except Exception:
+        return jsonify(success=False, error="Invalid channel_id"), 400
+
+    # Validierung: Falls Kanalliste im Snapshot vorhanden ist, prüfen, ob Kanal zur Guild gehört
+    channels = guild.get("channels") if isinstance(guild, dict) else []
+    if channel_id is not None and isinstance(channels, list) and channels:
+        in_guild = any(validate_user_id(c.get("id")) == channel_id for c in channels)
+        if not in_guild:
+            return jsonify(success=False, error="Channel does not belong to the guild"), 400
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        api_db.run_coro(svc_set_modlog(pool, guild_id, channel_id), timeout=5.0)
+    except Exception:
+        return jsonify(success=False, error="Failed to save modlog config"), 500
+
+    return jsonify(success=True), 200
+
+
+@api_bp.route("/moderation/modlog/<int:guild_id>", methods=["DELETE"])
+@require_service_auth
+def delete_modlog(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        api_db.run_coro(svc_set_modlog(pool, guild_id, None), timeout=5.0)
+    except Exception:
+        return jsonify(success=False, error="Failed to delete modlog config"), 500
+
+    return jsonify(success=True), 200
