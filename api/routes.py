@@ -592,6 +592,7 @@ def get_automod_config(guild_id: int):
     try:
         config = api_db.run_coro(svc_load_automod(pool, guild_id), timeout=5.0)
     except Exception:
+        logger.exception("AutoMod config loading failed for guild %s", guild_id)
         return jsonify(success=False, error="Failed to load automod config"), 500
 
     return jsonify(success=True, config=config), 200
@@ -665,12 +666,14 @@ def put_automod_config(guild_id: int):
             timeout=10.0,
         )
     except Exception:
+        logger.exception("AutoMod config save failed for guild %s", guild_id)
         return jsonify(success=False, error="Failed to save automod config"), 500
 
     # Nach Speicherung aktuelle Konfig zurückgeben
     try:
         config = api_db.run_coro(svc_load_automod(pool, guild_id), timeout=5.0)
     except Exception:
+        logger.exception("AutoMod config reload after save failed for guild %s", guild_id)
         config = None
 
     return jsonify(success=True, config=config), 200
