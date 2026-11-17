@@ -2211,6 +2211,24 @@ class DevTools(commands.Cog):
         # Duplikat-Ermittlung (gleiche Guild/Channel/Thema/Role/Category)
         dup_map = {}
         for e in report_rows:
+            # Einige ältere Skriptversionen könnten Zeilen als JSON-Strings ausgegeben haben.
+            # Robustheit: Falls der Eintrag ein String ist, versuchen wir ihn zu parsen;
+            # andernfalls überspringen wir ihn.
+            if not isinstance(e, dict):
+                if isinstance(e, str):
+                    try:
+                        parsed = json.loads(e)
+                        if isinstance(parsed, dict):
+                            e = parsed
+                        else:
+                            # Nicht nutzbarer Eintrag
+                            continue
+                    except Exception:
+                        # Ungültiger JSON-String – Eintrag überspringen
+                        continue
+                else:
+                    # Unbekannter Eintragstyp – überspringen
+                    continue
             status = normalize_status(str(get(e, "status", "")))
             counters[status] = counters.get(status, 0) + 1
             action = planned_action(status)
