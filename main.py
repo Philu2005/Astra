@@ -1076,6 +1076,35 @@ except Exception:
 
 
 
+# ------------------------------
+# Lokaler IPC-Server für Bot-Aktionen (nur 127.0.0.1)
+# ------------------------------
+try:
+    from utils.ipc_server import BotIPC  # type: ignore
+except Exception:
+    BotIPC = None  # type: ignore
+
+_ipc_started = False
+
+@bot.event
+async def on_ready():
+    global _ipc_started
+    if BotIPC is None or _ipc_started:
+        return
+    try:
+        # Port/Secret aus Umgebung (optional)
+        import os
+        port = int(os.environ.get("ASTRA_IPC_PORT", "8765"))
+        secret = os.environ.get("ASTRA_IPC_KEY")
+        bot.ipc = BotIPC(bot, port=port, secret=secret)  # type: ignore[attr-defined]
+        await bot.ipc.start()  # type: ignore[attr-defined]
+        _ipc_started = True
+        logging.getLogger("astra.ipc").info("IPC ready on 127.0.0.1:%s", port)
+    except Exception:
+        logging.getLogger("astra.ipc").exception("Failed to start IPC server")
+
+
+
 @bot.command()
 @commands.is_owner()
 async def sync(ctx, serverid: int = None):

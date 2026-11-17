@@ -1164,6 +1164,595 @@ class SetupWizardView(ui.LayoutView):
 
 
 # =========================================================
+#        TICKET CONTROL-CENTER (Components V2 Container)
+# =========================================================
+
+class _EditPanelTextModal(discord.ui.Modal, title="Panel-Texte bearbeiten"):
+    def __init__(self, view: "ConfigCenterView", *, init_title: str = "", init_desc: str = "", init_thema: str = ""):
+        super().__init__()
+        self.view = view
+        self.inp_title = discord.ui.TextInput(label="Panel-Titel", default=init_title[:256], max_length=256, required=False)
+        self.inp_desc = discord.ui.TextInput(label="Panel-Beschreibung", default=init_desc[:4000], style=discord.TextStyle.paragraph, max_length=4000, required=False)
+        self.inp_thema = discord.ui.TextInput(label="Ticket-Thema", default=init_thema[:128], required=False)
+        self.add_item(self.inp_title)
+        self.add_item(self.inp_desc)
+        self.add_item(self.inp_thema)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.view.apply_text_changes(
+            interaction,
+            title=str(self.inp_title.value or ""),
+            description=str(self.inp_desc.value or ""),
+            thema=str(self.inp_thema.value or ""),
+        )
+
+
+class ConfigCenterView(ui.LayoutView):
+    """Interaktive Verwaltung für Ticket-Panels mit Tabs.
+
+    Tabs:
+      0 Übersicht, 1 Panel bearbeiten, 2 Discord-Zuordnungen,
+      3 Ticket-Einstellungen, 4 Erinnerungen, 5 Protokollierung
+    """
+
+    def __init__(self, bot: commands.Bot, invoker: discord.User, guild: discord.Guild):
+        super().__init__(timeout=180)
+        self.bot = bot
+        self.invoker = invoker
+        self.guild = guild
+        self.active_tab = 0
+        self.selected_channel_id: Optional[int] = None
+        self._panels_cache: list[dict] = []
+        self._selected_panel: Optional[dict] = None
+        self._loading = False
+        self.ephemeral = True
+        self._build()
+
+    # ---------------- Data helpers -----------------
+    async def _load_panels(self):
+        if self._loading:
+            return
+        self._loading = True
+        panels: list[dict] = []
+        try:
+            async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    # Versuche mit panelMsgID
+                    try:
+                        await cur.execute(
+                            "SELECT channelID, thema, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s",
+                            (self.guild.id,),
+                        )
+                        rows = await cur.fetchall()
+                        for ch, thema, role_id, cat_id, msg_id in rows:
+                            panels.append({
+                                "channel_id": int(ch),
+                                "thema": thema or "",
+                                "role_id": int(role_id) if role_id else None,
+                                "category_id": int(cat_id) if cat_id else None,
+                                "panel_message_id": int(msg_id) if msg_id else None,
+                            })
+                    except Exception:
+                        await cur.execute(
+                            "SELECT channelID, thema, roleID, categoryID FROM ticketsystem WHERE guildID=%s",
+                            (self.guild.id,),
+                        )
+                        rows = await cur.fetchall()
+                        for ch, thema, role_id, cat_id in rows:
+                            panels.append({
+                                "channel_id": int(ch),
+                                "thema": thema or "",
+                                "role_id": int(role_id) if role_id else None,
+                                "category_id": int(cat_id) if cat_id else None,
+                                "panel_message_id": None,
+                            })
+        finally:
+            self._loading = False
+            self._panels_cache = panels
+            # set selected
+            if self.selected_channel_id is None and panels:
+                self.selected_channel_id = int(panels[0]["channel_id"])
+            self._selected_panel = next((p for p in panels if int(p["channel_id"]) == int(self.selected_channel_id or 0)), None)
+
+    def _panel_label(self, p: dict) -> str:
+        ch = self.guild.get_channel(int(p["channel_id"]))
+        ch_name = f"#{ch.name}" if isinstance(ch, discord.abc.GuildChannel) else f"#{p['channel_id']}"
+        thema = (p.get("thema") or "").strip()
+        return f"{ch_name} – {thema}" if thema else ch_name
+
+    # ---------------- Actions -----------------
+    async def apply_text_changes(self, interaction: discord.Interaction, *, title: str, description: str, thema: str):
+        if not self._selected_panel:
+            return await interaction.response.send_message("Kein Panel ausgewählt.", ephemeral=True)
+        ch_id = int(self._selected_panel["channel_id"])
+        # Update DB-Thema
+        try:
+            async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "UPDATE ticketsystem SET thema=%s WHERE guildID=%s AND channelID=%s",
+                        (thema, self.guild.id, ch_id),
+                    )
+        except Exception:
+            return await interaction.response.send_message("Fehler beim Speichern des Themas.", ephemeral=True)
+
+        # Panel-Nachricht aktualisieren, wenn message_id vorhanden
+        msg_id = self._selected_panel.get("panel_message_id")
+        if msg_id:
+            try:
+                await api_update_ticket_panel(
+                    self.bot,
+                    guild_id=self.guild.id,
+                    channel_id=ch_id,
+                    message_id=int(msg_id),
+                    title=title or None,
+                    description=description or None,
+                )
+            except FileNotFoundError:
+                await interaction.response.send_message("Die Panel-Nachricht wurde nicht gefunden. Text wurde gespeichert, aber die Nachricht konnte nicht aktualisiert werden.", ephemeral=True)
+                await self.refresh(interaction)
+                return
+            except Exception:
+                await interaction.response.send_message("Fehler beim Aktualisieren der Panel-Nachricht.", ephemeral=True)
+                await self.refresh(interaction)
+                return
+
+        await interaction.response.send_message("<:Astra_accept:1141303821176422460> Änderungen gespeichert.", ephemeral=True)
+        await self.refresh(interaction, edit_existing=True)
+
+    async def _set_role(self, interaction: discord.Interaction, role: Optional[discord.Role]):
+        if not self._selected_panel:
+            return await interaction.response.send_message("Kein Panel ausgewählt.", ephemeral=True)
+        ch_id = int(self._selected_panel["channel_id"])
+        rid = role.id if role else None
+        try:
+            async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "UPDATE ticketsystem SET roleID=%s WHERE guildID=%s AND channelID=%s",
+                        (rid, self.guild.id, ch_id),
+                    )
+        except Exception:
+            return await interaction.response.send_message("Fehler beim Speichern der Rolle.", ephemeral=True)
+        await interaction.response.send_message("<:Astra_accept:1141303821176422460> Support-Rolle aktualisiert.", ephemeral=True)
+        await self.refresh(interaction, edit_existing=True)
+
+    async def _set_category(self, interaction: discord.Interaction, category: Optional[discord.CategoryChannel]):
+        if not self._selected_panel:
+            return await interaction.response.send_message("Kein Panel ausgewählt.", ephemeral=True)
+        ch_id = int(self._selected_panel["channel_id"])
+        cid = category.id if isinstance(category, discord.CategoryChannel) else None
+        try:
+            async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "UPDATE ticketsystem SET categoryID=%s WHERE guildID=%s AND channelID=%s",
+                        (cid, self.guild.id, ch_id),
+                    )
+        except Exception:
+            return await interaction.response.send_message("Fehler beim Speichern der Kategorie.", ephemeral=True)
+        await interaction.response.send_message("<:Astra_accept:1141303821176422460> Kategorie aktualisiert.", ephemeral=True)
+        await self.refresh(interaction, edit_existing=True)
+
+    async def _move_panel(self, interaction: discord.Interaction, new_channel: discord.TextChannel):
+        """Sicheres Verschieben gemäß Vorgabe."""
+        if not self._selected_panel:
+            return await interaction.response.send_message("Kein Panel ausgewählt.", ephemeral=True)
+        old_ch_id = int(self._selected_panel["channel_id"])
+        msg_id = self._selected_panel.get("panel_message_id")
+        # Lade aktuelle Parameter für Publish
+        thema = (self._selected_panel.get("thema") or "").strip() or "Tickets"
+        role = self.guild.get_role(self._selected_panel.get("role_id") or 0)
+        cat = self.guild.get_channel(self._selected_panel.get("category_id") or 0)
+        role_id = role.id if role else 0
+        cat_id = cat.id if isinstance(cat, discord.CategoryChannel) else 0
+        desc = "Nutze die Schaltfläche, um ein Ticket zu erstellen."
+
+        # 1) Neue Nachricht posten (api_publish_ticket_panel übernimmt DB-Update für neuen channelID Eintrag)
+        try:
+            res = await api_publish_ticket_panel(
+                self.bot,
+                guild_id=self.guild.id,
+                channel_id=new_channel.id,
+                category_id=cat_id,
+                role_id=role_id,
+                title=thema,
+                description=desc,
+            )
+        except PermissionError:
+            return await interaction.response.send_message("Fehlende Berechtigung im Zielkanal.", ephemeral=True)
+        except Exception:
+            return await interaction.response.send_message("Veröffentlichung im Zielkanal fehlgeschlagen.", ephemeral=True)
+
+        new_msg_id = int(res.get("message_id"))
+
+        # 2) Alte Nachricht löschen (Best Effort) und alten Datensatz entfernen
+        try:
+            old_ch = self.guild.get_channel(old_ch_id) or await self.guild.fetch_channel(old_ch_id)
+            if msg_id and isinstance(old_ch, discord.TextChannel):
+                try:
+                    await old_ch.get_partial_message(int(msg_id)).delete()
+                except Exception:
+                    # Teilfehler: wird gemeldet
+                    await interaction.response.send_message("Panel verschoben, aber alte Nachricht konnte nicht gelöscht werden.", ephemeral=True)
+            # Alten Panel-Eintrag entfernen, damit kein Duplikat bleibt
+            async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "DELETE FROM ticketsystem WHERE guildID=%s AND channelID=%s",
+                        (self.guild.id, old_ch_id),
+                    )
+        except Exception:
+            # Kein harter Fail – der neue Eintrag existiert bereits
+            pass
+
+        await interaction.response.send_message(
+            f"<:Astra_accept:1141303821176422460> Panel in {new_channel.mention} verschoben (Nachricht {new_msg_id}).",
+            ephemeral=True,
+        )
+        # Neu laden
+        self.selected_channel_id = int(new_channel.id)
+        await self.refresh(interaction, edit_existing=True)
+
+    async def refresh(self, interaction: discord.Interaction, *, edit_existing: bool = True):
+        await self._load_panels()
+        self._build()
+        if edit_existing:
+            await interaction.edit_original_response(view=self)
+
+    # ---------------- UI build -----------------
+    def _build(self):
+        self.clear_items()
+        container = discord.ui.Container(accent_color=get_current_colour().value)
+
+        # Header
+        container.add_item(discord.ui.TextDisplay("# Ticket-Verwaltung\nVerwalte deine Ticket-Panels komfortabel."))
+        container.add_item(discord.ui.Separator())
+
+        # Auswahl der Panels
+        async def panel_select_cb(inter: discord.Interaction, select: discord.ui.Select):
+            try:
+                self.selected_channel_id = int(select.values[0])
+            except Exception:
+                self.selected_channel_id = None
+            await self.refresh(inter)
+
+        select_options: list[discord.SelectOption] = []
+        if not self._panels_cache:
+            # Lazy load sync is not available here; will show empty state until refresh()
+            pass
+        else:
+            for p in self._panels_cache:
+                select_options.append(discord.SelectOption(
+                    label=self._panel_label(p)[:100],
+                    value=str(p["channel_id"]),
+                    description=str(p["channel_id"]),
+                    default=self.selected_channel_id == int(p["channel_id"]),
+                ))
+
+        if select_options:
+            select = discord.ui.Select(placeholder="Wähle ein Panel …", min_values=1, max_values=1, options=select_options)
+            select.callback = lambda inter, s=select: asyncio.create_task(panel_select_cb(inter, s))
+            container.add_item(select)
+        else:
+            container.add_item(discord.ui.TextDisplay("> Keine Panels gefunden. Nutze **/ticket setup**, um eines zu erstellen."))
+
+        container.add_item(discord.ui.Separator())
+
+        # Tabs
+        tabs: list[discord.ui.Button] = []
+        tab_names = ["Übersicht", "Panel bearbeiten", "Discord-Zuordnungen", "Ticket-Einstellungen", "Erinnerungen", "Protokollierung"]
+        for idx, name in enumerate(tab_names):
+            style = discord.ButtonStyle.primary if idx == self.active_tab else discord.ButtonStyle.secondary
+            btn = discord.ui.Button(label=name, style=style)
+
+            async def cb(inter: discord.Interaction, i=idx):
+                self.active_tab = i
+                self._build()
+                await inter.response.edit_message(view=self)
+
+            btn.callback = cb
+            tabs.append(btn)
+        container.add_item(discord.ui.ActionRow(*tabs))
+
+        # Content je Tab
+        if self.selected_channel_id is None or self._selected_panel is None:
+            container.add_item(discord.ui.TextDisplay("Wähle zunächst ein Panel aus."))
+            self.add_item(container)
+            return
+
+        # Übersicht
+        if self.active_tab == 0:
+            p = self._selected_panel
+            ch = self.guild.get_channel(int(p["channel_id"]))
+            role = self.guild.get_role(p.get("role_id") or 0)
+            cat = self.guild.get_channel(p.get("category_id") or 0)
+            msg_id = p.get("panel_message_id")
+            lines = [
+                f"**Thema:** {p.get('thema') or '—'}",
+                f"**Zielkanal:** {(ch.mention if isinstance(ch, discord.abc.GuildChannel) else ('#'+str(p['channel_id'])))} (`{p['channel_id']}`)",
+                f"**Support‑Rolle:** {role.mention if role else '—'} ({getattr(role,'id','—')})",
+                f"**Kategorie:** {cat.name if isinstance(cat, discord.CategoryChannel) else '—'} ({getattr(cat,'id','—')})",
+                f"**Status:** {'veröffentlicht' if msg_id else 'nicht veröffentlicht'}",
+                f"**Message‑ID:** {msg_id or '—'}",
+            ]
+            container.add_item(discord.ui.TextDisplay("\n".join(lines)))
+
+        # Panel bearbeiten
+        elif self.active_tab == 1:
+            p = self._selected_panel
+            edit_btn = discord.ui.Button(label="Texte bearbeiten", style=discord.ButtonStyle.primary, emoji="📝")
+
+            async def edit_cb(inter: discord.Interaction):
+                modal = _EditPanelTextModal(self, init_title=p.get("thema") or "", init_desc="", init_thema=p.get("thema") or "")
+                await inter.response.send_modal(modal)
+
+            edit_btn.callback = edit_cb
+            container.add_item(discord.ui.ActionRow(edit_btn))
+
+        # Discord-Zuordnungen
+        elif self.active_tab == 2:
+            # Role select
+            role_select = discord.ui.RoleSelect(placeholder="Support-Rolle wählen", min_values=0, max_values=1)
+
+            async def role_cb(inter: discord.Interaction):
+                role = role_select.values[0] if role_select.values else None
+                await self._set_role(inter, role)
+
+            role_select.callback = role_cb
+            container.add_item(role_select)
+
+            # Category select
+            cat_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.category], placeholder="Ticket-Kategorie wählen", min_values=0, max_values=1)
+
+            async def cat_cb(inter: discord.Interaction):
+                cat = cat_select.values[0] if cat_select.values else None
+                await self._set_category(inter, cat if isinstance(cat, discord.CategoryChannel) else None)
+
+            cat_select.callback = cat_cb
+            container.add_item(cat_select)
+
+            # Move (Zielkanal ändern)
+            txt_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Zielkanal für Panel verschieben", min_values=1, max_values=1)
+
+            async def move_cb(inter: discord.Interaction):
+                ch = txt_select.values[0] if txt_select.values else None
+                if not isinstance(ch, discord.TextChannel):
+                    return await inter.response.send_message("Bitte Textkanal wählen.", ephemeral=True)
+                await self._move_panel(inter, ch)
+
+            txt_select.callback = move_cb
+            container.add_item(txt_select)
+
+        # Ticket-Einstellungen
+        elif self.active_tab == 3:
+            container.add_item(discord.ui.TextDisplay("## Ticket‑Einstellungen\n`autoclose_hours` und `reopen_hours` verwalten."))
+
+            btn_auto = discord.ui.Button(label="Auto‑Close setzen", style=discord.ButtonStyle.secondary, emoji="⏱️")
+            btn_reopen = discord.ui.Button(label="Wiederöffnungsfrist setzen", style=discord.ButtonStyle.secondary, emoji="🔁")
+
+            class _ValueModal(discord.ui.Modal, title="Wert setzen"):
+                def __init__(self, key: str):
+                    super().__init__()
+                    self.key = key
+                    self.value = discord.ui.TextInput(label="Wert (Ganzzahl)", required=True)
+                    self.add_item(self.value)
+                async def on_submit(self, inter: discord.Interaction):
+                    try:
+                        val = int(str(self.value.value))
+                    except Exception:
+                        return await inter.response.send_message("Ungültiger Wert.", ephemeral=True)
+                    try:
+                        await set_guild_config(self.bot.pool, self.guild.id, **{self.key: val})  # type: ignore[attr-defined]
+                    except Exception:
+                        return await inter.response.send_message("Speichern fehlgeschlagen.", ephemeral=True)
+                    await inter.response.send_message("<:Astra_accept:1141303821176422460> Gespeichert.", ephemeral=True)
+
+            async def auto_cb(inter):
+                await inter.response.send_modal(_ValueModal("autoclose_hours"))
+
+            async def reopen_cb(inter):
+                await inter.response.send_modal(_ValueModal("reopen_hours"))
+
+            btn_auto.callback = auto_cb
+            btn_reopen.callback = reopen_cb
+            container.add_item(discord.ui.ActionRow(btn_auto, btn_reopen))
+
+        # Erinnerungen
+        elif self.active_tab == 4:
+            container.add_item(discord.ui.TextDisplay("## Erinnerungen\n`remind_minutes` und `ping_throttle_minutes` (0 = aus)."))
+            btn_rem = discord.ui.Button(label="Reminder setzen (Minuten)", style=discord.ButtonStyle.secondary, emoji="🔔")
+            btn_ping = discord.ui.Button(label="Ping‑Throttle (Minuten)", style=discord.ButtonStyle.secondary, emoji="📵")
+
+            class _ValueModal2(discord.ui.Modal, title="Wert setzen"):
+                def __init__(self, key: str):
+                    super().__init__()
+                    self.key = key
+                    self.value = discord.ui.TextInput(label="Wert (Ganzzahl)", required=True)
+                    self.add_item(self.value)
+                async def on_submit(self, inter: discord.Interaction):
+                    try:
+                        val = int(str(self.value.value))
+                    except Exception:
+                        return await inter.response.send_message("Ungültiger Wert.", ephemeral=True)
+                    try:
+                        await set_guild_config(self.bot.pool, self.guild.id, **{self.key: val})  # type: ignore[attr-defined]
+                    except Exception:
+                        return await inter.response.send_message("Speichern fehlgeschlagen.", ephemeral=True)
+                    await inter.response.send_message("<:Astra_accept:1141303821176422460> Gespeichert.", ephemeral=True)
+
+            btn_rem.callback = lambda inter: inter.response.send_modal(_ValueModal2("remind_minutes"))
+            btn_ping.callback = lambda inter: inter.response.send_modal(_ValueModal2("ping_throttle_minutes"))
+            container.add_item(discord.ui.ActionRow(btn_rem, btn_ping))
+
+        # Protokollierung
+        elif self.active_tab == 5:
+            container.add_item(discord.ui.TextDisplay("## Ticket‑Protokollierung"))
+            # Aktuellen Log-Kanal anzeigen
+            async def load_log_channel_id() -> Optional[int]:
+                try:
+                    async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                        async with conn.cursor() as cur:
+                            await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s", (self.guild.id,))
+                            row = await cur.fetchone()
+                            return int(row[0]) if row and row[0] else None
+                except Exception:
+                    return None
+
+            # Anzeige
+            # Hinweis: asynchrones Laden; hier nur Text, Werte werden nach Aktion aktualisiert
+            log_ch_id = None  # wird bei Aktionen neu geladen
+            container.add_item(discord.ui.TextDisplay(f"Aktueller Log‑Kanal: {('<#'+str(log_ch_id)+'>') if log_ch_id else '—'}"))
+
+            set_sel = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Log‑Kanal wählen", min_values=0, max_values=1)
+
+            async def set_log_cb(inter: discord.Interaction):
+                ch = set_sel.values[0] if set_sel.values else None
+                if ch is None:
+                    # deaktivieren
+                    try:
+                        async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                            async with conn.cursor() as cur:
+                                await cur.execute("DELETE FROM ticketlog WHERE guildID=%s", (self.guild.id,))
+                    except Exception:
+                        return await inter.response.send_message("Fehler beim Deaktivieren.", ephemeral=True)
+                    await inter.response.send_message("<:Astra_accept:1141303821176422460> Logging deaktiviert.", ephemeral=True)
+                    return
+                if not isinstance(ch, discord.TextChannel):
+                    return await inter.response.send_message("Bitte Textkanal wählen.", ephemeral=True)
+                try:
+                    async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                        async with conn.cursor() as cur:
+                            await cur.execute("REPLACE INTO ticketlog (guildID, channelID) VALUES (%s,%s)", (self.guild.id, ch.id))
+                except Exception:
+                    return await inter.response.send_message("Speichern fehlgeschlagen.", ephemeral=True)
+                await inter.response.send_message("<:Astra_accept:1141303821176422460> Log‑Kanal aktualisiert.", ephemeral=True)
+
+            set_sel.callback = set_log_cb
+            container.add_item(set_sel)
+
+        # Footer / Close
+        close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖")
+
+        async def close_cb(inter: discord.Interaction):
+            await inter.response.defer()
+            try:
+                await inter.delete_original_response()
+            except Exception:
+                pass
+
+        close_btn.callback = close_cb
+        container.add_item(discord.ui.ActionRow(close_btn))
+
+        self.add_item(container)
+
+
+# =========================================================
+#      PANELS ÜBERSICHT – Interaktive Anzeige (/ticket anzeigen)
+# =========================================================
+
+class PanelOverviewView(ui.LayoutView):
+    def __init__(self, bot: commands.Bot, guild: discord.Guild):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.guild = guild
+        self._panels: list[dict] = []
+        self.selected_channel_id: Optional[int] = None
+        self._build()
+
+    async def _load(self):
+        panels: list[dict] = []
+        async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+            async with conn.cursor() as cur:
+                try:
+                    await cur.execute("SELECT channelID, thema, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
+                    rows = await cur.fetchall()
+                    for ch, thema, rid, cid, mid in rows:
+                        panels.append({"channel_id": int(ch), "thema": thema or "", "role_id": rid, "category_id": cid, "panel_message_id": mid})
+                except Exception:
+                    await cur.execute("SELECT channelID, thema, roleID, categoryID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
+                    rows = await cur.fetchall()
+                    for ch, thema, rid, cid in rows:
+                        panels.append({"channel_id": int(ch), "thema": thema or "", "role_id": rid, "category_id": cid, "panel_message_id": None})
+        self._panels = panels
+        if self.selected_channel_id is None and panels:
+            self.selected_channel_id = int(panels[0]["channel_id"])
+
+    def _label(self, p: dict) -> str:
+        ch = self.guild.get_channel(int(p["channel_id"]))
+        n = f"#{ch.name}" if isinstance(ch, discord.abc.GuildChannel) else f"#{p['channel_id']}"
+        t = (p.get("thema") or "").strip()
+        return f"{n} – {t}" if t else n
+
+    def _build(self):
+        self.clear_items()
+        cont = discord.ui.Container(accent_color=get_current_colour().value)
+        cont.add_item(discord.ui.TextDisplay("# Ticket‑Panels\nWähle ein Panel, um Details anzuzeigen."))
+        cont.add_item(discord.ui.Separator())
+
+        async def on_select(inter: discord.Interaction, s: discord.ui.Select):
+            try:
+                self.selected_channel_id = int(s.values[0])
+            except Exception:
+                self.selected_channel_id = None
+            await self.refresh(inter)
+
+        if self._panels:
+            opts = [discord.SelectOption(label=self._label(p)[:100], value=str(p["channel_id"])) for p in self._panels]
+            sel = discord.ui.Select(placeholder="Panel wählen …", options=opts, min_values=1, max_values=1)
+            sel.callback = lambda inter, s=sel: asyncio.create_task(on_select(inter, s))
+            cont.add_item(sel)
+        else:
+            cont.add_item(discord.ui.TextDisplay("> Keine Panels vorhanden. Starte **/ticket setup**."))
+
+        cont.add_item(discord.ui.Separator())
+
+        p = next((x for x in self._panels if int(x["channel_id"]) == int(self.selected_channel_id or 0)), None)
+        if p:
+            ch = self.guild.get_channel(int(p["channel_id"]))
+            role = self.guild.get_role(p.get("role_id") or 0)
+            cat = self.guild.get_channel(p.get("category_id") or 0)
+            msg_id = p.get("panel_message_id")
+            details = [
+                f"**Thema:** {p.get('thema') or '—'}",
+                f"**Titel:** {p.get('thema') or '—'}",
+                f"**Zielkanal:** {ch.mention if isinstance(ch, discord.abc.GuildChannel) else '#'+str(p['channel_id'])} (`{p['channel_id']}`)",
+                f"**Support‑Rolle:** {role.mention if role else '—'} ({getattr(role,'id','—')})",
+                f"**Kategorie:** {cat.name if isinstance(cat, discord.CategoryChannel) else '—'} ({getattr(cat,'id','—')})",
+                f"**Status:** {'veröffentlicht' if msg_id else 'nicht veröffentlicht'}",
+                f"**Message‑ID:** {msg_id or '—'}",
+            ]
+            cont.add_item(discord.ui.TextDisplay("\n".join(details)))
+
+            # Aktionen
+            refresh_btn = discord.ui.Button(label="Status aktualisieren", style=discord.ButtonStyle.secondary, emoji="🔄")
+            manage_btn = discord.ui.Button(label="Im Control‑Center verwalten", style=discord.ButtonStyle.primary, emoji="🛠️")
+
+            async def ref_cb(inter: discord.Interaction):
+                await self.refresh(inter)
+
+            async def manage_cb(inter: discord.Interaction):
+                v = ConfigCenterView(self.bot, inter.user, self.guild)
+                await v._load_panels()
+                v.selected_channel_id = int(p["channel_id"])
+                await inter.response.edit_message(view=v)
+
+            refresh_btn.callback = ref_cb
+            manage_btn.callback = manage_cb
+            cont.add_item(discord.ui.ActionRow(refresh_btn, manage_btn))
+
+        close = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger)
+        close.callback = lambda inter: inter.response.defer() and asyncio.create_task(inter.delete_original_response())
+        cont.add_item(discord.ui.ActionRow(close))
+        self.add_item(cont)
+
+    async def refresh(self, interaction: discord.Interaction):
+        await self._load()
+        self._build()
+        await interaction.edit_original_response(view=self)
+
+
+# =========================================================
 #                  IN-TICKET VIEWS (CLAIM/CLOSE)
 # =========================================================
 
@@ -1581,18 +2170,9 @@ class Ticket(app_commands.Group):
     @app_commands.checks.has_permissions(manage_channels=True)
     @app_commands.checks.cooldown(1, 5, key=lambda i: (i.guild_id, i.user.id))
     async def ticket_list(self, interaction: discord.Interaction):
-        async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT channelID, thema FROM ticketsystem WHERE guildID=%s", (interaction.guild.id,))
-                rows = await cur.fetchall()
-        if not rows:
-            return await interaction.response.send_message("Keine Ticket-Panels aktiv.", ephemeral=True)
-
-        e = mk_embed(title="Aktive Ticket-Panels", color=discord.Colour.green())
-        for ch_id, thema in rows:
-            ch = interaction.guild.get_channel(int(ch_id))
-            e.add_field(name=ch.mention if ch else f"#{ch_id}", value=thema or "—", inline=False)
-        await interaction.response.send_message(embed=e, ephemeral=True)
+        view = PanelOverviewView(self.bot, interaction.guild)
+        await view._load()
+        await interaction.response.send_message(view=view, ephemeral=True)
         return None
 
     # Panel löschen
@@ -1633,134 +2213,10 @@ class Ticket(app_commands.Group):
             interaction: discord.Interaction,
             modus: Literal["Anzeigen", "Setzen"],
     ):
-        cfg = await get_guild_config(self.bot.pool, interaction.guild.id)  # type: ignore[attr-defined]
-
-        if modus == "Anzeigen":
-            e = mk_embed(
-                title="Ticket-Konfiguration",
-                description=human_cfg(cfg),
-            )
-            return await interaction.response.send_message(embed=e, ephemeral=True)
-
-        # ====== Setzen: interaktive View ======
-        class ConfigView(discord.ui.View):
-            def __init__(self, bot):
-                super().__init__(timeout=180)
-                self.bot = bot
-                self.selected_key: Optional[str] = None
-
-            @discord.ui.select(
-                placeholder="⚙️ Wähle eine Einstellung …",
-                min_values=1, max_values=1,
-                options=[
-                    discord.SelectOption(
-                        label="<:Astra_locked:1141824745243942912> Auto-Close",
-                        value="autoclose_hours",
-                        description="Nach wie viel Zeit Tickets automatisch geschlossen werden",
-                    ),
-                    discord.SelectOption(
-                        label="<:Astra_time:1141303932061233202> Reminder",
-                        value="remind_minutes",
-                        description="Nach wie viel Zeit eine Erinnerung im Ticket gepostet wird",
-                    ),
-                    discord.SelectOption(
-                        label="<:Astra_file1:1141303837181886494> Reopen",
-                        value="reopen_hours",
-                        description="Wie lange nach dem Schließen ein Reopen möglich ist",
-                    ),
-                    discord.SelectOption(
-                        label="<:Astra_support:1141303923752325210> Ping-Throttle",
-                        value="ping_throttle_minutes",
-                        description="Mindestabstand zwischen erlaubten Pings (Spam-Schutz)",
-                    ),
-                ]
-            )
-            async def select_setting(self, inter: discord.Interaction, select: discord.ui.Select):
-                self.selected_key = select.values[0]
-                pretty_map = {
-                    "autoclose_hours": "<:Astra_locked:1141824745243942912> Auto-Close",
-                    "remind_minutes": "<:Astra_time:1141303932061233202> Reminder",
-                    "reopen_hours": "<:Astra_file1:1141303837181886494> Reopen",
-                    "ping_throttle_minutes": "<:Astra_support:1141303923752325210> Ping-Throttle",
-                }
-                picked = pretty_map.get(self.selected_key, self.selected_key)
-
-                await inter.response.edit_message(
-                    embed=mk_embed(
-                        title="Konfiguration ändern",
-                        description=(
-                            f"Ausgewählt: **{picked}**\n\n"
-                            "Wähle einen der **Schnell-Werte** unten oder klicke **Eigenen Wert**.\n"
-                            "Format für eigene Werte: `30m`, `2h`, `1d`, `1w2d3h20m10s` …\n"
-                            "_Hinweis:_ Reminder & Ping-Throttle werden in **Minuten**, Auto-Close & Reopen in **Stunden** gespeichert."
-                        ),
-                        color=ASTRA_BLUE
-                    ),
-                    view=self
-                )
-
-            # Presets – passen für beide „Arten“ (werden intern umgerechnet)
-            @discord.ui.button(label="15 Minuten", style=discord.ButtonStyle.secondary, custom_id="cfg:15m")
-            async def btn_15m(self, inter: discord.Interaction, _):
-                await self._apply(inter, "15m")
-
-            @discord.ui.button(label="1 Stunde", style=discord.ButtonStyle.secondary, custom_id="cfg:1h")
-            async def btn_1h(self, inter: discord.Interaction, _):
-                await self._apply(inter, "1h")
-
-            @discord.ui.button(label="1 Tag", style=discord.ButtonStyle.secondary, custom_id="cfg:1d")
-            async def btn_1d(self, inter: discord.Interaction, _):
-                await self._apply(inter, "1d")
-
-            @discord.ui.button(label="1 Woche", style=discord.ButtonStyle.secondary, custom_id="cfg:1w")
-            async def btn_1w(self, inter: discord.Interaction, _):
-                await self._apply(inter, "1w")
-
-            @discord.ui.button(label="Eigenen Wert", style=discord.ButtonStyle.primary, custom_id="cfg:custom")
-            async def btn_custom(self, inter: discord.Interaction, _):
-                if not self.selected_key:
-                    return await inter.response.send_message("⚠️ Bitte zuerst eine Einstellung wählen.", ephemeral=True)
-
-                class ValueModal(discord.ui.Modal, title="Eigenen Wert setzen"):
-                    value = discord.ui.TextInput(
-                        label="Zeit (z. B. 30m, 2h, 1d, 1w2d3h20m10s, 0=Aus)",
-                        required=True,
-                        max_length=40,
-                    )
-
-                    async def on_submit(self, inter2: discord.Interaction):
-                        await self.view._apply(inter2, str(self.value.value))  # type: ignore
-
-                await inter.response.send_modal(ValueModal())
-
-            async def _apply(self, inter: discord.Interaction, value_str: str):
-                if not self.selected_key:
-                    return await inter.response.send_message("<:Astra_x:1141303954555289600> Bitte zuerst eine Einstellung wählen.", ephemeral=True)
-                try:
-                    new_val = parse_duration_to_native(self.selected_key, value_str, None)
-                except Exception:
-                    return await inter.response.send_message(
-                        "<:Astra_x:1141303954555289600> Ungültiges Format. Beispiele: `30m`, `2h`, `1d`, `1w2d3h20m10s`, `0` (Aus).",
-                        ephemeral=True
-                    )
-
-                await set_guild_config(self.bot.pool, inter.guild.id,
-                                       **{self.selected_key: new_val})  # type: ignore[attr-defined]
-                cfg2 = await get_guild_config(self.bot.pool, inter.guild.id)  # type: ignore[attr-defined]
-
-                e = mk_embed(
-                    title="Einstellung gespeichert",
-                    description=f"**{self.selected_key}** → `{format_native_value(self.selected_key, new_val)}`\n\n{human_cfg(cfg2)}",
-                    color=discord.Colour.green(),
-                )
-                await inter.response.send_message(embed=e, ephemeral=True)
-                return None
-
-        e = mk_embed(
-            title="Ticket-Konfiguration",
-            description=human_cfg(cfg),
-        )
-        await interaction.response.send_message(embed=e, view=ConfigView(self.bot), ephemeral=True)
+        # Neues Control-Center (Tabs) – ephemer und rückwärtskompatibel
+        view = ConfigCenterView(self.bot, interaction.user, interaction.guild)
+        await view._load_panels()
+        await interaction.response.send_message(view=view, ephemeral=True)
         return None
 
 

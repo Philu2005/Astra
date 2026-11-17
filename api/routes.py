@@ -15,6 +15,8 @@ from api.heartbeat import heartbeat_state, derive_bot_status
 from api.guild_state import guild_state_store
 from cogs.ticket import api_publish_ticket_panel, api_update_ticket_panel
 from utils.bot_bridge import submit_bot_task, get_bot_instance
+import os
+import requests
 from api.moderation_services import (
     fetch_warns as svc_fetch_warns,
     fetch_all_warns as svc_fetch_all_warns,
@@ -109,6 +111,38 @@ def _api_error(http_status: int, code: str, message: str | None = None):
     if message:
         payload["error"] = message
     return jsonify(payload), http_status
+
+
+# =============================
+#   Lokaler IPC-Client (Bot)
+# =============================
+
+def _ipc_base_url() -> str:
+    host = os.environ.get("ASTRA_IPC_HOST", "127.0.0.1")
+    port = int(os.environ.get("ASTRA_IPC_PORT", "8765"))
+    return f"http://{host}:{port}"
+
+
+def _ipc_headers() -> dict:
+    key = os.environ.get("ASTRA_IPC_KEY", "")
+    return {"X-Astra-IPC-Key": key} if key else {}
+
+
+def _ipc_request(path: str, payload: dict, timeout: float = 6.0) -> tuple[int, dict]:
+    url = _ipc_base_url() + path
+    try:
+        r = requests.post(url, json=payload, headers=_ipc_headers(), timeout=timeout)
+        data = {}
+        try:
+            data = r.json()
+        except Exception:
+            data = {"success": False, "code": "bad_gateway"}
+        return r.status_code, data
+    except requests.Timeout:
+        return 504, {"success": False, "code": "timeout"}
+    except Exception:
+        logger.exception("IPC request failed: %s", url)
+        return 502, {"success": False, "code": "ipc_unavailable"}
 
 
 # =============================
@@ -463,7 +497,7 @@ def get_server_detail(guild_id: int):
 @api_bp.route("/servers/<int:guild_id>/roles", methods=["GET"])
 @require_service_auth
 def get_server_roles(guild_id: int):
-    """Gibt die Rollen eines Servers zurück, falls der Benutzer berechtigt ist."""
+    """Gibt die Rollen eines Servers anhand echter Discord-Daten zurück (keine Cache-Simulation)."""
     server_data_ready, error = _get_server_data_state()
     if not server_data_ready:
         return jsonify(success=False, error=error), 503
@@ -478,7 +512,6 @@ def get_server_roles(guild_id: int):
 
     cache = get_guild_cache()
     guild = cache.get(guild_id)
-
     if not guild:
         return jsonify(success=False, error="Server not found"), 404
 
@@ -486,14 +519,136 @@ def get_server_roles(guild_id: int):
     if perm_info is None:
         return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
 
-    guild_roles = guild.get("roles", [])
-    roles = [
-        serialize_role(role)
-        for role in guild_roles
-        if role.get("name", "") != "@everyone"
-    ]
+    bot = get_bot_instance()
+    if bot is None:
+        return jsonify(success=False, error="Service not ready"), 503
 
-    return jsonify(success=True, count=len(roles), roles=roles), 200
+    async def _bot_fetch_roles(_bot, _guild_id: int):
+        g = _bot.get_guild(int(_guild_id))
+        if g is None:
+            raise RuntimeError("Guild not found")
+        out = []
+        for r in g.roles:
+            if r.name == "@everyone":
+                continue
+            out.append({
+                "id": str(r.id),
+                "name": r.name,
+                "color": int(r.color.value) if getattr(r.color, "value", None) is not None else 0,
+            })
+        return out
+
+    try:
+        roles = submit_bot_task(_bot_fetch_roles(bot, guild_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to fetch roles via bot for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to fetch roles"), 500
+
+    return jsonify(success=True, roles=roles), 200
+
+
+@api_bp.route("/servers/<int:guild_id>/channels", methods=["GET"])
+@require_service_auth
+def get_server_channels(guild_id: int):
+    """Gibt alle sichtbaren Text/Voice/Thread/Stage Kanäle inkl. Typ und parent_id zurück."""
+    server_data_ready, error = _get_server_data_state()
+    if not server_data_ready:
+        return jsonify(success=False, error=error), 503
+
+    raw_user_id = request.args.get("user_id") or request.headers.get("X-User-ID")
+    if not raw_user_id:
+        return jsonify(success=False, error="Missing required parameter: user_id"), 400
+
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    bot = get_bot_instance()
+    if bot is None:
+        return jsonify(success=False, error="Service not ready"), 503
+
+    async def _bot_fetch_channels(_bot, _guild_id: int):
+        g = _bot.get_guild(int(_guild_id))
+        if g is None:
+            raise RuntimeError("Guild not found")
+        out = []
+        for ch in g.channels:
+            # Include all channel types present in g.channels; skip categories here (returned separately)
+            parent_id = getattr(ch, "category_id", None)
+            out.append({
+                "id": str(ch.id),
+                "name": getattr(ch, "name", str(ch.id)),
+                "type": int(getattr(ch, "type", 0).value) if getattr(ch, "type", None) is not None else 0,
+                "parent_id": str(parent_id) if parent_id else None,
+            })
+        return out
+
+    try:
+        channels = submit_bot_task(_bot_fetch_channels(bot, guild_id), timeout=6.0)
+    except Exception:
+        logger.exception("Failed to fetch channels via bot for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to fetch channels"), 500
+
+    return jsonify(success=True, channels=channels), 200
+
+
+@api_bp.route("/servers/<int:guild_id>/categories", methods=["GET"])
+@require_service_auth
+def get_server_categories(guild_id: int):
+    """Gibt alle echten Discord-Kategorien zurück (id, name)."""
+    server_data_ready, error = _get_server_data_state()
+    if not server_data_ready:
+        return jsonify(success=False, error=error), 503
+
+    raw_user_id = request.args.get("user_id") or request.headers.get("X-User-ID")
+    if not raw_user_id:
+        return jsonify(success=False, error="Missing required parameter: user_id"), 400
+
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    bot = get_bot_instance()
+    if bot is None:
+        return jsonify(success=False, error="Service not ready"), 503
+
+    async def _bot_fetch_categories(_bot, _guild_id: int):
+        g = _bot.get_guild(int(_guild_id))
+        if g is None:
+            raise RuntimeError("Guild not found")
+        out = []
+        for ch in g.categories:
+            out.append({
+                "id": str(ch.id),
+                "name": ch.name,
+            })
+        return out
+
+    try:
+        categories = submit_bot_task(_bot_fetch_categories(bot, guild_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to fetch categories via bot for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to fetch categories"), 500
+
+    return jsonify(success=True, categories=categories), 200
 
 
 # ---------------------------------------------
@@ -1246,20 +1401,46 @@ def publish_ticket_panel(guild_id: int):
     if _is_publish_in_progress(guild_id, channel_id):
         return _api_error(409, "publish_in_progress", "Another publish is in progress")
     _mark_publish_state(guild_id, channel_id, "in_progress")
+    # Primär über lokalen IPC callen (prozessübergreifend)
+    status_code, data = _ipc_request(
+        "/ipc/panel/publish",
+        {
+            "guild_id": str(guild_id),
+            "channel_id": str(channel_id),
+            "category_id": str(category_id),
+            "role_id": str(role_id),
+            "title": title,
+            "description": description,
+        },
+        timeout=15.0,
+    )
+    if status_code == 200 and data.get("success"):
+        _mark_publish_state(guild_id, channel_id, "succeeded", data)
+        return jsonify(
+            success=True,
+            status=data.get("status", "published"),
+            channel_id=data.get("channel_id"),
+            message_id=data.get("message_id"),
+        ), 200
+
+    # Fallback: gleiche Prozess-Bridge falls Bot hier läuft
     try:
-        result = submit_bot_task(
-            api_publish_ticket_panel(
-                bot,
-                guild_id=guild_id,
-                channel_id=channel_id,
-                category_id=category_id,
-                role_id=role_id,
-                title=title,
-                description=description,
-            ),
-            timeout=15.0,
-        )
-        _mark_publish_state(guild_id, channel_id, "succeeded", result)
+        bot_fb = get_bot_instance()
+        if bot_fb:
+            result = submit_bot_task(
+                api_publish_ticket_panel(
+                    bot_fb,
+                    guild_id=guild_id,
+                    channel_id=channel_id,
+                    category_id=category_id,
+                    role_id=role_id,
+                    title=title,
+                    description=description,
+                ),
+                timeout=15.0,
+            )
+            _mark_publish_state(guild_id, channel_id, "succeeded", result)
+            return jsonify(success=True, published=result), 200
     except FuturesTimeoutError:
         _mark_publish_state(guild_id, channel_id, "failed")
         return _api_error(504, "timeout", "Publish timeout")
@@ -1267,11 +1448,13 @@ def publish_ticket_panel(guild_id: int):
         _mark_publish_state(guild_id, channel_id, "failed")
         return _api_error(403, "permission_denied", "Missing permissions for target channel")
     except Exception:
-        logger.exception("Panel publish failed")
-        _mark_publish_state(guild_id, channel_id, "failed")
-        return _api_error(500, "publish_failed", "Failed to publish panel")
+        logger.debug("Bot-bridge publish fallback failed", exc_info=True)
 
-    return jsonify(success=True, published=result), 200
+    _mark_publish_state(guild_id, channel_id, "failed")
+    code = (data or {}).get("code", "publish_failed")
+    if status_code in (400, 403, 404, 409, 410, 503, 504):
+        return _api_error(status_code, code, None)
+    return _api_error(500, code, None)
 
 
 @api_bp.route("/tickets/panels/<int:guild_id>/<int:channel_id>/update", methods=["PUT"])
@@ -1320,6 +1503,22 @@ def update_ticket_panel(guild_id: int, channel_id: int):
         logger.exception("Failed to load panel for update")
         return _api_error(500, "load_failed", "Failed to load panel")
 
+    # Primär über IPC updaten
+    status_code, data = _ipc_request(
+        "/ipc/panel/update",
+        {
+            "guild_id": str(guild_id),
+            "channel_id": str(channel_id),
+            "message_id": str(message_id),
+            "title": title,
+            "description": description,
+        },
+        timeout=15.0,
+    )
+    if status_code == 200 and data.get("success"):
+        return jsonify(success=True, status=data.get("status", "updated")), 200
+
+    # Fallback: Bot-Bridge (gleicher Prozess)
     try:
         result = submit_bot_task(
             api_update_ticket_panel(
@@ -1332,15 +1531,17 @@ def update_ticket_panel(guild_id: int, channel_id: int):
             ),
             timeout=15.0,
         )
+        return jsonify(success=True, updated=result), 200
     except FuturesTimeoutError:
         return _api_error(504, "timeout", "Update timeout")
     except FileNotFoundError:
         return _api_error(410, "gone", "Panel message not found")
     except Exception:
-        logger.exception("Panel update failed")
-        return _api_error(500, "update_failed", "Failed to update panel")
-
-    return jsonify(success=True, updated=result), 200
+        logger.debug("Bot-bridge update fallback failed", exc_info=True)
+        code = (data or {}).get("code", "update_failed")
+        if status_code in (400, 403, 404, 409, 410, 503, 504):
+            return _api_error(status_code, code, None)
+        return _api_error(500, code, None)
 
 
 @api_bp.route("/tickets/panels/<int:guild_id>/status", methods=["GET"])
@@ -1383,6 +1584,185 @@ def get_ticket_panel_status(guild_id: int):
         p["status"] = _status_of(p)
 
     return jsonify(success=True, count=len(panels), panels=panels), 200
+
+
+@api_bp.route("/tickets/panels/<int:guild_id>/<int:channel_id>/config", methods=["PUT"])
+@require_service_auth
+@rate_limit(scope="tickets_panel_config_put", limit=20, per_seconds=60)
+def put_ticket_panel_config(guild_id: int, channel_id: int):
+    """Aktualisiert Panel-Konfiguration. Unterstützt Textänderungen, Thema, Rolle, Kategorie
+    sowie optionales Verschieben in einen neuen Zielkanal (Move-Flow).
+    """
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+
+    payload = request.get_json(silent=True) or {}
+    # Erlaubte Felder
+    allowed = {"title", "description", "thema", "role_id", "category_id", "new_channel_id"}
+    for k in payload.keys():
+        if k not in allowed:
+            return _api_error(400, "unsupported_field", f"Unsupported field: {k}")
+
+    title = payload.get("title")
+    description = payload.get("description")
+    thema = payload.get("thema")
+    role_id = payload.get("role_id")
+    category_id = payload.get("category_id")
+    new_channel_id = payload.get("new_channel_id")
+
+    # Text-Validierung
+    if title is not None:
+        if not str(title).strip():
+            return _api_error(400, "invalid_title", "Title must not be empty")
+        if len(str(title)) > 256:
+            return _api_error(400, "title_too_long", "Title exceeds 256 characters")
+    if description is not None and len(str(description)) > 4000:
+        return _api_error(400, "description_too_long", "Description exceeds 4000 characters")
+
+    # IDs parsen (optional)
+    try:
+        role_id_int = int(str(role_id)) if role_id is not None else None
+        category_id_int = int(str(category_id)) if category_id is not None else None
+        new_channel_id_int = int(str(new_channel_id)) if new_channel_id is not None else None
+    except Exception:
+        return _api_error(400, "invalid_payload", "Invalid id values")
+
+    # Bestehendes Panel laden
+    try:
+        panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
+        existing = next((p for p in panels if p["channel_id"] == channel_id), None)
+        if not existing:
+            return _api_error(404, "panel_not_found", "Panel not found")
+        existing_msg_id = existing.get("panel_message_id")
+    except Exception:
+        logger.exception("Failed to load panel for config update")
+        return _api_error(500, "load_failed", "Failed to load panel")
+
+    # Live-Guild-Prüfung für neue IDs, falls gesetzt (Kategorie/Kanal)
+    if new_channel_id_int is not None:
+        # harte Channel-Zugehörigkeit via Bot prüfen
+        try:
+            belongs = submit_bot_task(_bot_channel_belongs_to_guild(get_bot_instance(), guild_id, new_channel_id_int), timeout=5.0)
+        except Exception:
+            belongs = False
+        if not belongs:
+            return _api_error(400, "invalid_channel", "Channel does not belong to the guild")
+
+    # DB-Update-Helfer für ticketsystem (thema/roleID/categoryID/channelID)
+    async def _update_panel_row(pool, guild_id: int, channel_id_old: int, updates: dict):
+        sets = []
+        vals = []
+        for k, v in updates.items():
+            sets.append(f"{k}=%s")
+            vals.append(v)
+        vals.extend([guild_id, channel_id_old])
+        q = f"UPDATE ticketsystem SET {', '.join(sets)} WHERE guildID=%s AND channelID=%s"
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(q, tuple(vals))
+
+    # 1) Falls reines Textupdate (kein Move): Bot-Update auf bestehender Message
+    if new_channel_id_int is None:
+        # Optional: thema in DB aktualisieren, role/category anpassen
+        updates = {}
+        if thema is not None:
+            updates["thema"] = str(thema)
+        if role_id_int is not None:
+            updates["roleID"] = role_id_int
+        if category_id_int is not None:
+            updates["categoryID"] = category_id_int
+        if updates:
+            try:
+                api_db.run_coro(_update_panel_row(api_db.get_pool(), guild_id, channel_id, updates), timeout=5.0)
+            except Exception:
+                logger.exception("Failed to update panel row (text config)")
+                return _api_error(500, "save_failed", "Failed to save panel configuration")
+
+        # Panel-Text via IPC aktualisieren (nur wenn title/description gesetzt)
+        if title is not None or description is not None:
+            if not existing_msg_id:
+                return _api_error(404, "not_published", "No published panel found")
+            sc, data = _ipc_request(
+                "/ipc/panel/update",
+                {
+                    "guild_id": str(guild_id),
+                    "channel_id": str(channel_id),
+                    "message_id": str(int(existing_msg_id)),
+                    "title": title,
+                    "description": description,
+                },
+                timeout=15.0,
+            )
+            if sc != 200 or not data.get("success"):
+                code = (data or {}).get("code", "update_failed")
+                if sc in (400, 403, 404, 409, 410, 503, 504):
+                    return _api_error(sc, code, None)
+                return _api_error(500, code, None)
+        return jsonify(success=True, status="updated"), 200
+
+    # 2) Move-Flow (with new_channel_id)
+    if new_channel_id_int == channel_id:
+        # Kein echter Move, behandle wie Text/Meta-Update
+        return jsonify(success=True, status="no_move"), 200
+
+    if not existing_msg_id:
+        return _api_error(404, "not_published", "No published panel to move")
+
+    # IPC: sichere Verschiebung (neu posten → speichern → alt löschen)
+    sc, data = _ipc_request(
+        "/ipc/panel/move",
+        {
+            "guild_id": str(guild_id),
+            "old_channel_id": str(channel_id),
+            "old_message_id": str(int(existing_msg_id)),
+            "new_channel_id": str(new_channel_id_int),
+            "category_id": str(category_id_int) if category_id_int is not None else None,
+            "role_id": str(role_id_int) if role_id_int is not None else None,
+            "title": title if title is not None else (thema or existing.get("thema") or "Ticket"),
+            "description": description if description is not None else "",
+        },
+        timeout=20.0,
+    )
+    if sc != 200 or not data.get("success"):
+        code = (data or {}).get("code", "move_failed")
+        if sc in (400, 403, 404, 409, 410, 503, 504):
+            return _api_error(sc, code, None)
+        return _api_error(500, code, None)
+
+    # DB: Panel-Zeile auf neuen Kanal und Metadaten aktualisieren; panelMsgID wurde vom Bot bereits gesetzt
+    updates = {"channelID": new_channel_id_int}
+    if thema is not None:
+        updates["thema"] = str(thema)
+    if role_id_int is not None:
+        updates["roleID"] = role_id_int
+    if category_id_int is not None:
+        updates["categoryID"] = category_id_int
+    try:
+        api_db.run_coro(_update_panel_row(api_db.get_pool(), guild_id, channel_id, updates), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to persist panel move updates")
+        # Hinweis: Neue Nachricht existiert bereits – alter Zustand nicht löschen; als Teilfehler melden
+        return jsonify(success=True, status="moved_db_update_failed", channel_id=data.get("channel_id"), message_id=data.get("message_id")), 200
+
+    return jsonify(success=True, status=data.get("status", "moved"), channel_id=data.get("channel_id"), message_id=data.get("message_id")), 200
 
 
 async def _fetch_open_tickets_async(pool, guild_id: int):
