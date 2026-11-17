@@ -14,7 +14,7 @@ from api.serializers import serialize_guild_summary, serialize_guild_detail, ser
 from api.heartbeat import heartbeat_state, derive_bot_status
 from api.guild_state import guild_state_store
 from cogs.ticket import api_publish_ticket_panel, api_update_ticket_panel
-from main import submit_bot_task
+from utils.bot_bridge import submit_bot_task, get_bot_instance
 from api.moderation_services import (
     fetch_warns as svc_fetch_warns,
     fetch_all_warns as svc_fetch_all_warns,
@@ -25,7 +25,7 @@ from api.moderation_services import (
     get_modlog_channel as svc_get_modlog,
     set_modlog_channel as svc_set_modlog,
 )
-from main import submit_bot_task
+# duplicate import removed; kept single import from utils.bot_bridge above
 
 logger = logging.getLogger("astra.api.routes")
 
@@ -1222,7 +1222,7 @@ def publish_ticket_panel(guild_id: int):
         return _api_error(400, "invalid_payload", "Invalid payload values")
 
     # Harte Guild-Channel-Prüfung via Bot
-    bot = current_app.config.get("DISCORD_BOT")
+    bot = get_bot_instance()
     try:
         belongs = submit_bot_task(_bot_channel_belongs_to_guild(bot, guild_id, channel_id), timeout=5.0)
     except Exception:
@@ -1323,7 +1323,7 @@ def update_ticket_panel(guild_id: int, channel_id: int):
     try:
         result = submit_bot_task(
             api_update_ticket_panel(
-                current_app.config.get("DISCORD_BOT"),
+                get_bot_instance(),
                 guild_id=guild_id,
                 channel_id=channel_id,
                 message_id=message_id,
