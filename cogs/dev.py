@@ -10,6 +10,7 @@ from collections import defaultdict
 import inspect
 import asyncio
 import subprocess
+import os
 import time
 from typing import List, Optional
 import logging
@@ -1990,28 +1991,131 @@ class DevTools(commands.Cog):
         with tempfile.NamedTemporaryFile(prefix="restore_panels_", suffix=".json", delete=False) as tf:
             report_path = Path(tf.name)
 
-        async def run_script(args: list[str]):
+        async def run_script_streaming(args: list[str], *, title: str, timeout: float = 900.0):
+            """Startet das Skript ungepuffert und streamt stdout/stderr live in eine Fortschritts-Nachricht.
+            Rückgabe: (proc, exit_code, stdout_tail:str, stderr_tail:str)
+            """
+            from collections import deque
+            env = dict(**os.environ)
+            env["PYTHONUNBUFFERED"] = "1"
+            cmd = [sys.executable, "-u", str(script_path), *args]
+
+            progress_msg = await ctx.send(f"🔎 {title} – wird gestartet…")
+
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    sys.executable,
-                    str(script_path),
-                    *args,
+                    *cmd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    env=env,
                 )
             except Exception as e:
-                return None, b"", str(e)
+                await progress_msg.edit(content=f"❌ {title}: Start fehlgeschlagen: {e}")
+                return None, None, "", str(e)
+
+            out_buf: deque[str] = deque(maxlen=80)
+            err_buf: deque[str] = deque(maxlen=80)
+            new_data = asyncio.Event()
+            cancelled = False
+
+            async def _reader(stream: asyncio.StreamReader, target: deque[str]):
+                try:
+                    while True:
+                        line = await stream.readline()
+                        if not line:
+                            break
+                        try:
+                            s = line.decode(errors="ignore").rstrip()
+                        except Exception:
+                            s = str(line)
+                        target.append(s)
+                        new_data.set()
+                except Exception:
+                    pass
+
+            t_out = asyncio.create_task(_reader(proc.stdout, out_buf))  # type: ignore[arg-type]
+            t_err = asyncio.create_task(_reader(proc.stderr, err_buf))  # type: ignore[arg-type]
+
+            start = time.monotonic()
+            last_edit = 0.0
+
             try:
-                stdout, stderr = await proc.communicate()
+                while True:
+                    try:
+                        await asyncio.wait_for(asyncio.shield(proc.wait()), timeout=0.25)
+                        break
+                    except asyncio.TimeoutError:
+                        pass
+
+                    now = time.monotonic()
+                    if new_data.is_set() and (now - last_edit) >= 2.0:
+                        new_data.clear()
+                        last_edit = now
+                        out_tail = "\n".join(list(out_buf)[-18:])
+                        err_tail = "\n".join(list(err_buf)[-10:])
+                        text = f"🔎 {title} – läuft…\n"
+                        if out_tail:
+                            text += f"``````\n{out_tail[-950:]}\n``````\n"
+                        if err_tail:
+                            text += f"⚠️ stderr (tail):\n``````\n{err_tail[-600:]}\n``````"
+                        try:
+                            await progress_msg.edit(content=text)
+                        except Exception:
+                            pass
+
+                    if (time.monotonic() - start) > timeout:
+                        cancelled = True
+                        try:
+                            proc.kill()
+                        except ProcessLookupError:
+                            pass
+                        break
+
+                # Reader beenden
+                try:
+                    await asyncio.wait_for(asyncio.gather(t_out, t_err), timeout=5.0)
+                except Exception:
+                    for t in (t_out, t_err):
+                        t.cancel()
+
+                exit_code = proc.returncode
+                out_tail = "\n".join(out_buf)
+                err_tail = "\n".join(err_buf)
+
+                if cancelled:
+                    await progress_msg.edit(content=(
+                        f"❌ {title} – Timeout nach {int(time.monotonic()-start)}s. Prozess beendet.\n"
+                        + (f"``````\n{out_tail[-900:]}\n``````\n" if out_tail else "")
+                        + (f"⚠️ stderr (tail):\n``````\n{err_tail[-600:]}\n``````" if err_tail else "")
+                    ))
+                    return proc, exit_code, out_tail, err_tail
+
+                status_emoji = "✅" if (exit_code == 0) else "❌"
+                text = f"{status_emoji} {title} – beendet (Exit {exit_code}).\n"
+                if out_tail.strip():
+                    text += f"``````\n{out_tail[-900:]}\n``````\n"
+                if err_tail.strip():
+                    text += f"⚠️ stderr (tail):\n``````\n{err_tail[-600:]}\n``````"
+                try:
+                    await progress_msg.edit(content=text)
+                except Exception:
+                    pass
+                return proc, exit_code, out_tail, err_tail
             except Exception as e:
-                return None, b"", str(e)
-            return proc, stdout, stderr.decode(errors="ignore")
+                for t in (t_out, t_err):
+                    t.cancel()
+                try:
+                    if proc.returncode is None:
+                        proc.kill()
+                except Exception:
+                    pass
+                await progress_msg.edit(content=f"❌ {title}: Fehler: {e}")
+                return proc, None, "", str(e)
 
         # Dry-Run starten (immer)
-        async with ctx.channel.typing():
-            proc, stdout, stderr = await run_script(["--dry-run", "--report", str(report_path)])
-        if proc is None:
-            await ctx.send(f"❌ Konnte Subprozess nicht starten: `{stderr}`")
+        proc, exit_code, stdout_text, stderr_text = await run_script_streaming(["--dry-run", "--report", str(report_path)], title="Dry-Run: Panel-IDs scannen")
+        if proc is None or exit_code is None:
+            await ctx.send(f"❌ Konnte Subprozess nicht starten oder Fehler beim Ausführen: `{stderr_text}`")
             try:
                 report_path.unlink(missing_ok=True)  # type: ignore[arg-type]
             except Exception:
@@ -2019,8 +2123,8 @@ class DevTools(commands.Cog):
             return
         # Bei Fehlercode → keine normale Zusammenfassung anzeigen
         if proc.returncode != 0:
-            out_text = (stdout or b"").decode(errors="ignore") if stdout is not None else ""
-            err_text = stderr or ""
+            out_text = stdout_text or ""
+            err_text = stderr_text or ""
             tail = ""
             if out_text.strip():
                 tail += "\nSTDOUT (tail):\n" + out_text[-800:]
@@ -2210,8 +2314,7 @@ class DevTools(commands.Cog):
         with tempfile.NamedTemporaryFile(prefix="restore_panels_apply_", suffix=".json", delete=False) as tf2:
             apply_report_path = Path(tf2.name)
 
-        async with ctx.channel.typing():
-            proc2, stdout2, stderr2 = await run_script(["--apply", "--report", str(apply_report_path)])
+        proc2, exit2, out2, err2 = await run_script_streaming(["--apply", "--report", str(apply_report_path)], title="APPLY: Panel-IDs schreiben")
 
         # Kurze Ergebniszusammenfassung aus stdout2 oder Report
         apply_summary = f"APPLY abgeschlossen (Exit {proc2.returncode if proc2 else 'n/a'})."
@@ -2223,8 +2326,8 @@ class DevTools(commands.Cog):
             pass
 
         # stdout2/stderr2 gekürzt mitschicken
-        out2 = (stdout2 or b"").decode(errors="ignore") if stdout2 is not None else ""
-        err2 = stderr2 or ""
+        out2 = out2 or ""
+        err2 = err2 or ""
         tail = ""
         if out2.strip():
             tail += "\nSTDOUT (tail):\n" + out2[-600:]
