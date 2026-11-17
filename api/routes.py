@@ -12,7 +12,9 @@ from api.heartbeat import heartbeat_state, derive_bot_status
 from api.guild_state import guild_state_store
 from api.moderation_services import (
     fetch_warns as svc_fetch_warns,
+    fetch_all_warns as svc_fetch_all_warns,
     delete_warns as svc_delete_warns,
+    delete_guild_warns as svc_delete_guild_warns,
     load_automod_config as svc_load_automod,
     save_automod_config as svc_save_automod,
     get_modlog_channel as svc_get_modlog,
@@ -481,6 +483,43 @@ def get_global_command_stats():
 # ---------------------------------------------
 
 
+@api_bp.route("/moderation/warns/<int:guild_id>", methods=["GET"])
+@require_service_auth
+def get_guild_warns(guild_id: int):
+    """Gibt alle Verwarnungen einer Guild zurück (flache Liste)."""
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id") or request.headers.get("X-User-ID")
+    if not raw_user_id:
+        return jsonify(success=False, error="Missing required parameter: user_id"), 400
+
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        warns = api_db.run_coro(svc_fetch_all_warns(pool, guild_id), timeout=7.0)
+    except Exception:
+        logger.exception("Failed to fetch guild warns for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to fetch warns"), 500
+
+    return jsonify(success=True, count=len(warns), warns=warns), 200
+
+
 @api_bp.route("/moderation/warns/<int:guild_id>/<int:member_id>", methods=["GET"])
 @require_service_auth
 def get_member_warns(guild_id: int, member_id: int):
@@ -508,6 +547,7 @@ def get_member_warns(guild_id: int, member_id: int):
     try:
         warns = api_db.run_coro(svc_fetch_warns(pool, guild_id, member_id), timeout=5.0)
     except Exception:
+        logger.exception("Failed to fetch member warns for guild %s user %s", guild_id, member_id)
         return jsonify(success=False, error="Failed to fetch warns"), 500
 
     return jsonify(success=True, count=len(warns), warns=warns), 200
@@ -555,6 +595,44 @@ def delete_member_warns(guild_id: int, member_id: int):
     try:
         deleted = api_db.run_coro(svc_delete_warns(pool, guild_id, member_id, warn_id_val), timeout=5.0)
     except Exception:
+        logger.exception("Failed to delete warns for guild %s user %s", guild_id, member_id)
+        return jsonify(success=False, error="Failed to delete warns"), 500
+
+    return jsonify(success=True, deleted=int(deleted)), 200
+
+
+# Serverweite Löschung aller Warns einer Guild
+@api_bp.route("/moderation/warns/<int:guild_id>", methods=["DELETE"])
+@require_service_auth
+def delete_guild_warns(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id") or request.headers.get("X-User-ID")
+    if not raw_user_id:
+        return jsonify(success=False, error="Missing required parameter: user_id"), 400
+
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        deleted = api_db.run_coro(svc_delete_guild_warns(pool, guild_id), timeout=10.0)
+    except Exception:
+        logger.exception("Failed to delete all guild warns for guild %s", guild_id)
         return jsonify(success=False, error="Failed to delete warns"), 500
 
     return jsonify(success=True, deleted=int(deleted)), 200

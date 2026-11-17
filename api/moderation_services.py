@@ -28,6 +28,25 @@ async def fetch_warns(pool, guild_id: int, user_id: int) -> list[dict]:
             ]
 
 
+async def fetch_all_warns(pool, guild_id: int) -> list[dict]:
+    """Liest alle Verwarnungen einer Guild.
+
+    Gibt Einträge als {userId, warnId, reason} zurück.
+    Sortierung: userID ASC, warnID DESC ("neueste" pro User zuerst, soweit aus warnID ableitbar).
+    """
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT userID, warnID, reason FROM warns WHERE guildID=%s ORDER BY userID ASC, warnID DESC",
+                (guild_id,),
+            )
+            rows = await cur.fetchall() or []
+            return [
+                {"userId": int(user_id), "warnId": int(warn_id), "reason": (reason or "")}
+                for (user_id, warn_id, reason) in rows
+            ]
+
+
 async def delete_warns(pool, guild_id: int, user_id: int, warn_id: int | None = None) -> int:
     """Entfernt eine spezifische Verwarnung (warn_id) oder alle eines Users in einer Guild.
     Gibt die Anzahl gelöschter Reihen zurück.
@@ -47,6 +66,27 @@ async def delete_warns(pool, guild_id: int, user_id: int, warn_id: int | None = 
                         "DELETE FROM warns WHERE guildID=%s AND userID=%s AND warnID=%s",
                         (guild_id, user_id, warn_id),
                     )
+                affected = cur.rowcount or 0
+                await conn.commit()
+                return int(affected)
+            except Exception:
+                try:
+                    await conn.rollback()
+                except Exception:
+                    pass
+                raise
+
+
+async def delete_guild_warns(pool, guild_id: int) -> int:
+    """Entfernt alle Verwarnungen einer Guild. Gibt Anzahl gelöschter Reihen zurück."""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await conn.begin()
+                await cur.execute(
+                    "DELETE FROM warns WHERE guildID=%s",
+                    (guild_id,),
+                )
                 affected = cur.rowcount or 0
                 await conn.commit()
                 return int(affected)
