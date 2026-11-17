@@ -2017,15 +2017,45 @@ class DevTools(commands.Cog):
             except Exception:
                 pass
             return
+        # Bei Fehlercode → keine normale Zusammenfassung anzeigen
+        if proc.returncode != 0:
+            out_text = (stdout or b"").decode(errors="ignore") if stdout is not None else ""
+            err_text = stderr or ""
+            tail = ""
+            if out_text.strip():
+                tail += "\nSTDOUT (tail):\n" + out_text[-800:]
+            if err_text.strip():
+                tail += "\nSTDERR (tail):\n" + err_text[-800:]
+            await ctx.send(
+                f"❌ Dry-Run fehlgeschlagen (Exit {proc.returncode}). Es wurde kein gültiger Report erzeugt.{tail}"
+            )
+            try:
+                report_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+            except Exception:
+                pass
+            return
 
         # Report laden (falls vorhanden)
         report_data = []
         try:
-            if report_path.exists():
+            if report_path.exists() and report_path.stat().st_size > 0:
                 with report_path.open("r", encoding="utf-8") as f:
                     report_data = json.load(f)
-        except Exception:
+        except Exception as e:
             report_data = []
+            await ctx.send(f"❌ Ungültiger oder leerer JSON-Report: {e}. Der Dry-Run gilt als fehlgeschlagen.")
+            try:
+                report_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+            except Exception:
+                pass
+            return
+        if not report_data:
+            await ctx.send("❌ Kein Inhalt im JSON-Report gefunden. Der Dry-Run gilt als fehlgeschlagen.")
+            try:
+                report_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+            except Exception:
+                pass
+            return
 
         # Mappings und Zählung
         def normalize_status(s: str) -> str:
