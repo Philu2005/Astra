@@ -40,7 +40,7 @@ import os
 from dataclasses import dataclass, asdict
 import hashlib
 from datetime import datetime
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 
 import aiomysql
 import discord
@@ -179,12 +179,23 @@ class PanelScanner:
     def __init__(self, client: discord.Client):
         self.client = client
 
-    async def find_candidate_messages(self, guild_id: int, channel_id: int, thema: str, *,
-                                      max_messages: int = 2000, batch_size: int = 100) -> Tuple[List[Tuple[discord.Message, dict]], dict]:
+    async def _resolve_guild(self, guild_id: int) -> Optional[discord.Guild]:
         guild = self.client.get_guild(int(guild_id))
-        if guild is None:
-            # No guild cached
-            return [], {"guild_cache_miss": True}
+        if guild is not None:
+            return guild
+        # Versuch eines Live-Fetch (sparsam, nur einmal pro Gruppe sinnvoll)
+        try:
+            guild = await self.client.fetch_guild(int(guild_id))  # type: ignore[attr-defined]
+            return guild  # type: ignore[return-value]
+        except Exception:
+            return None
+
+    async def scan_channel_messages(self, guild: discord.Guild, channel_id: int, *,
+                                    max_messages: int = 2000) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Liest die History (einmal) und filtert nur potenzielle Panel-Messages (Autor=Bot, Embed, Button-ID, Footer).
+        Rückgabe ist eine Liste vorbereiteter Message-Daten (inkl. Titeltext/Kriterien), die später
+        für unterschiedliche Panel-Themen innerhalb dieses Channels erneut bewertet werden können.
+        """
         channel = guild.get_channel(int(channel_id))
         if not isinstance(channel, discord.TextChannel):
             try:
@@ -192,12 +203,10 @@ class PanelScanner:
             except discord.Forbidden:
                 raise PermissionError("Missing permissions to fetch channel")
             except discord.NotFound:
-                # Invalid channel ID
                 return [], {"channel_fetch": "not_found"}
             except discord.HTTPException:
                 return [], {"channel_fetch": "http_error"}
         if not isinstance(channel, discord.TextChannel):
-            # Not a text channel → not eligible for panels in our implementation
             return [], {"channel_type": str(type(channel))}
 
         me = guild.me or await guild.fetch_member(self.client.user.id)  # type: ignore
@@ -205,66 +214,25 @@ class PanelScanner:
         if not perms.view_channel or not perms.read_message_history:
             raise PermissionError("Missing permissions to read history")
 
-        candidates: List[Tuple[discord.Message, dict]] = []
-        fetched = 0
-        last_id: Optional[int] = None
-        consecutive_errors = 0
-        meta = {"scanned": 0, "oldest_id": None, "newest_id": None, "completed": False}
+        prefiltered: List[Dict[str, Any]] = []
+        scanned = 0
+        newest_id: Optional[int] = None
+        oldest_id: Optional[int] = None
 
-        while fetched < max_messages:
-            try:
-                try:
-                    # discord.py <2.0 compatibility
-                    history = await channel.history(
-                        limit=batch_size,
-                        before=discord.Object(id=last_id) if last_id else None,
-                        oldest_first=False,
-                    ).flatten()  # type: ignore[attr-defined]
-                except AttributeError:
-                    # discord.py 2.0+: async iterator
-                    history_iter = channel.history(
-                        limit=batch_size,
-                        before=discord.Object(id=last_id) if last_id else None,
-                        oldest_first=False,
-                    )
-                    history = [m async for m in history_iter]
-                consecutive_errors = 0
-            except discord.Forbidden:
-                # Lost permission mid-scan
-                raise PermissionError("Missing permissions to read history")
-            except discord.HTTPException as e:
-                # Backoff with cap; stop after limited retries to avoid endless loops
-                consecutive_errors += 1
-                if consecutive_errors > 5:
-                    break
-                sleep_for = min(3.0 * consecutive_errors, 15.0)
-                await asyncio.sleep(sleep_for)
-                continue
+        try:
+            async for msg in channel.history(limit=max_messages, oldest_first=False):
+                scanned += 1
+                newest_id = msg.id if newest_id is None or msg.id > newest_id else newest_id
+                oldest_id = msg.id if oldest_id is None or msg.id < oldest_id else oldest_id
 
-            if not history:
-                meta["completed"] = True
-                break
-
-            for msg in history:
-                fetched += 1
-                meta["scanned"] = fetched
-                # Advance pagination window: use the oldest message id from this page when done
-                last_id = msg.id if last_id is None or msg.id < last_id else last_id
-                if meta["newest_id"] is None or msg.id > (meta["newest_id"] or 0):
-                    meta["newest_id"] = msg.id
-                if meta["oldest_id"] is None or msg.id < (meta["oldest_id"] or 1<<62):
-                    meta["oldest_id"] = msg.id
-                # Author must be the bot itself
                 if self.client.user and msg.author.id != self.client.user.id:
                     continue
-                # Panel messages must contain an embed and a button with our custom_id
                 if not msg.embeds:
                     continue
-                # Check components for our known button custom_id
+                # Button-ID prüfen
                 has_panel_button = False
                 try:
                     for row in msg.components:  # type: ignore[attr-defined]
-                        # row could be ActionRow
                         for comp in getattr(row, "children", []) or []:
                             if getattr(comp, "custom_id", None) == PANEL_BUTTON_CUSTOM_ID:
                                 has_panel_button = True
@@ -272,7 +240,6 @@ class PanelScanner:
                         if has_panel_button:
                             break
                 except Exception:
-                    # Components introspection not supported – try alternative attribute
                     try:
                         for comp in msg.components:
                             if getattr(comp, "custom_id", None) == PANEL_BUTTON_CUSTOM_ID:
@@ -282,36 +249,28 @@ class PanelScanner:
                         pass
                 if not has_panel_button:
                     continue
-
                 e = msg.embeds[0]
-                # Check footer text if present
                 footer_ok = True
                 if e.footer and e.footer.text:
                     footer_ok = (e.footer.text.strip() == PANEL_FOOTER_TEXT)
+                if not footer_ok:
+                    continue
+                title_text = (e.title or "").strip()
+                prefiltered.append({
+                    "message": msg,
+                    "title_text": title_text,
+                    "created_at": msg.created_at.isoformat() if isinstance(msg.created_at, datetime) else str(msg.created_at),
+                    "author_id": msg.author.id,
+                    "criteria_base": {"button": True, "footer": footer_ok},
+                })
+        except discord.Forbidden:
+            raise PermissionError("Missing permissions to read history")
+        except discord.HTTPException:
+            # Teilweiser Scan; liefere was vorhanden ist
+            pass
 
-                # Title must match the stored thema (panel title at creation). To support older
-                # panels, allow prefix matches as fallback.
-                title_ok = True
-                if thema:
-                    title_text = (e.title or "").strip()
-                    title_ok = (title_text == thema) or (title_text.startswith(thema))
-
-                if footer_ok and title_ok:
-                    criteria = {
-                        "button": True,
-                        "footer": bool(e.footer and e.footer.text),
-                        "title_exact": (e.title or "").strip() == (thema or ""),
-                        "title_prefix": bool(thema and (e.title or "").strip().startswith(thema)),
-                    }
-                    candidates.append((msg, criteria))
-
-                if fetched >= max_messages:
-                    break
-
-            if fetched >= max_messages:
-                break
-
-        return candidates, meta
+        meta = {"scanned": scanned, "oldest_id": oldest_id, "newest_id": newest_id, "completed": True}
+        return prefiltered, meta
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -396,85 +355,125 @@ async def run(args: argparse.Namespace) -> int:
         denied = 0
         errors = 0
 
+        # 1) Bereits gesetzte IDs zuerst klassifizieren (KEEP) – kein Discord-Scan nötig
+        remaining: List[PanelRow] = []
         for p in panels:
             row_index += 1
-            selector = {
-                "guild_id": p.guild_id,
-                "channel_id": p.channel_id,
-                "role_id": p.role_id,
-                "category_id": p.category_id,
-                "thema": p.thema,
-            }
+            selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
             selector_hash = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
             if p.panel_msg_id and p.panel_msg_id != 0:
                 mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ALREADY_SAVED", message_id=p.panel_msg_id, action="KEEP")
                 results.append(mr)
                 report_rows.append({
-                    "row_index": row_index,
-                    "row_selector_hash": selector_hash,
-                    "status": mr.status,
-                    "action": mr.action,
-                    "guild_id": p.guild_id,
-                    "channel_id": p.channel_id,
-                    "thema": p.thema,
-                    "role_id": p.role_id,
-                    "category_id": p.category_id,
+                    "row_index": row_index, "row_selector_hash": selector_hash,
+                    "status": mr.status, "action": mr.action,
+                    **selector,
                     "current_message_id": p.panel_msg_id,
                     "candidates_found": 0,
                     "reason": "panelMsgID already present",
                 })
                 already += 1
+            else:
+                # Merken für gruppierten Scan
+                remaining.append(p)
+
+        # 2) Gruppiert nach (guild, channel) nur einmal scannen und Ergebnisse für alle Panels des Kanals nutzen
+        groups: Dict[Tuple[int, int], List[Tuple[int, PanelRow, str]]] = {}
+        # Wir brauchen weiterhin row_index je Panel; daher speichern wir ihn mit ab
+        row_index = 0
+        for p in remaining:
+            row_index += 1
+            key = (p.guild_id, p.channel_id)
+            selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
+            selector_hash = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+            groups.setdefault(key, []).append((row_index, p, selector_hash))
+
+        for (g_id, ch_id), entries in groups.items():
+            # Gilde auflösen (Cache oder Fetch)
+            guild = await scanner._resolve_guild(g_id)
+            channel_scan_error: Optional[str] = None
+            prefiltered: List[Dict[str, Any]] = []
+            meta: Dict[str, Any] = {}
+            if guild is None:
+                # Alle zugehörigen Panels als GUILD_NOT_FOUND klassifizieren
+                for (idx, p, selector_hash) in entries:
+                    selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
+                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "GUILD_NOT_FOUND", action="REVIEW")
+                    results.append(mr)
+                    report_rows.append({
+                        "row_index": idx, "row_selector_hash": selector_hash,
+                        "status": mr.status, "action": mr.action,
+                        **selector,
+                        "current_message_id": p.panel_msg_id,
+                        "candidates_found": 0,
+                        "reason": "Guild not found (cache+fetch failed)",
+                        "guild_cache_miss": True,
+                    })
+                not_found += len(entries)
                 continue
+            # Channel einmal scannen
             try:
-                try:
-                    cands, meta = await scanner.find_candidate_messages(p.guild_id, p.channel_id, p.thema, max_messages=args.max_messages, batch_size=args.batch)
-                except PermissionError:
+                prefiltered, meta = await scanner.scan_channel_messages(guild, ch_id, max_messages=args.max_messages)
+            except PermissionError:
+                for (idx, p, selector_hash) in entries:
+                    selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
                     mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MISSING_PERMISSIONS", action="REVIEW")
                     results.append(mr)
                     report_rows.append({
-                        **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                        "row_index": idx, "row_selector_hash": selector_hash,
                         "status": mr.status, "action": mr.action,
+                        **selector,
                         "current_message_id": p.panel_msg_id,
                         "candidates_found": None,
                         "reason": "Missing permissions to read history",
                     })
-                    denied += 1
-                    continue
-                except Exception as e:
-                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=str(e), action="REVIEW")
-                    results.append(mr)
-                    report_rows.append({
-                        **selector, "row_index": row_index, "row_selector_hash": selector_hash,
-                        "status": mr.status, "action": mr.action,
-                        "current_message_id": p.panel_msg_id,
-                        "candidates_found": None,
-                        "reason": str(e),
-                    })
-                    errors += 1
-                    continue
+                denied += len(entries)
+                continue
+            except Exception as e:
+                channel_scan_error = str(e)
 
-                if not cands:
-                    # Distinguish some common cases
-                    guild = client.get_guild(int(p.guild_id))
-                    if guild is None:
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "GUILD_NOT_FOUND", action="REVIEW")
+            # Für jeden Panel‑Eintrag im Kanal: Kandidaten anhand Thema ableiten
+            for (idx, p, selector_hash) in entries:
+                selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
+                try:
+                    if channel_scan_error:
+                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=channel_scan_error, action="REVIEW")
                         results.append(mr)
                         report_rows.append({
-                            **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                            "row_index": idx, "row_selector_hash": selector_hash,
                             "status": mr.status, "action": mr.action,
+                            **selector,
                             "current_message_id": p.panel_msg_id,
-                            "candidates_found": 0,
-                            "reason": "Guild not in cache; no fetch attempted (read-only mode)",
-                            "guild_cache_miss": True,
+                            "candidates_found": None,
+                            "reason": channel_scan_error,
                         })
-                    else:
-                        ch = guild.get_channel(int(p.channel_id))
-                        if ch is None:
+                        errors += 1
+                        continue
+
+                    # Filter für dieses Panel‑Thema
+                    cands: List[Tuple[discord.Message, Dict[str, Any]]] = []
+                    for item in prefiltered:
+                        title_text = item.get("title_text") or ""
+                        thema = p.thema or ""
+                        if thema:
+                            if title_text == thema or title_text.startswith(thema):
+                                # Kriterien für diesen Eintrag erweitern
+                                crit = dict(item.get("criteria_base") or {})
+                                crit.update({
+                                    "title_exact": (title_text == thema),
+                                    "title_prefix": (title_text.startswith(thema) and title_text != thema),
+                                })
+                                cands.append((item["message"], crit))
+
+                    if not cands:
+                        # Kanal existiert?
+                        if meta.get("channel_fetch") == "not_found":
                             mr = MatchResult(p.guild_id, p.channel_id, p.thema, "INVALID_CHANNEL", action="REVIEW")
                             results.append(mr)
                             report_rows.append({
-                                **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                                "row_index": idx, "row_selector_hash": selector_hash,
                                 "status": "CHANNEL_NOT_FOUND", "action": mr.action,
+                                **selector,
                                 "current_message_id": p.panel_msg_id,
                                 "candidates_found": 0,
                                 "reason": "Channel not found in guild",
@@ -484,67 +483,71 @@ async def run(args: argparse.Namespace) -> int:
                             mr = MatchResult(p.guild_id, p.channel_id, p.thema, "NO_MATCH", action="REVIEW")
                             results.append(mr)
                             report_rows.append({
-                                **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                                "row_index": idx, "row_selector_hash": selector_hash,
                                 "status": mr.status, "action": mr.action,
+                                **selector,
                                 "current_message_id": p.panel_msg_id,
                                 "candidates_found": 0,
                                 "reason": "No matching messages found",
                                 "scan_meta": meta,
                             })
-                    not_found += 1
-                    continue
-                if len(cands) > 1:
-                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MULTIPLE_MATCHES", reason=f"{len(cands)} candidates", action="REVIEW", candidates=len(cands))
+                        not_found += 1
+                        continue
+
+                    if len(cands) > 1:
+                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MULTIPLE_MATCHES", reason=f"{len(cands)} candidates", action="REVIEW", candidates=len(cands))
+                        results.append(mr)
+                        report_rows.append({
+                            "row_index": idx, "row_selector_hash": selector_hash,
+                            "status": mr.status, "action": mr.action,
+                            **selector,
+                            "current_message_id": p.panel_msg_id,
+                            "candidates_found": len(cands),
+                            "reason": mr.reason,
+                            "candidates": [
+                                {
+                                    "message_id": m.id,
+                                    "created_at": m.created_at.isoformat(),
+                                    "author_id": m.author.id,
+                                    "author_is_bot": (client.user and m.author.id == client.user.id),
+                                    "criteria": crit,
+                                } for (m, crit) in cands
+                            ],
+                            "scan_meta": meta,
+                        })
+                        multiple += 1
+                        continue
+
+                    (msg, crit) = cands[0]
+                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MATCH_FOUND", message_id=msg.id, action="UPDATE", candidates=1)
                     results.append(mr)
                     report_rows.append({
-                        **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                        "row_index": idx, "row_selector_hash": selector_hash,
                         "status": mr.status, "action": mr.action,
+                        **selector,
                         "current_message_id": p.panel_msg_id,
-                        "candidates_found": len(cands),
-                        "reason": mr.reason,
-                        "candidates": [
-                            {
-                                "message_id": m.id,
-                                "created_at": m.created_at.isoformat(),
-                                "author_id": m.author.id,
-                                "author_is_bot": (client.user and m.author.id == client.user.id),
-                                "criteria": crit,
-                            }
-                            for (m, crit) in cands
-                        ],
-                        "scan_meta": meta,
+                        "found_message_id": msg.id,
+                        "found_created_at": msg.created_at.isoformat(),
+                        "author_id": msg.author.id,
+                        "author_is_bot": (client.user and msg.author.id == client.user.id),
+                        "criteria": crit,
+                        "candidates_found": 1,
+                        "reason": "unique match",
                     })
-                    multiple += 1
-                    continue
+                    unique_matches.append((p, msg.id))
 
-                (msg, crit) = cands[0]
-                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MATCH_FOUND", message_id=msg.id, action="UPDATE", candidates=1)
-                results.append(mr)
-                report_rows.append({
-                    **selector, "row_index": row_index, "row_selector_hash": selector_hash,
-                    "status": mr.status, "action": mr.action,
-                    "current_message_id": p.panel_msg_id,
-                    "found_message_id": msg.id,
-                    "found_created_at": msg.created_at.isoformat(),
-                    "author_id": msg.author.id,
-                    "author_is_bot": (client.user and msg.author.id == client.user.id),
-                    "criteria": crit,
-                    "candidates_found": 1,
-                    "reason": "unique match",
-                })
-                unique_matches.append((p, msg.id))
-
-            except Exception as e:
-                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=str(e), action="REVIEW")
-                results.append(mr)
-                report_rows.append({
-                    **selector, "row_index": row_index, "row_selector_hash": selector_hash,
-                    "status": mr.status, "action": mr.action,
-                    "current_message_id": p.panel_msg_id,
-                    "candidates_found": None,
-                    "reason": str(e),
-                })
-                errors += 1
+                except Exception as e:
+                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=str(e), action="REVIEW")
+                    results.append(mr)
+                    report_rows.append({
+                        "row_index": idx, "row_selector_hash": selector_hash,
+                        "status": mr.status, "action": mr.action,
+                        **selector,
+                        "current_message_id": p.panel_msg_id,
+                        "candidates_found": None,
+                        "reason": str(e),
+                    })
+                    errors += 1
 
         # Summary
         print("\n=== Scan Summary ===")
