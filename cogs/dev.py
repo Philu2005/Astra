@@ -14,9 +14,12 @@ import time
 from typing import List, Optional
 import logging
 from pathlib import Path
+import json
+import tempfile
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import sys
 from utils.db_scheme import run_sql_file
 from utils.branding import get_current_colour
 
@@ -1965,6 +1968,224 @@ class DevTools(commands.Cog):
                 io.StringIO(text),
                 filename="tree.txt"
             ))
+
+    @commands.command(name="restorepanelids", aliases=["restorepanels", "restore_panel_ids"])  # prefix command
+    @commands.is_owner()
+    async def restorepanelids(self, ctx: commands.Context, mode: str = "dry"):
+        """Wiederherstellung alter Ticket-Panel-Message-IDs (Dry-Run mit Bestätigung für Änderungen).
+
+        Verwendung:
+          - !restorepanelids            → Dry-Run (Standard) mit Zusammenfassung & geplanter Aktion
+          - !restorepanelids apply      → Zeigt zuerst die Dry-Run-Zusammenfassung und fragt dann nach Bestätigung
+        """
+        await ctx.trigger_typing()
+
+        # Skript-Pfad ermitteln
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "restore_ticket_panel_message_ids.py"
+        if not script_path.exists():
+            await ctx.send(f"❌ Script nicht gefunden: `{script_path}`")
+            return
+
+        # Immer zuerst einen Dry-Run mit Report-Datei ausführen
+        with tempfile.NamedTemporaryFile(prefix="restore_panels_", suffix=".json", delete=False) as tf:
+            report_path = Path(tf.name)
+
+        async def run_script(args: list[str]):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    str(script_path),
+                    *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            except Exception as e:
+                return None, b"", str(e)
+            try:
+                stdout, stderr = await proc.communicate()
+            except Exception as e:
+                return None, b"", str(e)
+            return proc, stdout, stderr.decode(errors="ignore")
+
+        # Dry-Run starten (immer)
+        proc, stdout, stderr = await run_script(["--dry-run", "--report", str(report_path)])
+        if proc is None:
+            await ctx.send(f"❌ Konnte Subprozess nicht starten: `{stderr}`")
+            try:
+                report_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+            except Exception:
+                pass
+            return
+
+        # Report laden (falls vorhanden)
+        report_data = []
+        try:
+            if report_path.exists():
+                with report_path.open("r", encoding="utf-8") as f:
+                    report_data = json.load(f)
+        except Exception:
+            report_data = []
+
+        # Mappings und Zählung
+        def normalize_status(s: str) -> str:
+            s = (s or "").upper()
+            if s == "INVALID_CHANNEL":
+                return "CHANNEL_NOT_FOUND"
+            return s
+
+        def planned_action(status: str) -> str:
+            s = normalize_status(status)
+            if s == "MATCH_FOUND":
+                return "UPDATE"
+            if s in {"NO_MATCH", "CHANNEL_NOT_FOUND"}:
+                return "DELETE"
+            if s in {"ALREADY_SAVED"}:
+                return "KEEP"
+            # Alles, was nicht eindeutig sicher ist, wird zur manuellen Prüfung belassen
+            return "REVIEW"
+
+        counters = {
+            "MATCH_FOUND": 0,
+            "ALREADY_SAVED": 0,
+            "NO_MATCH": 0,
+            "MULTIPLE_MATCHES": 0,
+            "MISSING_PERMISSIONS": 0,
+            "GUILD_NOT_FOUND": 0,
+            "CHANNEL_NOT_FOUND": 0,
+            "SCAN_ERROR": 0,
+        }
+        action_counts = {"UPDATE": 0, "DELETE": 0, "KEEP": 0, "REVIEW": 0}
+
+        # Berichtseinträge optional unterschiedliche Keys – robust lesen
+        def get(entry: dict, key: str, default=None):
+            return entry.get(key, entry.get(key.lower(), default))
+
+        lines = []
+        for e in report_data:
+            status = normalize_status(str(get(e, "status", "")))
+            counters[status] = counters.get(status, 0) + 1
+            action = planned_action(status)
+            action_counts[action] = action_counts.get(action, 0) + 1
+
+            guild_id = get(e, "guild_id", get(e, "guild", "?"))
+            channel_id = get(e, "channel_id", get(e, "channel", "?"))
+            current_mid = get(e, "current_message_id", get(e, "panelMsgID", None))
+            found_mid = get(e, "found_message_id", get(e, "message_id", None))
+            reason = get(e, "reason", "") or get(e, "detail", "")
+
+            line = (
+                f"Guild={guild_id} Channel={channel_id} "
+                f"currentMID={current_mid} → status={status} action={action}"
+            )
+            if found_mid:
+                line += f" foundMID={found_mid}"
+            if reason:
+                line += f" • {reason}"
+            lines.append(line)
+
+        # Zusammenfassung bauen
+        total = sum(counters.values())
+        summary = (
+            f"Dry-Run abgeschlossen (Exit {proc.returncode if proc else 'n/a'}).\n"
+            f"Gesamt Panels: {total}\n"
+            f"  • MATCH_FOUND: {counters['MATCH_FOUND']}\n"
+            f"  • ALREADY_SAVED: {counters['ALREADY_SAVED']}\n"
+            f"  • NO_MATCH: {counters['NO_MATCH']}\n"
+            f"  • CHANNEL_NOT_FOUND: {counters['CHANNEL_NOT_FOUND']}\n"
+            f"  • MULTIPLE_MATCHES: {counters['MULTIPLE_MATCHES']}\n"
+            f"  • MISSING_PERMISSIONS: {counters['MISSING_PERMISSIONS']}\n"
+            f"  • GUILD_NOT_FOUND: {counters['GUILD_NOT_FOUND']}\n"
+            f"  • SCAN_ERROR: {counters['SCAN_ERROR']}\n"
+            f"Geplante Aktionen:\n"
+            f"  • UPDATE: {action_counts['UPDATE']}\n"
+            f"  • DELETE: {action_counts['DELETE']}\n"
+            f"  • KEEP: {action_counts['KEEP']}\n"
+            f"  • REVIEW: {action_counts['REVIEW']}\n"
+        )
+
+        # Langliste als Datei anhängen, Kurzliste in Nachricht
+        details_text = "\n".join(lines[:50])  # ersten 50 Einträge inline
+        embed = discord.Embed(title="Panel-Wiederherstellung – Dry-Run", description=summary, color=get_current_colour())
+        if details_text:
+            embed.add_field(name="Beispiele (max. 50)", value=f"```\n{details_text[:1000]}\n```", inline=False)
+
+        files = []
+        try:
+            if report_path.exists():
+                files.append(discord.File(str(report_path), filename=report_path.name))
+        except Exception:
+            pass
+
+        await ctx.send(embed=embed, files=files, silent=True)
+
+        # Bestätigung nur, wenn explizit apply gewünscht ist
+        want_apply = str(mode).lower() in {"apply", "run", "write", "commit"}
+        if not want_apply:
+            return
+
+        # Bestätigungs-View (Owner-only)
+        class ConfirmApplyView(discord.ui.View):
+            def __init__(self, author: discord.abc.User):
+                super().__init__(timeout=60)
+                self.author = author
+                self.value: Optional[bool] = None
+
+            async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                if not await interaction.client.is_owner(interaction.user):
+                    await interaction.response.send_message("Nur der Bot-Owner darf das bestätigen.", ephemeral=True)
+                    return False
+                return True
+
+            @discord.ui.button(label="Ausführen (APPLY)", style=discord.ButtonStyle.danger)
+            async def confirm(self, interaction: discord.Interaction, _: discord.ui.Button):  # type: ignore[override]
+                self.value = True
+                await interaction.response.defer()
+                self.stop()
+
+            @discord.ui.button(label="Abbrechen", style=discord.ButtonStyle.secondary)
+            async def cancel(self, interaction: discord.Interaction, _: discord.ui.Button):  # type: ignore[override]
+                self.value = False
+                await interaction.response.defer()
+                self.stop()
+
+        view = ConfirmApplyView(ctx.author)
+        prompt = await ctx.send(
+            "⚠️ Soll ich die obigen Änderungen anwenden? Nur sichere Datensätze werden aktualisiert/gelöscht.",
+            view=view
+        )
+        await view.wait()
+        await prompt.edit(view=None)
+
+        if not view.value:
+            await ctx.send("Abgebrochen. Es wurden keine Änderungen vorgenommen.")
+            return
+
+        await ctx.trigger_typing()
+        # Apply-Lauf, optional mit neuer Report-Datei
+        with tempfile.NamedTemporaryFile(prefix="restore_panels_apply_", suffix=".json", delete=False) as tf2:
+            apply_report_path = Path(tf2.name)
+
+        proc2, stdout2, stderr2 = await run_script(["--apply", "--report", str(apply_report_path)])
+
+        # Kurze Ergebniszusammenfassung aus stdout2 oder Report
+        apply_summary = f"APPLY abgeschlossen (Exit {proc2.returncode if proc2 else 'n/a'})."
+        files2 = []
+        try:
+            if apply_report_path.exists():
+                files2.append(discord.File(str(apply_report_path), filename=apply_report_path.name))
+        except Exception:
+            pass
+
+        # stdout2/stderr2 gekürzt mitschicken
+        out2 = (stdout2 or b"").decode(errors="ignore") if stdout2 is not None else ""
+        err2 = stderr2 or ""
+        tail = ""
+        if out2.strip():
+            tail += "\nSTDOUT (tail):\n" + out2[-600:]
+        if err2.strip():
+            tail += "\nSTDERR (tail):\n" + err2[-400:]
+
+        await ctx.send(f"```\n{apply_summary}{tail}\n```", files=files2, silent=True)
 
 
 async def setup(bot: commands.Bot) -> None:
