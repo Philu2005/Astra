@@ -297,27 +297,37 @@ async def run(args: argparse.Namespace) -> int:
     except Exception:
         pass
 
-    token = os.getenv("DISCORD_TOKEN") or os.getenv("ASTRA_BOT_TOKEN")
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("DISCORD_TOKEN")
     if not token:
         LOGGER.error("DISCORD_TOKEN / ASTRA_BOT_TOKEN not set")
         return 2
 
-    # Strict config: require explicit DB envs to avoid accidental prod writes with defaults
-    missing_env = [k for k in ("DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME") if not os.getenv(k)]
-    if missing_env:
-        LOGGER.error("Missing required DB environment variables: %s", ", ".join(missing_env))
-        LOGGER.error("Provide DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME (no defaults).")
+    # DB-Konfiguration: akzeptiere DB_PASS als Alias und setze DB_PORT default 3306, falls nicht gesetzt
+    db_host = os.getenv("DB_HOST") or os.getenv("MYSQL_HOST")
+    db_port_str = os.getenv("DB_PORT") or os.getenv("MYSQL_PORT") or "3306"
+    db_user = os.getenv("DB_USER") or os.getenv("MYSQL_USER")
+    db_pass = os.getenv("DB_PASSWORD") or os.getenv("DB_PASS") or os.getenv("MYSQL_PASSWORD")
+    db_name = os.getenv("DB_NAME") or os.getenv("MYSQL_DATABASE")
+
+    missing_core = []
+    if not db_host:
+        missing_core.append("DB_HOST")
+    if not db_user:
+        missing_core.append("DB_USER")
+    if not db_pass:
+        missing_core.append("DB_PASSWORD/DB_PASS")
+    if not db_name:
+        missing_core.append("DB_NAME")
+    if missing_core:
+        LOGGER.error("Missing required DB environment variables: %s", ", ".join(missing_core))
+        LOGGER.error("Provide DB_HOST, DB_USER, DB_PASSWORD (or DB_PASS), DB_NAME. DB_PORT defaults to 3306 if omitted.")
         return 2
 
-    db_host = os.getenv("DB_HOST")
     try:
-        db_port = int(os.getenv("DB_PORT", ""))  # type: ignore[arg-type]
+        db_port = int(db_port_str)  # type: ignore[arg-type]
     except ValueError:
-        LOGGER.error("DB_PORT must be an integer")
+        LOGGER.error("DB_PORT must be an integer (got %r)", db_port_str)
         return 2
-    db_user = os.getenv("DB_USER")
-    db_pass = os.getenv("DB_PASSWORD")
-    db_name = os.getenv("DB_NAME")
 
     # Show target configuration (without secrets) before proceeding
     print("DB Target:")
