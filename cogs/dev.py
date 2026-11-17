@@ -2153,7 +2153,17 @@ class DevTools(commands.Cog):
             except Exception:
                 pass
             return
-        if not report_data:
+        # Report-Format normalisieren: Liste von Zeilen extrahieren
+        # Das Script schreibt aktuell ein Objekt { meta: {...}, rows: [...] }
+        # Für Abwärtskompatibilität akzeptieren wir auch eine rohe Liste.
+        report_rows: list = []
+        if isinstance(report_data, dict):
+            rows_val = report_data.get("rows")
+            if isinstance(rows_val, list):
+                report_rows = rows_val
+        elif isinstance(report_data, list):
+            report_rows = report_data
+        if not report_rows:
             await ctx.send("❌ Kein Inhalt im JSON-Report gefunden. Der Dry-Run gilt als fehlgeschlagen.")
             try:
                 report_path.unlink(missing_ok=True)  # type: ignore[arg-type]
@@ -2193,12 +2203,14 @@ class DevTools(commands.Cog):
 
         # Berichtseinträge optional unterschiedliche Keys – robust lesen
         def get(entry: dict, key: str, default=None):
-            return entry.get(key, entry.get(key.lower(), default))
+            if isinstance(entry, dict):
+                return entry.get(key, entry.get(str(key).lower(), default))
+            return default
 
         lines = []
         # Duplikat-Ermittlung (gleiche Guild/Channel/Thema/Role/Category)
         dup_map = {}
-        for e in report_data:
+        for e in report_rows:
             status = normalize_status(str(get(e, "status", "")))
             counters[status] = counters.get(status, 0) + 1
             action = planned_action(status)
