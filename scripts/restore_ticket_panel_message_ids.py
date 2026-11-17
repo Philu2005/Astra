@@ -39,6 +39,7 @@ import logging
 import os
 from dataclasses import dataclass, asdict
 import hashlib
+import time
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
 
@@ -338,6 +339,11 @@ async def run(args: argparse.Namespace) -> int:
     results: List[MatchResult] = []
     report_rows: List[dict] = []
     row_index = 0
+    # Laufzeit-/Fortschrittsmetriken
+    start_ts = time.perf_counter()
+    total_scanned_channels = 0
+    total_scanned_messages = 0
+    slowest_channel: Optional[Tuple[int, int, float]] = None  # (guild_id, channel_id, seconds)
 
     @client.event
     async def on_ready():  # type: ignore[no-redef]
@@ -388,9 +394,16 @@ async def run(args: argparse.Namespace) -> int:
             selector_hash = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
             groups.setdefault(key, []).append((row_index, p, selector_hash))
 
+        scanned_channels_so_far = 0
         for (g_id, ch_id), entries in groups.items():
+            scanned_channels_so_far += 1
+            LOGGER.info("[Scan %d/%d] Guild=%s Channel=%s • entries=%d", scanned_channels_so_far, len(groups), g_id, ch_id, len(entries))
             # Gilde auflösen (Cache oder Fetch)
-            guild = await scanner._resolve_guild(g_id)
+            try:
+                guild = await scanner._resolve_guild(g_id)
+            except discord.HTTPException as e:
+                LOGGER.exception("Guild resolve failed for guild=%s channel=%s", g_id, ch_id)
+                guild = None
             channel_scan_error: Optional[str] = None
             prefiltered: List[Dict[str, Any]] = []
             meta: Dict[str, Any] = {}
@@ -413,8 +426,16 @@ async def run(args: argparse.Namespace) -> int:
                 continue
             # Channel einmal scannen
             try:
+                t0 = time.perf_counter()
                 prefiltered, meta = await scanner.scan_channel_messages(guild, ch_id, max_messages=args.max_messages)
-            except PermissionError:
+                dt = time.perf_counter() - t0
+                total_scanned_channels += 1
+                total_scanned_messages += int(meta.get("scanned") or 0)
+                if slowest_channel is None or dt > slowest_channel[2]:
+                    slowest_channel = (g_id, ch_id, dt)
+                LOGGER.info("Scanned channel %s/%s in %.2fs • messages=%s", g_id, ch_id, dt, meta.get("scanned"))
+            except PermissionError as e:
+                LOGGER.exception("Permission error scanning channel guild=%s channel=%s", g_id, ch_id)
                 for (idx, p, selector_hash) in entries:
                     selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
                     mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MISSING_PERMISSIONS", action="REVIEW")
@@ -425,19 +446,20 @@ async def run(args: argparse.Namespace) -> int:
                         **selector,
                         "current_message_id": p.panel_msg_id,
                         "candidates_found": None,
-                        "reason": "Missing permissions to read history",
+                        "reason": f"Missing permissions to read history: {e}",
                     })
                 denied += len(entries)
                 continue
-            except Exception as e:
-                channel_scan_error = str(e)
+            except (discord.HTTPException, OSError, asyncio.TimeoutError) as e:
+                LOGGER.exception("Channel scan failed for guild=%s channel=%s", g_id, ch_id)
+                channel_scan_error = f"scan_failed: {type(e).__name__}: {e}"
 
             # Für jeden Panel‑Eintrag im Kanal: Kandidaten anhand Thema ableiten
             for (idx, p, selector_hash) in entries:
                 selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
                 try:
                     if channel_scan_error:
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=channel_scan_error, action="REVIEW")
+                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "SCAN_ERROR", reason=channel_scan_error, action="REVIEW")
                         results.append(mr)
                         report_rows.append({
                             "row_index": idx, "row_selector_hash": selector_hash,
@@ -446,6 +468,7 @@ async def run(args: argparse.Namespace) -> int:
                             "current_message_id": p.panel_msg_id,
                             "candidates_found": None,
                             "reason": channel_scan_error,
+                            "scan_meta": meta,
                         })
                         errors += 1
                         continue
@@ -536,8 +559,9 @@ async def run(args: argparse.Namespace) -> int:
                     })
                     unique_matches.append((p, msg.id))
 
-                except Exception as e:
-                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=str(e), action="REVIEW")
+                except (discord.HTTPException, OSError, asyncio.TimeoutError) as e:
+                    LOGGER.exception("Entry handling failed for guild=%s channel=%s row=%s", p.guild_id, p.channel_id, idx)
+                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "SCAN_ERROR", reason=str(e), action="REVIEW")
                     results.append(mr)
                     report_rows.append({
                         "row_index": idx, "row_selector_hash": selector_hash,
@@ -545,11 +569,12 @@ async def run(args: argparse.Namespace) -> int:
                         **selector,
                         "current_message_id": p.panel_msg_id,
                         "candidates_found": None,
-                        "reason": str(e),
+                        "reason": f"SCAN_ERROR: {type(e).__name__}: {e}",
                     })
                     errors += 1
 
         # Summary
+        elapsed = time.perf_counter() - start_ts
         print("\n=== Scan Summary ===")
         print(f"Total panels: {total}")
         print(f"  ALREADY_SAVED      : {already}")
@@ -557,14 +582,38 @@ async def run(args: argparse.Namespace) -> int:
         print(f"  MULTIPLE_MATCHES   : {multiple}")
         print(f"  NO_MATCH           : {not_found}")
         print(f"  MISSING_PERMISSIONS: {denied}")
-        print(f"  ERROR              : {errors}")
+        print(f"  SCAN_ERROR         : {errors}")
+        print(f"Channels scanned     : {total_scanned_channels}")
+        print(f"Messages scanned     : {total_scanned_messages}")
+        if slowest_channel:
+            print(f"Slowest channel      : guild={slowest_channel[0]} channel={slowest_channel[1]} in {slowest_channel[2]:.2f}s")
+        print(f"Elapsed              : {elapsed:.2f}s")
 
         # Optional report
         if args.report:
             try:
                 if args.report.lower().endswith(".json"):
                     with open(args.report, "w", encoding="utf-8") as f:
-                        json.dump(report_rows, f, ensure_ascii=False, indent=2)
+                        json.dump({
+                            "meta": {
+                                "total_panels": total,
+                                "already_saved": already,
+                                "match_found": len(unique_matches),
+                                "multiple_matches": multiple,
+                                "no_match": not_found,
+                                "missing_permissions": denied,
+                                "scan_error": errors,
+                                "channels_scanned": total_scanned_channels,
+                                "messages_scanned": total_scanned_messages,
+                                "slowest_channel": {
+                                    "guild_id": slowest_channel[0] if slowest_channel else None,
+                                    "channel_id": slowest_channel[1] if slowest_channel else None,
+                                    "seconds": slowest_channel[2] if slowest_channel else None,
+                                },
+                                "elapsed_seconds": elapsed,
+                            },
+                            "rows": report_rows,
+                        }, f, ensure_ascii=False, indent=2)
                 elif args.report.lower().endswith(".csv"):
                     with open(args.report, "w", newline="", encoding="utf-8") as f:
                         fieldnames = sorted({k for row in report_rows for k in row.keys()}) if report_rows else [
@@ -576,11 +625,13 @@ async def run(args: argparse.Namespace) -> int:
                             w.writerow(r)
                 else:
                     with open(args.report, "w", encoding="utf-8") as f:
-                        for r in report_rows:
-                            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                        f.write(json.dumps({"meta": {"elapsed_seconds": elapsed}, "rows": []}, ensure_ascii=False) + "\n")
                 print(f"Report written to {args.report}")
-            except Exception as e:
-                LOGGER.warning("Could not write report: %s", e)
+            except (OSError, IOError, json.JSONDecodeError) as e:
+                LOGGER.exception("Could not write report: %s", e)
+                await client.close()
+                pool.close(); await pool.wait_closed()
+                return 1
 
         # Apply phase
         if args.apply and unique_matches:
