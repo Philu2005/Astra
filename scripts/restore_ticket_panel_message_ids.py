@@ -38,6 +38,8 @@ import json
 import logging
 import os
 from dataclasses import dataclass, asdict
+import hashlib
+from datetime import datetime
 from typing import Optional, List, Tuple
 
 import aiomysql
@@ -69,6 +71,9 @@ class MatchResult:
     status: str
     message_id: Optional[int] = None
     reason: Optional[str] = None
+    candidates: Optional[int] = None
+    action: Optional[str] = None
+    details: Optional[dict] = None
 
 
 class DB:
@@ -134,16 +139,24 @@ class DB:
                         )
         return items
 
-    async def update_panel_msg_id(self, guild_id: int, channel_id: int, message_id: int) -> None:
+    async def update_panel_msg_id(self, guild_id: int, channel_id: int, message_id: int,
+                                  *, role_id: Optional[int], category_id: Optional[int], thema: str) -> None:
         q = (
             "UPDATE ticketsystem "
             "SET panelMsgID=%s "
-            "WHERE guildID=%s AND channelID=%s AND (panelMsgID IS NULL OR panelMsgID=0)"
+            "WHERE guildID=%s AND channelID=%s AND "
+            "(panelMsgID IS NULL OR panelMsgID=0) AND "
+            "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
+            "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
+            "(thema <=> %s)"
         )
         async with self.pool.acquire() as conn:
             try:
                 async with conn.cursor() as cur:
-                    await cur.execute(q, (int(message_id), int(guild_id), int(channel_id)))
+                    await cur.execute(q, (
+                        int(message_id), int(guild_id), int(channel_id),
+                        role_id, role_id, category_id, category_id, thema
+                    ))
                     affected = cur.rowcount
                     if affected == 1:
                         await conn.commit()
@@ -167,11 +180,11 @@ class PanelScanner:
         self.client = client
 
     async def find_candidate_messages(self, guild_id: int, channel_id: int, thema: str, *,
-                                      max_messages: int = 2000, batch_size: int = 100) -> List[discord.Message]:
+                                      max_messages: int = 2000, batch_size: int = 100) -> Tuple[List[Tuple[discord.Message, dict]], dict]:
         guild = self.client.get_guild(int(guild_id))
         if guild is None:
-            # Signal to caller via custom exceptions is overkill; return [] and let caller classify if needed
-            return []
+            # No guild cached
+            return [], {"guild_cache_miss": True}
         channel = guild.get_channel(int(channel_id))
         if not isinstance(channel, discord.TextChannel):
             try:
@@ -180,22 +193,23 @@ class PanelScanner:
                 raise PermissionError("Missing permissions to fetch channel")
             except discord.NotFound:
                 # Invalid channel ID
-                return []
+                return [], {"channel_fetch": "not_found"}
             except discord.HTTPException:
-                return []
+                return [], {"channel_fetch": "http_error"}
         if not isinstance(channel, discord.TextChannel):
             # Not a text channel → not eligible for panels in our implementation
-            return []
+            return [], {"channel_type": str(type(channel))}
 
         me = guild.me or await guild.fetch_member(self.client.user.id)  # type: ignore
         perms = channel.permissions_for(me)
         if not perms.view_channel or not perms.read_message_history:
             raise PermissionError("Missing permissions to read history")
 
-        candidates: List[discord.Message] = []
+        candidates: List[Tuple[discord.Message, dict]] = []
         fetched = 0
         last_id: Optional[int] = None
         consecutive_errors = 0
+        meta = {"scanned": 0, "oldest_id": None, "newest_id": None, "completed": False}
 
         while fetched < max_messages:
             try:
@@ -228,12 +242,18 @@ class PanelScanner:
                 continue
 
             if not history:
+                meta["completed"] = True
                 break
 
             for msg in history:
                 fetched += 1
+                meta["scanned"] = fetched
                 # Advance pagination window: use the oldest message id from this page when done
                 last_id = msg.id if last_id is None or msg.id < last_id else last_id
+                if meta["newest_id"] is None or msg.id > (meta["newest_id"] or 0):
+                    meta["newest_id"] = msg.id
+                if meta["oldest_id"] is None or msg.id < (meta["oldest_id"] or 1<<62):
+                    meta["oldest_id"] = msg.id
                 # Author must be the bot itself
                 if self.client.user and msg.author.id != self.client.user.id:
                     continue
@@ -277,7 +297,13 @@ class PanelScanner:
                     title_ok = (title_text == thema) or (title_text.startswith(thema))
 
                 if footer_ok and title_ok:
-                    candidates.append(msg)
+                    criteria = {
+                        "button": True,
+                        "footer": bool(e.footer and e.footer.text),
+                        "title_exact": (e.title or "").strip() == (thema or ""),
+                        "title_prefix": bool(thema and (e.title or "").strip().startswith(thema)),
+                    }
+                    candidates.append((msg, criteria))
 
                 if fetched >= max_messages:
                     break
@@ -285,7 +311,7 @@ class PanelScanner:
             if fetched >= max_messages:
                 break
 
-        return candidates
+        return candidates, meta
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -351,6 +377,8 @@ async def run(args: argparse.Namespace) -> int:
     client = discord.Client(intents=intents)
 
     results: List[MatchResult] = []
+    report_rows: List[dict] = []
+    row_index = 0
 
     @client.event
     async def on_ready():  # type: ignore[no-redef]
@@ -369,19 +397,59 @@ async def run(args: argparse.Namespace) -> int:
         errors = 0
 
         for p in panels:
+            row_index += 1
+            selector = {
+                "guild_id": p.guild_id,
+                "channel_id": p.channel_id,
+                "role_id": p.role_id,
+                "category_id": p.category_id,
+                "thema": p.thema,
+            }
+            selector_hash = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
             if p.panel_msg_id and p.panel_msg_id != 0:
-                results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "ALREADY_SAVED", message_id=p.panel_msg_id))
+                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ALREADY_SAVED", message_id=p.panel_msg_id, action="KEEP")
+                results.append(mr)
+                report_rows.append({
+                    "row_index": row_index,
+                    "row_selector_hash": selector_hash,
+                    "status": mr.status,
+                    "action": mr.action,
+                    "guild_id": p.guild_id,
+                    "channel_id": p.channel_id,
+                    "thema": p.thema,
+                    "role_id": p.role_id,
+                    "category_id": p.category_id,
+                    "current_message_id": p.panel_msg_id,
+                    "candidates_found": 0,
+                    "reason": "panelMsgID already present",
+                })
                 already += 1
                 continue
             try:
                 try:
-                    cands = await scanner.find_candidate_messages(p.guild_id, p.channel_id, p.thema, max_messages=args.max_messages, batch_size=args.batch)
+                    cands, meta = await scanner.find_candidate_messages(p.guild_id, p.channel_id, p.thema, max_messages=args.max_messages, batch_size=args.batch)
                 except PermissionError:
-                    results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "MISSING_PERMISSIONS"))
+                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MISSING_PERMISSIONS", action="REVIEW")
+                    results.append(mr)
+                    report_rows.append({
+                        **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                        "status": mr.status, "action": mr.action,
+                        "current_message_id": p.panel_msg_id,
+                        "candidates_found": None,
+                        "reason": "Missing permissions to read history",
+                    })
                     denied += 1
                     continue
                 except Exception as e:
-                    results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=str(e)))
+                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=str(e), action="REVIEW")
+                    results.append(mr)
+                    report_rows.append({
+                        **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                        "status": mr.status, "action": mr.action,
+                        "current_message_id": p.panel_msg_id,
+                        "candidates_found": None,
+                        "reason": str(e),
+                    })
                     errors += 1
                     continue
 
@@ -389,26 +457,93 @@ async def run(args: argparse.Namespace) -> int:
                     # Distinguish some common cases
                     guild = client.get_guild(int(p.guild_id))
                     if guild is None:
-                        results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "GUILD_NOT_FOUND"))
+                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "GUILD_NOT_FOUND", action="REVIEW")
+                        results.append(mr)
+                        report_rows.append({
+                            **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                            "status": mr.status, "action": mr.action,
+                            "current_message_id": p.panel_msg_id,
+                            "candidates_found": 0,
+                            "reason": "Guild not in cache; no fetch attempted (read-only mode)",
+                            "guild_cache_miss": True,
+                        })
                     else:
                         ch = guild.get_channel(int(p.channel_id))
                         if ch is None:
-                            results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "INVALID_CHANNEL"))
+                            mr = MatchResult(p.guild_id, p.channel_id, p.thema, "INVALID_CHANNEL", action="REVIEW")
+                            results.append(mr)
+                            report_rows.append({
+                                **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                                "status": "CHANNEL_NOT_FOUND", "action": mr.action,
+                                "current_message_id": p.panel_msg_id,
+                                "candidates_found": 0,
+                                "reason": "Channel not found in guild",
+                                "scan_meta": meta,
+                            })
                         else:
-                            results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "NO_MATCH"))
+                            mr = MatchResult(p.guild_id, p.channel_id, p.thema, "NO_MATCH", action="REVIEW")
+                            results.append(mr)
+                            report_rows.append({
+                                **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                                "status": mr.status, "action": mr.action,
+                                "current_message_id": p.panel_msg_id,
+                                "candidates_found": 0,
+                                "reason": "No matching messages found",
+                                "scan_meta": meta,
+                            })
                     not_found += 1
                     continue
                 if len(cands) > 1:
-                    results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "MULTIPLE_MATCHES", reason=f"{len(cands)} candidates"))
+                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MULTIPLE_MATCHES", reason=f"{len(cands)} candidates", action="REVIEW", candidates=len(cands))
+                    results.append(mr)
+                    report_rows.append({
+                        **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                        "status": mr.status, "action": mr.action,
+                        "current_message_id": p.panel_msg_id,
+                        "candidates_found": len(cands),
+                        "reason": mr.reason,
+                        "candidates": [
+                            {
+                                "message_id": m.id,
+                                "created_at": m.created_at.isoformat(),
+                                "author_id": m.author.id,
+                                "author_is_bot": (client.user and m.author.id == client.user.id),
+                                "criteria": crit,
+                            }
+                            for (m, crit) in cands
+                        ],
+                        "scan_meta": meta,
+                    })
                     multiple += 1
                     continue
 
-                msg = cands[0]
-                results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "MATCH_FOUND", message_id=msg.id))
+                (msg, crit) = cands[0]
+                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MATCH_FOUND", message_id=msg.id, action="UPDATE", candidates=1)
+                results.append(mr)
+                report_rows.append({
+                    **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                    "status": mr.status, "action": mr.action,
+                    "current_message_id": p.panel_msg_id,
+                    "found_message_id": msg.id,
+                    "found_created_at": msg.created_at.isoformat(),
+                    "author_id": msg.author.id,
+                    "author_is_bot": (client.user and msg.author.id == client.user.id),
+                    "criteria": crit,
+                    "candidates_found": 1,
+                    "reason": "unique match",
+                })
                 unique_matches.append((p, msg.id))
 
             except Exception as e:
-                results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=str(e)))
+                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ERROR", reason=str(e), action="REVIEW")
+                results.append(mr)
+                report_rows.append({
+                    **selector, "row_index": row_index, "row_selector_hash": selector_hash,
+                    "status": mr.status, "action": mr.action,
+                    "current_message_id": p.panel_msg_id,
+                    "candidates_found": None,
+                    "reason": str(e),
+                })
                 errors += 1
 
         # Summary
@@ -426,17 +561,20 @@ async def run(args: argparse.Namespace) -> int:
             try:
                 if args.report.lower().endswith(".json"):
                     with open(args.report, "w", encoding="utf-8") as f:
-                        json.dump([asdict(r) for r in results], f, ensure_ascii=False, indent=2)
+                        json.dump(report_rows, f, ensure_ascii=False, indent=2)
                 elif args.report.lower().endswith(".csv"):
                     with open(args.report, "w", newline="", encoding="utf-8") as f:
-                        w = csv.DictWriter(f, fieldnames=list(asdict(results[0]).keys()) if results else ["guild_id","channel_id","thema","status","message_id","reason"])  # type: ignore
+                        fieldnames = sorted({k for row in report_rows for k in row.keys()}) if report_rows else [
+                            "guild_id","channel_id","thema","status","action","found_message_id","current_message_id"
+                        ]
+                        w = csv.DictWriter(f, fieldnames=fieldnames)
                         w.writeheader()
-                        for r in results:
-                            w.writerow(asdict(r))
+                        for r in report_rows:
+                            w.writerow(r)
                 else:
                     with open(args.report, "w", encoding="utf-8") as f:
-                        for r in results:
-                            f.write(json.dumps(asdict(r), ensure_ascii=False) + "\n")
+                        for r in report_rows:
+                            f.write(json.dumps(r, ensure_ascii=False) + "\n")
                 print(f"Report written to {args.report}")
             except Exception as e:
                 LOGGER.warning("Could not write report: %s", e)
@@ -446,7 +584,7 @@ async def run(args: argparse.Namespace) -> int:
             updated = 0
             for p, mid in unique_matches:
                 try:
-                    await db.update_panel_msg_id(p.guild_id, p.channel_id, mid)
+                    await db.update_panel_msg_id(p.guild_id, p.channel_id, mid, role_id=p.role_id, category_id=p.category_id, thema=p.thema or "")
                     updated += 1
                 except Exception as e:
                     LOGGER.error("Failed to update panelMsgID for guild=%s channel=%s: %s", p.guild_id, p.channel_id, e)

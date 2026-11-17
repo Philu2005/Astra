@@ -2092,6 +2092,8 @@ class DevTools(commands.Cog):
             return entry.get(key, entry.get(key.lower(), default))
 
         lines = []
+        # Duplikat-Ermittlung (gleiche Guild/Channel/Thema/Role/Category)
+        dup_map = {}
         for e in report_data:
             status = normalize_status(str(get(e, "status", "")))
             counters[status] = counters.get(status, 0) + 1
@@ -2100,6 +2102,8 @@ class DevTools(commands.Cog):
 
             guild_id = get(e, "guild_id", get(e, "guild", "?"))
             channel_id = get(e, "channel_id", get(e, "channel", "?"))
+            role_id = get(e, "role_id", None)
+            category_id = get(e, "category_id", None)
             current_mid = get(e, "current_message_id", get(e, "panelMsgID", None))
             found_mid = get(e, "found_message_id", get(e, "message_id", None))
             reason = get(e, "reason", "") or get(e, "detail", "")
@@ -2114,8 +2118,14 @@ class DevTools(commands.Cog):
                 line += f" • {reason}"
             lines.append(line)
 
+            dup_key = (str(guild_id), str(channel_id), str(role_id), str(category_id), str(get(e, "thema", "")))
+            dup_map[dup_key] = dup_map.get(dup_key, 0) + 1
+
         # Zusammenfassung bauen
         total = sum(counters.values())
+        duplicate_count = sum(1 for v in dup_map.values() if v > 1)
+        unique_matches = counters["MATCH_FOUND"]
+        multi = counters["MULTIPLE_MATCHES"]
         summary = (
             f"Dry-Run abgeschlossen (Exit {proc.returncode if proc else 'n/a'}).\n"
             f"Gesamt Panels: {total}\n"
@@ -2129,9 +2139,13 @@ class DevTools(commands.Cog):
             f"  • SCAN_ERROR: {counters['SCAN_ERROR']}\n"
             f"Geplante Aktionen:\n"
             f"  • UPDATE: {action_counts['UPDATE']}\n"
-            f"  • DELETE: {action_counts['DELETE']}\n"
+            f"  • DELETE: {action_counts['DELETE']}\n"  # sollte 0 sein; keine automatischen Löschungen
             f"  • KEEP: {action_counts['KEEP']}\n"
             f"  • REVIEW: {action_counts['REVIEW']}\n"
+            f"Duplikat-Hinweise:\n"
+            f"  • Datenbank-Duplikate (gleiches Panel-Selektor-Set): {duplicate_count}\n"
+            f"  • Eindeutige Panel-Treffer (UPDATE-Kandidaten): {unique_matches}\n"
+            f"  • Mehrdeutige Treffer: {multi}\n"
         )
 
         # Langliste als Datei anhängen, Kurzliste in Nachricht
