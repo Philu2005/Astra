@@ -1978,7 +1978,7 @@ class DevTools(commands.Cog):
           - !restorepanelids            → Dry-Run (Standard) mit Zusammenfassung & geplanter Aktion
           - !restorepanelids apply      → Zeigt zuerst die Dry-Run-Zusammenfassung und fragt dann nach Bestätigung
         """
-        await ctx.trigger_typing()
+        # Optional: Anzeige "tippt..." während externer Aufrufe – in discord.py v2 via Context.channel.typing()
 
         # Skript-Pfad ermitteln
         script_path = Path(__file__).resolve().parents[1] / "scripts" / "restore_ticket_panel_message_ids.py"
@@ -2008,7 +2008,8 @@ class DevTools(commands.Cog):
             return proc, stdout, stderr.decode(errors="ignore")
 
         # Dry-Run starten (immer)
-        proc, stdout, stderr = await run_script(["--dry-run", "--report", str(report_path)])
+        async with ctx.channel.typing():
+            proc, stdout, stderr = await run_script(["--dry-run", "--report", str(report_path)])
         if proc is None:
             await ctx.send(f"❌ Konnte Subprozess nicht starten: `{stderr}`")
             try:
@@ -2160,12 +2161,13 @@ class DevTools(commands.Cog):
             await ctx.send("Abgebrochen. Es wurden keine Änderungen vorgenommen.")
             return
 
-        await ctx.trigger_typing()
+        # Apply‑Lauf kann etwas dauern → Typing anzeigen
         # Apply-Lauf, optional mit neuer Report-Datei
         with tempfile.NamedTemporaryFile(prefix="restore_panels_apply_", suffix=".json", delete=False) as tf2:
             apply_report_path = Path(tf2.name)
 
-        proc2, stdout2, stderr2 = await run_script(["--apply", "--report", str(apply_report_path)])
+        async with ctx.channel.typing():
+            proc2, stdout2, stderr2 = await run_script(["--apply", "--report", str(apply_report_path)])
 
         # Kurze Ergebniszusammenfassung aus stdout2 oder Report
         apply_summary = f"APPLY abgeschlossen (Exit {proc2.returncode if proc2 else 'n/a'})."
