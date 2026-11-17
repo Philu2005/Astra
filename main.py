@@ -1063,6 +1063,25 @@ class Astra(commands.Bot):
 bot = Astra()
 setup_topgg_events(bot)
 
+# --- Interne Brücke: Aufgaben im Bot-Event-Loop einreichen ---
+def get_bot_instance() -> Astra:
+    return bot
+
+
+def submit_bot_task(coro, timeout: float | None = None):
+    """Reicht eine Coroutine sicher im Bot-Event-Loop ein und wartet optional auf Ergebnis.
+
+    Wird von der internen API genutzt, um Bot-Aktionen (z. B. Panel-Veröffentlichung)
+    auszulösen, ohne eine zweite Discord-Implementierung aufzubauen.
+    """
+    if bot is None or bot.is_closed():
+        raise RuntimeError("Bot not available")
+    loop = bot.loop
+    if loop is None:
+        raise RuntimeError("Bot event loop not available")
+    fut = asyncio.run_coroutine_threadsafe(coro, loop)
+    return fut.result(timeout=timeout)
+
 
 
 @bot.command()

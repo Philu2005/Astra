@@ -238,6 +238,152 @@ async def set_guild_config(pool, guild_id: int, **kwargs):
             await cur.execute(q, tuple(vals))
 
 
+# =========================================================
+#           API-gestützte Panel-Veröffentlichung
+# =========================================================
+
+# Bot-seitige Idempotenz/Parallelitäts-Guards
+_api_publish_locks: dict[tuple[int, int], asyncio.Lock] = {}
+
+def _get_publish_lock(guild_id: int, channel_id: int) -> asyncio.Lock:
+    key = (int(guild_id), int(channel_id))
+    lock = _api_publish_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _api_publish_locks[key] = lock
+    return lock
+
+async def api_publish_ticket_panel(
+    bot: commands.Bot,
+    *,
+    guild_id: int,
+    channel_id: int,
+    category_id: int,
+    role_id: int,
+    title: str,
+    description: str,
+) -> dict:
+    """Erstellt ein Ticket-Panel als Discord-Nachricht und speichert panelMsgID.
+
+    Rückgabe: {"message_id": int, "channel_id": int}
+    Raises bei Discord-/Berechtigungs-/Datenfehlern.
+    """
+    guild = bot.get_guild(int(guild_id))
+    if guild is None:
+        raise RuntimeError("Guild not found or not available")
+
+    chan = guild.get_channel(int(channel_id)) or await guild.fetch_channel(int(channel_id))
+    if not isinstance(chan, discord.TextChannel):
+        raise RuntimeError("Target channel is not a text channel")
+
+    cat = guild.get_channel(int(category_id))
+    if not isinstance(cat, discord.CategoryChannel):
+        raise RuntimeError("Category not found")
+
+    role = guild.get_role(int(role_id))
+    if role is None:
+        raise RuntimeError("Role not found")
+
+    me = guild.me or (await guild.fetch_member(bot.user.id))  # type: ignore
+    perms = chan.permissions_for(me)
+    if not perms.send_messages:
+        raise PermissionError("Missing permission: Send Messages")
+    if not perms.embed_links:
+        raise PermissionError("Missing permission: Embed Links")
+
+    # Embed wie im Wizard
+    panel = mk_embed(
+        title=title,
+        description=description,
+        color=ASTRA_BLUE,
+        thumb=guild.icon.url if guild.icon else None,
+        footer="Klicke auf den Button, um ein Ticket zu erstellen!",
+    )
+
+    # Nachricht senden (mit TicketOpenView für die Interaktion) – geschützt gegen parallele Veröffentlichungen
+    lock = _get_publish_lock(guild.id, chan.id)
+    async with lock:
+        msg = await chan.send(embed=panel, view=TicketOpenView(bot))
+
+    # DB: Konfiguration sichern und panelMsgID speichern
+    if getattr(bot, "pool", None) is None:
+        raise RuntimeError("DB pool not available")
+
+    async with bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                INSERT INTO ticketsystem(guildID, channelID, thema, roleID, categoryID)
+                    VALUES (%s, %s, %s, %s, %s) AS new
+                ON DUPLICATE KEY UPDATE thema      = new.thema,
+                                        roleID     = new.roleID,
+                                        categoryID = new.categoryID
+                """,
+                (guild.id, chan.id, title, role.id, cat.id),
+            )
+            # panelMsgID aktualisieren, wenn Spalte vorhanden
+            try:
+                await cur.execute(
+                    "UPDATE ticketsystem SET panelMsgID=%s WHERE guildID=%s AND channelID=%s",
+                    (int(msg.id), guild.id, chan.id),
+                )
+            except Exception:
+                # Falls Spalte (noch) nicht existiert, nicht hart fehlschlagen –
+                # Veröffentlichung ist erfolgt, die Migration ergänzt die Spalte.
+                logging.getLogger("astra.ticket").warning("panelMsgID column missing; migration required")
+
+    return {"message_id": int(msg.id), "channel_id": int(chan.id)}
+
+
+async def api_update_ticket_panel(
+    bot: commands.Bot,
+    *,
+    guild_id: int,
+    channel_id: int,
+    message_id: int,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+) -> dict:
+    """Bearbeitet ein vorhandenes Panel-Embed/Komponenten. Rückgabe wie publish.
+    Raises, wenn Nachricht nicht existiert.
+    """
+    guild = bot.get_guild(int(guild_id))
+    if guild is None:
+        raise RuntimeError("Guild not found or not available")
+
+    chan = guild.get_channel(int(channel_id)) or await guild.fetch_channel(int(channel_id))
+    if not isinstance(chan, discord.TextChannel):
+        raise RuntimeError("Target channel is not a text channel")
+
+    try:
+        msg = await chan.fetch_message(int(message_id))
+    except discord.NotFound:
+        raise FileNotFoundError("Panel message not found")
+
+    # Altes Embed übernehmen und Felder ersetzen
+    new_embed = None
+    if msg.embeds:
+        e = msg.embeds[0]
+        new_embed = mk_embed(
+            title=title or (e.title or "Ticket"),
+            description=description or (e.description or ""),
+            color=e.colour or ASTRA_BLUE,
+            thumb=guild.icon.url if guild.icon else None,
+            footer="Klicke auf den Button, um ein Ticket zu erstellen!",
+        )
+    else:
+        new_embed = mk_embed(
+            title=title or "Ticket",
+            description=description or "",
+            color=ASTRA_BLUE,
+            thumb=guild.icon.url if guild.icon else None,
+            footer="Klicke auf den Button, um ein Ticket zu erstellen!",
+        )
+
+    await msg.edit(embed=new_embed, view=TicketOpenView(bot))
+    return {"message_id": int(msg.id), "channel_id": int(chan.id)}
+
+
 class PanelTextModal(discord.ui.Modal, title="Ticket-Panel Texte"):
 
     def __init__(self, view: "SetupWizardView"):

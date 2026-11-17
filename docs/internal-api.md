@@ -1,268 +1,96 @@
-# Astra Bot – Interne API-Dokumentation (API Contract)
 
-Dieses Dokument definiert den verbindlichen API-Vertrag zwischen dem **Astra Discord-Bot** und dem separat entwickelten **Astra Dashboard-Backend**.
-
----
-
-## 1. Allgemeine Übersicht & Architektur
-
-- **Dienst:** Interne Flask-API des Astra Discord-Bots
-- **Netzwerk-Bindung:** `127.0.0.1:5000` (ausschließlich localhost / IPv4-Loopback)
-- **Kommunikationsrichtung:**
-  ```text
-  Dashboard Frontend  ──>  Dashboard Backend  ──[Interne API]──>  Astra Bot (Port 5000)
-  ```
-- **Sicherheitsprinzip:**
-  - Das Dashboard-Frontend darf niemals direkten Zugriff auf die interne API haben.
-  - Nur das Dashboard-Backend kommuniziert mit Astra über diese API.
-  - Das Dashboard-Backend ist verantwortlich für die Benutzerauthentifizierung (z. B. Discord OAuth2 / Session) und übermittelt die verifizierte Discord `user_id`.
-  - Astra prüft bei jedem Aufruf eigenständig die tatsächlichen Discord-Berechtigungen (Mitgliedschaft, Server-Owner, Administrator, Manage-Guild).
-
----
-
-## 2. Authentifizierung (Service-to-Service)
-
-Alle geschützten Endpoints erfordern eine Service-Authentifizierung via Secret Token im HTTP-Header.
-
-- **Quelle auf dem Host:** `/root/Astra/.env`
-- **Konfigurationsvariable:** `ASTRA_INTERNAL_API_KEY=...`
-- **Ladevorgang:** Wird beim Start der internen Flask-API explizit aus `/root/Astra/.env` eingelesen. Falls die Datei oder der Schlüssel fehlt/leer ist, bleibt der interne API-Port geschlossen.
-- **Header:**
-  ```http
-  Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
-  ```
-- **Prüfung:** Timing-sicherer Vergleich via `hmac.compare_digest`.
-- **Fehlgeschlagene Authentifizierung:** HTTP `401 Unauthorized` mit einheitlichem Fehler-JSON.
-
----
-
-## 3. Einheitliches Antwort- und Fehlerformat
-
-Alle JSON-Antworten der internen API besitzen ein einheitliches Basis-Schema:
-
-### Erfolgsantwort
-```json
-{
-  "success": true,
-  "...": "spezifische Nutzdaten"
-}
-```
-
-### Fehlerantwort
-```json
-{
-  "success": false,
-  "error": "Fehlerbeschreibung"
-}
-```
-
-### Relevante HTTP-Statuscodes
-| Statuscode | Bedeutung | Beschreibung |
-|------------|-----------|--------------|
-| `200 OK` | Erfolg | Die Anfrage wurde erfolgreich verarbeitet. |
-| `400 Bad Request` | Ungültige Anfrage | Fehlende oder syntaktisch ungültige Parameter (z. B. ungültige `user_id`). |
-| `401 Unauthorized` | Nicht authentifiziert | Fehlender, falscher oder falsch formatierter API-Schlüssel im `Authorization`-Header. |
-| `403 Forbidden` | Verboten | Der angegebene Benutzer ist kein Mitglied oder besitzt keine ausreichenden Berechtigungen (weder Owner, Admin noch Manage-Guild). |
-| `404 Not Found` | Nicht gefunden | Der angeforderte Server existiert nicht oder Astra ist nicht darauf installiert. |
-| `405 Method Not Allowed` | Methode unzulässig | Die aufgerufene HTTP-Methode wird auf diesem Endpoint nicht unterstützt. |
-| `500 Internal Server Error` | Serverfehler | Unerwarteter interner Verarbeitungsfehler. |
-| `503 Service Unavailable` | Bot nicht bereit | Astra befindet sich im Startvorgang oder der Discord-Event-Loop ist noch nicht bereit. |
-
----
-
-## 4. Endpoints
-
----
-
-### `GET /status`
-
-Öffentlicher Healthcheck-Endpoint für den internen Prozessstatus.
-
-- **Authentifizierung erforderlich:** Nein
-- **Zweck:** Überprüfung, ob der Flask-Service läuft.
-- **Sicherheitsgarantie:** Gibt bewusst keine sensiblen Daten, Guild-Details, Secrets oder interne Bot-Zustände preis.
-
-#### Request
+Request
 ```http
-GET /status HTTP/1.1
-Host: 127.0.0.1:5000
-```
-
-#### Response (`200 OK`)
-```json
-{
-  "online": true
-}
-```
-
----
-
-### `GET /servers`
-
-Gibt alle Server zurück, auf denen Astra installiert ist und für die der angegebene Discord-Benutzer Verwaltungsrechte besitzt.
-
-- **Authentifizierung erforderlich:** Ja (`Authorization: Bearer <ASTRA_INTERNAL_API_KEY>`)
-- **Query-Parameter:**
-  - `user_id` (string/integer, erforderlich): Die verifizierte Discord Snowflake-ID des Benutzers.
-- **Berechtigungsfilter:**
-  Ein Server wird nur zurückgegeben, wenn der Benutzer mindestens eine der folgenden Bedingungen erfüllt:
-  1. Ist Serverbesitzer (`guild.owner_id == user_id`)
-  2. Besitzt die Berechtigung `Administrator`
-  3. Besitzt die Berechtigung `Manage Server` (`manage_guild`)
-
-#### Request
-```http
-GET /servers?user_id=123456789012345678 HTTP/1.1
+GET /tickets/panels/1141116981697859736?user_id=123456789012345678 HTTP/1.1
 Host: 127.0.0.1:5000
 Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
 ```
 
-#### Response (`200 OK`)
+Response (`200 OK`)
 ```json
 {
   "success": true,
   "count": 1,
-  "servers": [
+  "panels": [
     {
-      "id": "1141116981697859736",
-      "name": "Astra Community",
-      "icon": "a_123456789abcdef",
-      "memberCount": 250,
-      "owner": true,
-      "permissions": {
-        "administrator": true,
-        "manage_guild": true
-      }
+      "channel_id": 122233344455566677,
+      "channel_name": "support-panel",
+      "category_id": 133344455566677788,
+      "category_name": "Tickets",
+      "role_id": 144455566677788899,
+      "role_name": "Support",
+      "thema": "Support"
     }
   ]
 }
 ```
 
----
-
-### `GET /servers/{guild_id}`
-
-Gibt Detailinformationen zu einem bestimmten Discord-Server zurück.
-
-- **Authentifizierung erforderlich:** Ja (`Authorization: Bearer <ASTRA_INTERNAL_API_KEY>`)
-- **Pfad-Parameter:**
-  - `guild_id` (integer, erforderlich): Die Discord Snowflake-ID des Servers.
-- **Query-Parameter:**
-  - `user_id` (string/integer, erforderlich): Die verifizierte Discord Snowflake-ID des Benutzers.
-- **Berechtigungsprüfung:**
-  Astra verifiziert die Mitgliedschaft und Berechtigung des Benutzers. Besitzt der Benutzer keine Verwaltungsrechte, wird HTTP `403 Forbidden` zurückgegeben.
-
-#### Request
-```http
-GET /servers/1141116981697859736?user_id=123456789012345678 HTTP/1.1
-Host: 127.0.0.1:5000
-Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
-```
-
-#### Response (`200 OK`)
-```json
-{
-  "success": true,
-  "server": {
-    "id": "1141116981697859736",
-    "name": "Astra Community",
-    "icon": "a_123456789abcdef",
-    "memberCount": 250,
-    "channelCount": 24,
-    "roleCount": 18,
-    "ownerId": "123456789012345678",
-    "owner": true,
-    "permissions": {
-      "administrator": true,
-      "manage_guild": true
-    }
-  }
-}
-```
-
----
-
-### `GET /servers/{guild_id}/roles`
-
-Gibt die Liste aller Rollen des angegebenen Servers zurück (ausgenommen `@everyone`).
-
-- **Authentifizierung erforderlich:** Ja (`Authorization: Bearer <ASTRA_INTERNAL_API_KEY>`)
-- **Pfad-Parameter:**
-  - `guild_id` (integer, erforderlich): Die Discord Snowflake-ID des Servers.
-- **Query-Parameter:**
-  - `user_id` (string/integer, erforderlich): Die verifizierte Discord Snowflake-ID des Benutzers.
-- **Berechtigungsprüfung:**
-  Erfordert Verwaltungsrechte (Owner, Admin oder Manage Guild) des übergebenen Benutzers auf dem angegebenen Server.
-
-#### Request
-```http
-GET /servers/1141116981697859736/roles?user_id=123456789012345678 HTTP/1.1
-Host: 127.0.0.1:5000
-Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
-```
-
-#### Response (`200 OK`)
-```json
-{
-  "success": true,
-  "count": 2,
-  "roles": [
-    {
-      "id": "1141116983815962821",
-      "name": "Administrator"
-    },
-    {
-      "id": "1141116983815962822",
-      "name": "Moderator"
-    }
-  ]
-}
-```
-
----
-
-### `GET /statistics/commands`
-
-Liefert die globale Anzahl der ausgeführten Commands pro Kalendertag (UTC) für die letzten sieben Tage über alle Guilds.
-
-- Authentifizierung erforderlich: Ja (`Authorization: Bearer <ASTRA_INTERNAL_API_KEY>`)
-- Parameter: Keine (keine `guild_id`, keine `user_id`).
-- Datenquelle:
-  Aggregation aus der Tabelle `command_usage` über den eigenständigen MySQL‑Pool der Internal API (Spalten u. a.: `used_at`).
-
-#### Request
-```http
-GET /statistics/commands HTTP/1.1
-Host: 127.0.0.1:5000
-Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
-```
-
-#### Response (`200 OK`)
-```json
-{
-  "period": "7d",
-  "total": 1250,
-  "data": [
-    {"date": "2026-11-09", "weekday": "Montag", "count": 120},
-    {"date": "2026-11-10", "weekday": "Dienstag", "count": 180},
-    {"date": "2026-11-11", "weekday": "Mittwoch", "count": 0},
-    {"date": "2026-11-12", "weekday": "Donnerstag", "count": 210},
-    {"date": "2026-11-13", "weekday": "Freitag", "count": 190},
-    {"date": "2026-11-14", "weekday": "Samstag", "count": 250},
-    {"date": "2026-11-15", "weekday": "Sonntag", "count": 300}
-  ]
-}
-```
+Fehlerfälle: wie oben (`400`/`403`/`404`/`503`/`500`).
 
 Hinweise:
-- Immer genau sieben Tage in chronologischer Reihenfolge, fehlende Tage mit `count = 0`.
-- `weekday` sind volle deutsche Wochentagsnamen; `date` ist UTC (Format `YYYY-MM-DD`).
-- `total` ist die Summe aller `count`-Werte.
+- `channel_name`, `category_name`, `role_name` werden nur ergänzt, wenn sie im synchronisierten Guild‑Snapshot vorhanden sind.
+- Panel‑Texte im Embed werden im Bot erzeugt; in der DB steht als thematischer Titel `thema`.
 
-Fehlercodes:
-- `503 Service Unavailable` – API‑eigener DB‑Pool nicht verfügbar.
-- `504 Gateway Timeout` – Zeitüberschreitung beim Abruf der Statistik aus dem Upstream (DB/Loop).
-- `500 Internal Server Error` – allgemeiner Fehler ohne interne Details/Secrets.
+#### `GET /tickets/status/{guild_id}`
+- Zweck: Offene Tickets einer Guild abrufen.
+- Datenquelle: `ticketsystem_channels` (nur offene Tickets; geschlossene werden entfernt).
+
+Request
+```http
+GET /tickets/status/1141116981697859736?user_id=123456789012345678 HTTP/1.1
+Host: 127.0.0.1:5000
+Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
+```
+
+Response (`200 OK`)
+```json
+{
+  "success": true,
+  "count": 1,
+  "open_tickets": [
+    {
+      "channel_id": 155566677788899900,
+      "message_id": 166677788899900011,
+      "opened_by": 123456789012345678,
+      "claimed_by": 234567890123456789,
+      "opened_at": "15. November 2026 21:00"
+    }
+  ]
+}
+```
+
+Fehlerfälle: wie oben (`400`/`403`/`404`/`503`/`500`).
+
+Anmerkungen:
+- `claimed_by` kann `null` sein (oder fehlt im Bot als "Not Set"). Die API normalisiert auf `null`.
+- Geschlossene Tickets werden im Bot entfernt; es gibt keine persistente Historie außer den Log‑Nachrichten im `ticketlog`‑Kanal.
+
+#### Ticket-Log verwalten
+
+`GET /tickets/log/{guild_id}`
+- Zweck: Aktuell konfigurierten Ticket‑Log‑Kanal abrufen (falls gesetzt).
+
+Response (`200 OK`)
+```json
+{ "success": true, "channelId": "122233344455566677" }
+```
+
+`PUT /tickets/log/{guild_id}`
+- Zweck: Ticket‑Log‑Kanal setzen/ändern.
+- Body:
+```json
+{ "channel_id": 122233344455566677 }
+```
+
+`DELETE /tickets/log/{guild_id}`
+- Zweck: Ticket‑Log‑Kanal entfernen (deaktivieren).
+
+Fehlerfälle (für alle drei): `400` ungültige/fehlende Werte, `403`/`404`/`503`/`500` gemäß Schema.
+
+Backend-/Bot-Zuordnung:
+- Beim Schließen eines Tickets erzeugt der Bot ein Text‑Transkript (.log) und sendet es in den konfigurierten `ticketlog`‑Kanal. Zusätzlich wird eine Reopen‑Aktion mit Ablauf gemäß `reopen_hours` angeboten.
+
+---
 
 ---
 
@@ -280,3 +108,102 @@ Fehlercodes:
 1. **Session-Validierung:** Ermittle die `user_id` stets serverseitig aus einer authentifizierten Session (z. B. Discord OAuth2 Access Token). Vertraue niemals ungesicherten Angaben aus dem Client/Frontend.
 2. **API-Schlüssel-Schutz:** Der `ASTRA_INTERNAL_API_KEY` darf ausschließlich serverseitig in Umgebungsvariablen des Dashboard-Backends liegen und niemals im Frontend-Code oder in Logdateien auftauchen.
 3. **Netzwerk:** Die Kommunikation findet rein über `http://127.0.0.1:5000` auf demselben Host bzw. internen Netzwerk statt.
+
+#### `POST /tickets/panels/{guild_id}/publish`
+- Zweck: Ein Ticket-Panel konfigurieren, im Zielkanal veröffentlichen und die echte Discord-Message-ID speichern.
+- Auth/Berechtigung: wie oben; veröffentlicht wird nur, wenn der Bot online ist und ausreichende Kanalrechte hat.
+
+Request
+```http
+POST /tickets/panels/1141116981697859736/publish?user_id=123456789012345678 HTTP/1.1
+Host: 127.0.0.1:5000
+Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
+Content-Type: application/json
+
+{
+  "channel_id": 122233344455566677,
+  "category_id": 199988877766655544,
+  "role_id": 144455566677788899,
+  "title": "Support",
+  "description": "Stelle hier deine Fragen an das Team."
+}
+```
+
+Response (`200 OK`)
+```json
+{
+  "success": true,
+  "published": {
+    "message_id": 121212121212121212,
+    "channel_id": 122233344455566677
+  }
+}
+```
+
+Fehlerfälle:
+- `400` fehlende/ungültige Felder; Kanal gehört nicht zur Guild.
+- `403` unzureichende Berechtigungen.
+- `404` unbekannte Guild.
+- `409` bereits veröffentlicht (`status: "already_published"`).
+- `409` fehlende Discord-Rechte (z. B. `Embed Links`) mit `status: "permission_error"`.
+- `503` Bot/Service nicht bereit.
+- `504` Timeout (`status: "timeout"`).
+- `500` generischer Veröffentlichungsfehler (`status: "publish_failed"`).
+
+Hinweise:
+- Die tatsächliche Nachricht wird vom bestehenden Bot erstellt; es werden keine Bot-Tokens offengelegt.
+- Die veröffentlichte Message-ID wird in `ticketsystem.panelMsgID` persistiert (Migration erforderlich, siehe opt/migrations).
+
+#### `PUT /tickets/panels/{guild_id}/{channel_id}/update`
+- Zweck: Vorhandenes veröffentlichtes Panel (Embed/Komponenten) aktualisieren.
+- Verhalten: Beibehaltung der bestehenden Message-ID. Wenn die Nachricht fehlt, `410 Gone`.
+
+Request
+```http
+PUT /tickets/panels/1141116981697859736/122233344455566677/update?user_id=123456789012345678 HTTP/1.1
+Host: 127.0.0.1:5000
+Authorization: Bearer <ASTRA_INTERNAL_API_KEY>
+Content-Type: application/json
+
+{
+  "title": "Support & Hilfe",
+  "description": "Bitte lies die Hinweise bevor du ein Ticket erstellst."
+}
+```
+
+Response (`200 OK`)
+```json
+{
+  "success": true,
+  "updated": {
+    "message_id": 121212121212121212,
+    "channel_id": 122233344455566677
+  }
+}
+```
+
+Fehlerfälle: `404 not_published`, `410 gone`, `503`, `504`, `500` analog.
+
+#### `GET /tickets/panels/{guild_id}/status`
+- Zweck: Veröffentlichungsstatus je konfiguriertem Panel zurückgeben.
+- Response-Felder pro Panel: `channel_id`, `category_id`, `role_id`, `thema`, `panel_message_id`, `status` (`not_published`|`published`).
+
+Beispiel (`200 OK`)
+```json
+{
+  "success": true,
+  "count": 1,
+  "panels": [
+    {
+      "channel_id": 122233344455566677,
+      "category_id": 199988877766655544,
+      "role_id": 144455566677788899,
+      "thema": "Support",
+      "panel_message_id": 121212121212121212,
+      "status": "published"
+    }
+  ]
+}
+```
+
+Hinweis: Es werden keine direkten Discord-Live-Checks durchgeführt; der Status basiert auf gespeicherten Daten.

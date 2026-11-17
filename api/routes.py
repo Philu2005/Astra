@@ -1,6 +1,9 @@
 import logging
 import time
 import asyncio
+from collections import deque
+from functools import wraps
+from threading import RLock
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, jsonify, request, current_app
@@ -10,6 +13,8 @@ from api.permissions import validate_user_id, check_user_guild_permissions
 from api.serializers import serialize_guild_summary, serialize_guild_detail, serialize_role
 from api.heartbeat import heartbeat_state, derive_bot_status
 from api.guild_state import guild_state_store
+from cogs.ticket import api_publish_ticket_panel, api_update_ticket_panel
+from main import submit_bot_task
 from api.moderation_services import (
     fetch_warns as svc_fetch_warns,
     fetch_all_warns as svc_fetch_all_warns,
@@ -20,6 +25,7 @@ from api.moderation_services import (
     get_modlog_channel as svc_get_modlog,
     set_modlog_channel as svc_set_modlog,
 )
+from main import submit_bot_task
 
 logger = logging.getLogger("astra.api.routes")
 
@@ -87,6 +93,115 @@ def _validate_channel_payload(channel: dict) -> bool:
     if not isinstance(channel.get("type", ""), str):
         return False
     return True
+
+
+# =============================
+#   Einheitliche Fehlerantwort
+# =============================
+
+def _api_error(http_status: int, code: str, message: str | None = None):
+    """Erzeugt eine generische Fehlerrückgabe ohne interne Details.
+
+    code: stabiler, maschinenlesbarer Fehlercode (z. B. 'permission_denied').
+    message: optionale generische Beschreibung für Menschen.
+    """
+    payload = {"success": False, "code": code}
+    if message:
+        payload["error"] = message
+    return jsonify(payload), http_status
+
+
+# =============================
+#       Einfaches Rate-Limit
+# =============================
+
+_RL_LOCK = RLock()
+_RL_BUCKETS: dict[tuple[str, str], deque] = {}
+
+
+def _rate_key(scope: str) -> tuple[str, str]:
+    # Schlüsselelement: API-Schlüssel aus Authorization oder Fallback IP/Anon
+    auth = request.headers.get("Authorization", "").strip()
+    client = auth or (request.remote_addr or "anon")
+    return (scope, client)
+
+
+def rate_limit(scope: str, limit: int, per_seconds: int):
+    """Einfacher in‑Memory Tokenbucket (Gleitfenster) pro (scope, client).
+
+    Hinweis: Nur für den lokalen internen Service gedacht; kein externer DoS‑Schutz.
+    """
+
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            now = time.time()
+            key = _rate_key(scope)
+            with _RL_LOCK:
+                dq = _RL_BUCKETS.get(key)
+                if dq is None:
+                    dq = deque()
+                    _RL_BUCKETS[key] = dq
+                # Abgelaufene Einträge entfernen
+                while dq and (now - dq[0]) > per_seconds:
+                    dq.popleft()
+                if len(dq) >= limit:
+                    # Retry‑Hint minimal zurückgeben
+                    return _api_error(429, "rate_limited", "Too many requests. Please retry later.")
+                dq.append(now)
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+# ==========================================
+#      Idempotenz: Publish‑Guards/In‑Memory
+# ==========================================
+
+_PUBLISH_LOCK = RLock()
+_PUBLISH_STATE: dict[tuple[int, int], dict] = {}
+
+
+def _get_publish_state_key(guild_id: int, channel_id: int) -> tuple[int, int]:
+    return (int(guild_id), int(channel_id))
+
+
+def _is_publish_in_progress(guild_id: int, channel_id: int, window: float = 30.0) -> bool:
+    key = _get_publish_state_key(guild_id, channel_id)
+    now = time.time()
+    with _PUBLISH_LOCK:
+        st = _PUBLISH_STATE.get(key)
+        if not st:
+            return False
+        if st.get("status") == "in_progress" and (now - st.get("ts", 0)) <= window:
+            return True
+    return False
+
+
+def _mark_publish_state(guild_id: int, channel_id: int, status: str, payload: dict | None = None):
+    key = _get_publish_state_key(guild_id, channel_id)
+    with _PUBLISH_LOCK:
+        _PUBLISH_STATE[key] = {"status": status, "ts": time.time(), "data": payload or {}}
+
+
+async def _bot_channel_belongs_to_guild(bot, guild_id: int, channel_id: int) -> bool:
+    """Harter Live‑Check über den Bot: Existiert der Channel in genau dieser Guild?"""
+    if not bot:
+        return False
+    guild = bot.get_guild(int(guild_id))
+    if guild is None:
+        return False
+    try:
+        ch = guild.get_channel(int(channel_id))
+        if ch is not None:
+            return True
+        # Fallback: API‑Fetch innerhalb der Guild
+        _ = await guild.fetch_channel(int(channel_id))
+        return True
+    except Exception:
+        return False
 
 
 def _validate_guild_payload(guild: dict) -> bool:
@@ -555,6 +670,7 @@ def get_member_warns(guild_id: int, member_id: int):
 
 @api_bp.route("/moderation/warns/<int:guild_id>/<int:member_id>", methods=["DELETE"])
 @require_service_auth
+@rate_limit(scope="warns_delete_member", limit=20, per_seconds=60)
 def delete_member_warns(guild_id: int, member_id: int):
     if not is_bot_ready():
         return jsonify(success=False, error="Service not ready"), 503
@@ -604,6 +720,7 @@ def delete_member_warns(guild_id: int, member_id: int):
 # Serverweite Löschung aller Warns einer Guild
 @api_bp.route("/moderation/warns/<int:guild_id>", methods=["DELETE"])
 @require_service_auth
+@rate_limit(scope="warns_delete_guild", limit=10, per_seconds=60)
 def delete_guild_warns(guild_id: int):
     if not is_bot_ready():
         return jsonify(success=False, error="Service not ready"), 503
@@ -678,6 +795,7 @@ def get_automod_config(guild_id: int):
 
 @api_bp.route("/moderation/automod/<int:guild_id>", methods=["PUT"])
 @require_service_auth
+@rate_limit(scope="automod_put", limit=20, per_seconds=60)
 def put_automod_config(guild_id: int):
     if not is_bot_ready():
         return jsonify(success=False, error="Service not ready"), 503
@@ -794,8 +912,9 @@ def get_modlog(guild_id: int):
     return jsonify(success=True, channelId=(str(channel_id) if channel_id else None)), 200
 
 
-@api_bp.route("/moderation/modlog/<int:guild_id>", methods=["PUT"])
+@api_bp.route("/moderation/modlog/<int:guild_id>", methods=["PUT"]) 
 @require_service_auth
+@rate_limit(scope="modlog_put", limit=30, per_seconds=60)
 def put_modlog(guild_id: int):
     if not is_bot_ready():
         return jsonify(success=False, error="Service not ready"), 503
@@ -842,8 +961,630 @@ def put_modlog(guild_id: int):
     return jsonify(success=True), 200
 
 
-@api_bp.route("/moderation/modlog/<int:guild_id>", methods=["DELETE"])
+# ---------------------------------------------
+# Ticketsystem: Konfiguration, Panels, Status, Log
+# ---------------------------------------------
+
+
+async def _load_ticket_config_async(pool, guild_id: int) -> dict:
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT autoclose_hours, remind_minutes, reopen_hours, ping_throttle_minutes FROM ticket_config WHERE guildID=%s",
+                (guild_id,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                # Keine Anlage hier; Bot legt bei Bedarf an. Defaults wie im Bot:
+                return {
+                    "autoclose_hours": 0,
+                    "remind_minutes": 0,
+                    "reopen_hours": 24,
+                    "ping_throttle_minutes": 0,
+                }
+            return {
+                "autoclose_hours": int(row[0] or 0),
+                "remind_minutes": int(row[1] or 0),
+                "reopen_hours": int(row[2] or 0),
+                "ping_throttle_minutes": int(row[3] or 0),
+            }
+
+
+async def _save_ticket_config_async(pool, guild_id: int, payload: dict) -> None:
+    # Nur bekannte Felder zulassen
+    allowed = ("autoclose_hours", "remind_minutes", "reopen_hours", "ping_throttle_minutes")
+    fields = []
+    vals: list[int] = []
+    for k in allowed:
+        if k in payload and payload[k] is not None:
+            fields.append(f"{k}=%s")
+            vals.append(int(payload[k]))
+    if not fields:
+        return
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            # Sicherstellen, dass Datensatz existiert
+            await cur.execute("INSERT IGNORE INTO ticket_config (guildID) VALUES (%s)", (guild_id,))
+            vals.append(guild_id)
+            q = f"UPDATE ticket_config SET {', '.join(fields)} WHERE guildID=%s"
+            await cur.execute(q, tuple(vals))
+
+
+@api_bp.route("/tickets/config/<int:guild_id>", methods=["GET"])
 @require_service_auth
+def get_ticket_config(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        cfg = api_db.run_coro(_load_ticket_config_async(pool, guild_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to load ticket config for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to load ticket config"), 500
+
+    return jsonify(success=True, config=cfg), 200
+
+
+@api_bp.route("/tickets/config/<int:guild_id>", methods=["PUT"]) 
+@require_service_auth
+@rate_limit(scope="tickets_config_put", limit=30, per_seconds=60)
+def put_ticket_config(guild_id: int):
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    payload = request.get_json(silent=True) or {}
+    # Validierung
+    allowed = ("autoclose_hours", "remind_minutes", "reopen_hours", "ping_throttle_minutes")
+    for k, v in list(payload.items()):
+        if k not in allowed:
+            return _api_error(400, "unsupported_field", f"Unsupported field: {k}")
+        try:
+            if v is not None:
+                iv = int(v)
+                if iv < 0:
+                    return _api_error(400, "invalid_field_value", f"Invalid value for {k}")
+        except Exception:
+            return _api_error(400, "invalid_field_value", f"Invalid value for {k}")
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+
+    try:
+        api_db.run_coro(_save_ticket_config_async(pool, guild_id, payload), timeout=7.0)
+        cfg = api_db.run_coro(_load_ticket_config_async(pool, guild_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to save ticket config")
+        return _api_error(500, "save_failed", "Failed to save ticket config")
+
+    return jsonify(success=True, config=cfg), 200
+
+
+async def _fetch_ticket_panels_async(pool, guild_id: int):
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            # Versuche, optionales panelMsgID zu lesen (Migration ggf. noch nicht ausgeführt)
+            try:
+                await cur.execute(
+                    "SELECT channelID, categoryID, roleID, thema, panelMsgID FROM ticketsystem WHERE guildID=%s",
+                    (guild_id,),
+                )
+                rows = await cur.fetchall()
+                return [
+                    {
+                        "channel_id": int(r[0]),
+                        "category_id": int(r[1]) if r[1] is not None else None,
+                        "role_id": int(r[2]) if r[2] is not None else None,
+                        "thema": r[3] or "",
+                        "panel_message_id": int(r[4]) if (len(r) > 4 and r[4] is not None) else None,
+                    }
+                    for r in rows
+                ]
+            except Exception:
+                await cur.execute(
+                    "SELECT channelID, categoryID, roleID, thema FROM ticketsystem WHERE guildID=%s",
+                    (guild_id,),
+                )
+                rows = await cur.fetchall()
+                return [
+                    {
+                        "channel_id": int(r[0]),
+                        "category_id": int(r[1]) if r[1] is not None else None,
+                        "role_id": int(r[2]) if r[2] is not None else None,
+                        "thema": r[3] or "",
+                        "panel_message_id": None,
+                    }
+                    for r in rows
+                ]
+
+
+@api_bp.route("/tickets/panels/<int:guild_id>", methods=["GET"]) 
+@require_service_auth
+def get_ticket_panels(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to load ticket panels for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to load panels"), 500
+
+    # Optional: Kanal-/Kategorie-/Rollen‑Namen aus Cache anreichern
+    channels = guild.get("channels") or []
+    roles = guild.get("roles") or []
+    ch_map = {int(c.get("id")): c for c in channels if c.get("id")}
+    role_map = {int(r.get("id")): r for r in roles if r.get("id")}
+    for p in panels:
+        ch = ch_map.get(p["channel_id"]) if isinstance(ch_map, dict) else None
+        cat = ch_map.get(p["category_id"]) if isinstance(ch_map, dict) and p.get("category_id") else None
+        rr = role_map.get(p["role_id"]) if isinstance(role_map, dict) and p.get("role_id") else None
+        if ch:
+            p["channel_name"] = ch.get("name")
+        if cat:
+            p["category_name"] = cat.get("name")
+        if rr:
+            p["role_name"] = rr.get("name")
+
+    return jsonify(success=True, count=len(panels), panels=panels), 200
+
+
+@api_bp.route("/tickets/panels/<int:guild_id>/publish", methods=["POST"])
+@require_service_auth
+@rate_limit(scope="tickets_publish", limit=5, per_seconds=60)
+def publish_ticket_panel(guild_id: int):
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    payload = request.get_json(silent=True) or {}
+    required_fields = ("channel_id", "category_id", "role_id", "title", "description")
+    for f in required_fields:
+        if f not in payload:
+            return _api_error(400, "missing_field", f"Missing field: {f}")
+    try:
+        channel_id = int(str(payload.get("channel_id")).strip())
+        category_id = int(str(payload.get("category_id")).strip())
+        role_id = int(str(payload.get("role_id")).strip())
+        title = str(payload.get("title")).strip()
+        description = str(payload.get("description") or "").strip()
+        if not title:
+            return _api_error(400, "invalid_title", "Title must not be empty")
+        # Längenbegrenzung
+        if len(title) > 256:
+            return _api_error(400, "title_too_long", "Title exceeds 256 characters")
+        if len(description) > 4000:
+            return _api_error(400, "description_too_long", "Description exceeds 4000 characters")
+    except Exception:
+        return _api_error(400, "invalid_payload", "Invalid payload values")
+
+    # Harte Guild-Channel-Prüfung via Bot
+    bot = current_app.config.get("DISCORD_BOT")
+    try:
+        belongs = submit_bot_task(_bot_channel_belongs_to_guild(bot, guild_id, channel_id), timeout=5.0)
+    except Exception:
+        belongs = False
+    if not belongs:
+        return _api_error(400, "invalid_channel", "Channel does not belong to the guild")
+
+    # Bereits veröffentlicht? Optional verhindern (ohne force)
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+    try:
+        panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
+        existing = next((p for p in panels if p["channel_id"] == channel_id), None)
+        if existing and existing.get("panel_message_id"):
+            return _api_error(409, "already_published", "Panel already published")
+    except Exception:
+        logger.exception("Failed to check existing panel")
+
+    # Idempotenz: parallele Anfragen verhindern
+    if _is_publish_in_progress(guild_id, channel_id):
+        return _api_error(409, "publish_in_progress", "Another publish is in progress")
+    _mark_publish_state(guild_id, channel_id, "in_progress")
+    try:
+        result = submit_bot_task(
+            api_publish_ticket_panel(
+                bot,
+                guild_id=guild_id,
+                channel_id=channel_id,
+                category_id=category_id,
+                role_id=role_id,
+                title=title,
+                description=description,
+            ),
+            timeout=15.0,
+        )
+        _mark_publish_state(guild_id, channel_id, "succeeded", result)
+    except FuturesTimeoutError:
+        _mark_publish_state(guild_id, channel_id, "failed")
+        return _api_error(504, "timeout", "Publish timeout")
+    except PermissionError:
+        _mark_publish_state(guild_id, channel_id, "failed")
+        return _api_error(403, "permission_denied", "Missing permissions for target channel")
+    except Exception:
+        logger.exception("Panel publish failed")
+        _mark_publish_state(guild_id, channel_id, "failed")
+        return _api_error(500, "publish_failed", "Failed to publish panel")
+
+    return jsonify(success=True, published=result), 200
+
+
+@api_bp.route("/tickets/panels/<int:guild_id>/<int:channel_id>/update", methods=["PUT"])
+@require_service_auth
+@rate_limit(scope="tickets_update", limit=10, per_seconds=60)
+def update_ticket_panel(guild_id: int, channel_id: int):
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    payload = request.get_json(silent=True) or {}
+    title = payload.get("title")
+    description = payload.get("description")
+    if title is None and description is None:
+        return _api_error(400, "empty_update", "No fields to update")
+    if title is not None and not str(title).strip():
+        return _api_error(400, "invalid_title", "Title must not be empty")
+    if title is not None and len(str(title)) > 256:
+        return _api_error(400, "title_too_long", "Title exceeds 256 characters")
+    if description is not None and len(str(description)) > 4000:
+        return _api_error(400, "description_too_long", "Description exceeds 4000 characters")
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+    try:
+        panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
+        existing = next((p for p in panels if p["channel_id"] == channel_id), None)
+        if not existing or not existing.get("panel_message_id"):
+            return _api_error(404, "not_published", "No published panel found")
+        message_id = int(existing.get("panel_message_id"))
+    except Exception:
+        logger.exception("Failed to load panel for update")
+        return _api_error(500, "load_failed", "Failed to load panel")
+
+    try:
+        result = submit_bot_task(
+            api_update_ticket_panel(
+                current_app.config.get("DISCORD_BOT"),
+                guild_id=guild_id,
+                channel_id=channel_id,
+                message_id=message_id,
+                title=title,
+                description=description,
+            ),
+            timeout=15.0,
+        )
+    except FuturesTimeoutError:
+        return _api_error(504, "timeout", "Update timeout")
+    except FileNotFoundError:
+        return _api_error(410, "gone", "Panel message not found")
+    except Exception:
+        logger.exception("Panel update failed")
+        return _api_error(500, "update_failed", "Failed to update panel")
+
+    return jsonify(success=True, updated=result), 200
+
+
+@api_bp.route("/tickets/panels/<int:guild_id>/status", methods=["GET"])
+@require_service_auth
+def get_ticket_panel_status(guild_id: int):
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+
+    try:
+        panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to load panels for status (guild %s)", guild_id)
+        return jsonify(success=False, error="Failed to load panels"), 500
+
+    # Basis-Status ohne Live-REST-Checks (keine zweite Discord-Implementierung)
+    def _status_of(p):
+        if p.get("panel_message_id"):
+            return "published"
+        return "not_published"
+
+    for p in panels:
+        p["status"] = _status_of(p)
+
+    return jsonify(success=True, count=len(panels), panels=panels), 200
+
+
+async def _fetch_open_tickets_async(pool, guild_id: int):
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT channelID, msgID, opened, claimed, time FROM ticketsystem_channels WHERE guildID=%s",
+                (guild_id,),
+            )
+            rows = await cur.fetchall()
+            data = []
+            for r in rows:
+                opened_val = None
+                try:
+                    opened_val = int(r[2]) if r[2] is not None else None
+                except Exception:
+                    opened_val = None
+                claimed_raw = r[3]
+                try:
+                    claimed_val = None if (claimed_raw is None or str(claimed_raw) == "Not Set") else int(claimed_raw)
+                except Exception:
+                    claimed_val = None
+                data.append({
+                    "channel_id": int(r[0]),
+                    "message_id": int(r[1]),
+                    "opened_by": opened_val,
+                    "claimed_by": claimed_val,
+                    "opened_at": r[4],  # formatierte Zeit aus Bot-Logik
+                })
+            return data
+
+
+@api_bp.route("/tickets/status/<int:guild_id>", methods=["GET"]) 
+@require_service_auth
+def get_ticket_status(guild_id: int):
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return jsonify(success=False, error="Service temporarily unavailable"), 503
+
+    try:
+        tickets = api_db.run_coro(_fetch_open_tickets_async(pool, guild_id), timeout=6.0)
+    except Exception:
+        logger.exception("Failed to load open tickets for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to load ticket status"), 500
+
+    return jsonify(success=True, count=len(tickets), open_tickets=tickets), 200
+
+
+async def _get_ticketlog_channel_async(pool, guild_id: int):
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s", (guild_id,))
+            row = await cur.fetchone()
+            return int(row[0]) if row and row[0] is not None else None
+
+
+async def _set_ticketlog_channel_async(pool, guild_id: int, channel_id: int | None):
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            if channel_id is None:
+                await cur.execute("DELETE FROM ticketlog WHERE guildID=%s", (guild_id,))
+            else:
+                await cur.execute("REPLACE INTO ticketlog (guildID, channelID) VALUES (%s, %s)", (guild_id, channel_id))
+
+
+@api_bp.route("/tickets/log/<int:guild_id>", methods=["GET"]) 
+@require_service_auth
+def get_ticketlog(guild_id: int):
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+
+    try:
+        ch_id = api_db.run_coro(_get_ticketlog_channel_async(pool, guild_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to load ticketlog")
+        return _api_error(500, "load_failed", "Failed to load ticket log")
+
+    return jsonify(success=True, channelId=(str(ch_id) if ch_id else None)), 200
+
+
+@api_bp.route("/tickets/log/<int:guild_id>", methods=["PUT"]) 
+@require_service_auth
+@rate_limit(scope="tickets_log_put", limit=15, per_seconds=60)
+def put_ticketlog(guild_id: int):
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    payload = request.get_json(silent=True) or {}
+    raw_channel_id = payload.get("channel_id")
+    try:
+        channel_id = int(str(raw_channel_id).strip()) if raw_channel_id is not None else None
+        if channel_id is not None and channel_id <= 0:
+            raise ValueError()
+    except Exception:
+        return _api_error(400, "invalid_channel_id", "Invalid channel_id")
+
+    # Ggf. verifizieren, dass Kanal zur Guild gehört (falls im Snapshot enthalten)
+    channels = guild.get("channels") if isinstance(guild, dict) else []
+    if channel_id is not None and isinstance(channels, list) and channels:
+        in_guild = any(validate_user_id(c.get("id")) == channel_id for c in channels)
+        if not in_guild:
+            return _api_error(400, "invalid_channel", "Channel does not belong to the guild")
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+
+    try:
+        api_db.run_coro(_set_ticketlog_channel_async(pool, guild_id, channel_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to save ticketlog")
+        return _api_error(500, "save_failed", "Failed to save ticket log")
+
+    return jsonify(success=True), 200
+
+
+@api_bp.route("/tickets/log/<int:guild_id>", methods=["DELETE"]) 
+@require_service_auth
+@rate_limit(scope="tickets_log_delete", limit=10, per_seconds=60)
+def delete_ticketlog(guild_id: int):
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+
+    try:
+        api_db.run_coro(_set_ticketlog_channel_async(pool, guild_id, None), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to delete ticketlog")
+        return _api_error(500, "delete_failed", "Failed to delete ticket log")
+
+    return jsonify(success=True), 200
+
+
+@api_bp.route("/moderation/modlog/<int:guild_id>", methods=["DELETE"]) 
+@require_service_auth
+@rate_limit(scope="modlog_delete", limit=15, per_seconds=60)
 def delete_modlog(guild_id: int):
     if not is_bot_ready():
         return jsonify(success=False, error="Service not ready"), 503
