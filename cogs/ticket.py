@@ -1465,7 +1465,7 @@ class ConfigCenterView(ui.LayoutView):
         container = discord.ui.Container(accent_color=get_current_colour().value)
 
         # Header
-        container.add_item(discord.ui.TextDisplay("# Ticket-Verwaltung\nVerwalte deine Ticket-Panels komfortabel."))
+        container.add_item(discord.ui.TextDisplay("# Ticket-Verwaltung\nBitte wähle zunächst ein Ticket-Panel aus, das du anzeigen oder bearbeiten möchtest."))
         container.add_item(discord.ui.Separator())
 
         # Auswahl der Panels
@@ -1499,7 +1499,26 @@ class ConfigCenterView(ui.LayoutView):
 
         container.add_item(discord.ui.Separator())
 
-        # Tabs
+        # Bevor ein Panel ausgewählt wurde, keine Tabs/Content anzeigen
+        if self.selected_channel_id is None or self._selected_panel is None:
+            container.add_item(discord.ui.TextDisplay("> Noch kein Panel ausgewählt. Nutze die Auswahlliste oben, um fortzufahren."))
+            # Footer / Close
+            close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖")
+
+            async def close_cb(inter: discord.Interaction):
+                await inter.response.defer()
+                try:
+                    await inter.delete_original_response()
+                except Exception:
+                    pass
+
+            close_btn.callback = close_cb
+            container.add_item(discord.ui.ActionRow(close_btn))
+
+            self.add_item(container)
+            return
+
+        # Tabs (nur wenn Panel gewählt wurde)
         tabs: list[discord.ui.Button] = []
         tab_names = ["Übersicht", "Panel bearbeiten", "Discord-Zuordnungen", "Ticket-Einstellungen", "Erinnerungen", "Protokollierung"]
         for idx, name in enumerate(tab_names):
@@ -1546,12 +1565,6 @@ class ConfigCenterView(ui.LayoutView):
             prev_btn.disabled = self.active_tab <= 0
             next_btn.disabled = self.active_tab >= (len(tab_names) - 1)
             container.add_item(discord.ui.ActionRow(prev_btn, next_btn))
-
-        # Content je Tab
-        if self.selected_channel_id is None or self._selected_panel is None:
-            container.add_item(discord.ui.TextDisplay("Wähle zunächst ein Panel aus."))
-            self.add_item(container)
-            return
 
         # Übersicht
         if self.active_tab == 0:
@@ -1789,7 +1802,7 @@ class PanelOverviewView(ui.LayoutView):
     def _build(self):
         self.clear_items()
         cont = discord.ui.Container(accent_color=get_current_colour().value)
-        cont.add_item(discord.ui.TextDisplay("# Ticket‑Panels\nWähle ein Panel, um Details anzuzeigen."))
+        cont.add_item(discord.ui.TextDisplay("# Ticket‑Panels\nBitte wähle zunächst ein Ticket‑Panel aus, das du dir ansehen oder im Control‑Center verwalten möchtest."))
         cont.add_item(discord.ui.Separator())
 
         async def on_select(inter: discord.Interaction, s: discord.ui.Select):
@@ -1852,7 +1865,15 @@ class PanelOverviewView(ui.LayoutView):
     async def refresh(self, interaction: discord.Interaction):
         await self._load()
         self._build()
-        await interaction.edit_original_response(view=self)
+        try:
+            # Bei Komponenten-Interaktionen die Nachricht direkt bearbeiten, um 404 Unknown Webhook zu vermeiden
+            if interaction.response.is_done():
+                await interaction.edit_original_response(view=self)
+            else:
+                await interaction.response.edit_message(view=self)
+        except discord.NotFound:
+            # Fallback: Nachricht könnte gelöscht/abgelaufen sein – stillschweigend ignorieren
+            pass
 
 
 # =========================================================
