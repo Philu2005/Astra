@@ -1492,8 +1492,8 @@ class ConfigCenterView(ui.LayoutView):
         if select_options:
             select = discord.ui.Select(placeholder="Wähle ein Panel …", min_values=1, max_values=1, options=select_options)
             select.callback = lambda inter, s=select: asyncio.create_task(panel_select_cb(inter, s))
-            # Interaktive Elemente als ActionRow auf View-Ebene hinzufügen
-            self.add_item(discord.ui.ActionRow(select))
+            # Select im Container, aber in ActionRow verpackt (Discord-Anforderung)
+            container.add_item(discord.ui.ActionRow(select))
         else:
             container.add_item(discord.ui.TextDisplay("> Keine Panels gefunden. Nutze **/ticket setup**, um eines zu erstellen."))
 
@@ -1514,16 +1514,38 @@ class ConfigCenterView(ui.LayoutView):
             btn.callback = cb
             tabs.append(btn)
         # Discord lässt max. 5 Komponenten pro ActionRow zu → Tabs in Gruppen aufteilen
-        # Buttons/ActionRows werden auf View-Ebene hinzugefügt (nicht im Container)
+        # Tabs innerhalb des Containers halten (ActionRows innerhalb Container)
         if tabs:
             chunk: list[discord.ui.Button] = []
             for b in tabs:
                 chunk.append(b)
                 if len(chunk) == 5:
-                    self.add_item(discord.ui.ActionRow(*chunk))
+                    container.add_item(discord.ui.ActionRow(*chunk))
                     chunk = []
             if chunk:
-                self.add_item(discord.ui.ActionRow(*chunk))
+                container.add_item(discord.ui.ActionRow(*chunk))
+
+        # Zusätzliche Routing-Buttons zum einfachen Vor/Zurück zwischen Tabs
+        if len(tabs) > 1:
+            prev_btn = discord.ui.Button(label="← Tab", style=discord.ButtonStyle.secondary, emoji="<:Astra_arrow_backwards:1392540551546671348>")
+            next_btn = discord.ui.Button(label="Tab →", style=discord.ButtonStyle.secondary, emoji="<:Astra_arrow:1141303823600717885>")
+
+            async def prev_cb(inter: discord.Interaction):
+                self.active_tab = max(0, self.active_tab - 1)
+                self._build()
+                await inter.response.edit_message(view=self)
+
+            async def next_cb(inter: discord.Interaction):
+                self.active_tab = min(len(tab_names) - 1, self.active_tab + 1)
+                self._build()
+                await inter.response.edit_message(view=self)
+
+            prev_btn.callback = prev_cb
+            next_btn.callback = next_cb
+            # Disable an den Rändern
+            prev_btn.disabled = self.active_tab <= 0
+            next_btn.disabled = self.active_tab >= (len(tab_names) - 1)
+            container.add_item(discord.ui.ActionRow(prev_btn, next_btn))
 
         # Content je Tab
         if self.selected_channel_id is None or self._selected_panel is None:
@@ -1558,7 +1580,7 @@ class ConfigCenterView(ui.LayoutView):
                 await inter.response.send_modal(modal)
 
             edit_btn.callback = edit_cb
-            self.add_item(discord.ui.ActionRow(edit_btn))
+            container.add_item(discord.ui.ActionRow(edit_btn))
 
         # Discord-Zuordnungen
         elif self.active_tab == 2:
@@ -1570,7 +1592,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._set_role(inter, role)
 
             role_select.callback = role_cb
-            self.add_item(discord.ui.ActionRow(role_select))
+            container.add_item(discord.ui.ActionRow(role_select))
 
             # Category select
             cat_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.category], placeholder="Ticket-Kategorie wählen", min_values=0, max_values=1)
@@ -1580,7 +1602,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._set_category(inter, cat if isinstance(cat, discord.CategoryChannel) else None)
 
             cat_select.callback = cat_cb
-            self.add_item(discord.ui.ActionRow(cat_select))
+            container.add_item(discord.ui.ActionRow(cat_select))
 
             # Move (Zielkanal ändern)
             txt_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Zielkanal für Panel verschieben", min_values=1, max_values=1)
@@ -1592,7 +1614,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._move_panel(inter, ch)
 
             txt_select.callback = move_cb
-            self.add_item(discord.ui.ActionRow(txt_select))
+            container.add_item(discord.ui.ActionRow(txt_select))
 
             # Panel löschen (Button)
             del_btn = discord.ui.Button(label="Panel löschen", style=discord.ButtonStyle.danger, emoji="🗑️")
@@ -1601,7 +1623,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._delete_panel(inter)
 
             del_btn.callback = del_cb
-            self.add_item(discord.ui.ActionRow(del_btn))
+            container.add_item(discord.ui.ActionRow(del_btn))
 
         # Ticket-Einstellungen
         elif self.active_tab == 3:
@@ -1635,7 +1657,7 @@ class ConfigCenterView(ui.LayoutView):
 
             btn_auto.callback = auto_cb
             btn_reopen.callback = reopen_cb
-            self.add_item(discord.ui.ActionRow(btn_auto, btn_reopen))
+            container.add_item(discord.ui.ActionRow(btn_auto, btn_reopen))
 
         # Erinnerungen
         elif self.active_tab == 4:
@@ -1662,7 +1684,7 @@ class ConfigCenterView(ui.LayoutView):
 
             btn_rem.callback = lambda inter: inter.response.send_modal(_ValueModal2("remind_minutes"))
             btn_ping.callback = lambda inter: inter.response.send_modal(_ValueModal2("ping_throttle_minutes"))
-            self.add_item(discord.ui.ActionRow(btn_rem, btn_ping))
+            container.add_item(discord.ui.ActionRow(btn_rem, btn_ping))
 
         # Protokollierung
         elif self.active_tab == 5:
@@ -1708,8 +1730,8 @@ class ConfigCenterView(ui.LayoutView):
                 await inter.response.send_message("<:Astra_accept:1141303821176422460> Log‑Kanal aktualisiert.", ephemeral=True)
 
             set_sel.callback = set_log_cb
-            # Selects gehören nicht in den Text-Container, sondern als ActionRow zur View
-            self.add_item(discord.ui.ActionRow(set_sel))
+            # Select (in ActionRow) gehört in den Container
+            container.add_item(discord.ui.ActionRow(set_sel))
 
         # Footer / Close
         close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖")
@@ -1781,8 +1803,8 @@ class PanelOverviewView(ui.LayoutView):
             opts = [discord.SelectOption(label=self._label(p)[:100], value=str(p["channel_id"])) for p in self._panels]
             sel = discord.ui.Select(placeholder="Panel wählen …", options=opts, min_values=1, max_values=1)
             sel.callback = lambda inter, s=sel: asyncio.create_task(on_select(inter, s))
-            # Select als ActionRow auf View-Ebene, nicht im Container
-            self.add_item(discord.ui.ActionRow(sel))
+            # Select im Container (ActionRow)
+            cont.add_item(discord.ui.ActionRow(sel))
         else:
             cont.add_item(discord.ui.TextDisplay("> Keine Panels vorhanden. Starte **/ticket setup**."))
 
@@ -2294,13 +2316,20 @@ class Ticket(app_commands.Group):
             interaction: discord.Interaction,
             modus: Literal["Anzeigen", "Setzen"],
     ):
-        # Neues Control-Center (Tabs) – ephemer und rückwärtskompatibel
-        view = ConfigCenterView(self.bot, interaction.user, interaction.guild)
-        await view._load_panels()
-        # Nach dem Laden der Panels die UI neu aufbauen, damit die Auswahl befüllt ist
-        view._build()
-        await interaction.response.send_message(view=view, ephemeral=True)
-        return None
+        if modus == "Anzeigen":
+            # Übersicht/Info-Container mit Panel-Auswahl
+            ov = PanelOverviewView(self.bot, interaction.guild)
+            await ov._load()
+            ov._build()
+            await interaction.response.send_message(view=ov, ephemeral=True)
+            return None
+        else:
+            # Control-Center zum Setzen/Verwalten
+            view = ConfigCenterView(self.bot, interaction.user, interaction.guild)
+            await view._load_panels()
+            view._build()
+            await interaction.response.send_message(view=view, ephemeral=True)
+            return None
 
 
 # =========================================================
