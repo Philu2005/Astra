@@ -794,6 +794,8 @@ async def run(args: argparse.Namespace) -> int:
                         data = data if isinstance(data, dict) else {"meta": {}, "rows": []}
                         data["apply"] = {
                             "planned": apply_result["planned"],
+                            "attempted": apply_result.get("attempted", apply_result.get("applied", 0)),
+                            "committed": apply_result.get("committed", 0 if apply_result.get("rolled_back") else apply_result.get("applied", 0)),
                             "applied": apply_result["applied"],
                             "rolled_back": apply_result["rolled_back"],
                             "errors": apply_result.get("errors", []),
