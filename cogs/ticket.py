@@ -1492,8 +1492,8 @@ class ConfigCenterView(ui.LayoutView):
         if select_options:
             select = discord.ui.Select(placeholder="Wähle ein Panel …", min_values=1, max_values=1, options=select_options)
             select.callback = lambda inter, s=select: asyncio.create_task(panel_select_cb(inter, s))
-            # Interaktive Elemente nicht in den Text-Container einbetten
-            self.add_item(select)
+            # Interaktive Elemente als ActionRow auf View-Ebene hinzufügen
+            self.add_item(discord.ui.ActionRow(select))
         else:
             container.add_item(discord.ui.TextDisplay("> Keine Panels gefunden. Nutze **/ticket setup**, um eines zu erstellen."))
 
@@ -1570,7 +1570,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._set_role(inter, role)
 
             role_select.callback = role_cb
-            self.add_item(role_select)
+            self.add_item(discord.ui.ActionRow(role_select))
 
             # Category select
             cat_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.category], placeholder="Ticket-Kategorie wählen", min_values=0, max_values=1)
@@ -1580,7 +1580,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._set_category(inter, cat if isinstance(cat, discord.CategoryChannel) else None)
 
             cat_select.callback = cat_cb
-            self.add_item(cat_select)
+            self.add_item(discord.ui.ActionRow(cat_select))
 
             # Move (Zielkanal ändern)
             txt_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Zielkanal für Panel verschieben", min_values=1, max_values=1)
@@ -1592,7 +1592,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._move_panel(inter, ch)
 
             txt_select.callback = move_cb
-            self.add_item(txt_select)
+            self.add_item(discord.ui.ActionRow(txt_select))
 
             # Panel löschen (Button)
             del_btn = discord.ui.Button(label="Panel löschen", style=discord.ButtonStyle.danger, emoji="🗑️")
@@ -1708,7 +1708,8 @@ class ConfigCenterView(ui.LayoutView):
                 await inter.response.send_message("<:Astra_accept:1141303821176422460> Log‑Kanal aktualisiert.", ephemeral=True)
 
             set_sel.callback = set_log_cb
-            container.add_item(set_sel)
+            # Selects gehören nicht in den Text-Container, sondern als ActionRow zur View
+            self.add_item(discord.ui.ActionRow(set_sel))
 
         # Footer / Close
         close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖")
@@ -1780,7 +1781,8 @@ class PanelOverviewView(ui.LayoutView):
             opts = [discord.SelectOption(label=self._label(p)[:100], value=str(p["channel_id"])) for p in self._panels]
             sel = discord.ui.Select(placeholder="Panel wählen …", options=opts, min_values=1, max_values=1)
             sel.callback = lambda inter, s=sel: asyncio.create_task(on_select(inter, s))
-            cont.add_item(sel)
+            # Select als ActionRow auf View-Ebene, nicht im Container
+            self.add_item(discord.ui.ActionRow(sel))
         else:
             cont.add_item(discord.ui.TextDisplay("> Keine Panels vorhanden. Starte **/ticket setup**."))
 
