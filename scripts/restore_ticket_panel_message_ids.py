@@ -141,7 +141,12 @@ class DB:
         return items
 
     async def update_panel_msg_id(self, guild_id: int, channel_id: int, message_id: int,
-                                  *, role_id: Optional[int], category_id: Optional[int], thema: str) -> None:
+                                  *, role_id: Optional[int], category_id: Optional[int], thema: str) -> int:
+        """Single-row update helper WITHOUT committing.
+
+        Returns the number of affected rows (should be exactly 1 for a safe update).
+        Transaction control (commit/rollback) must be handled by the caller.
+        """
         q = (
             "UPDATE ticketsystem "
             "SET panelMsgID=%s "
@@ -152,28 +157,88 @@ class DB:
             "(thema <=> %s)"
         )
         async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(q, (
+                    int(message_id), int(guild_id), int(channel_id),
+                    role_id, role_id, category_id, category_id, thema
+                ))
+                return cur.rowcount
+
+    async def prevalidate_unique_selectors(self, items: List[Tuple[int, int, Optional[int], Optional[int], str]] ) -> Tuple[bool, List[str]]:
+        """Prevalidate that each selector matches exactly one row with empty panelMsgID.
+
+        items: list of tuples (guild_id, channel_id, role_id, category_id, thema)
+        Returns (ok, errors)
+        """
+        sel_q = (
+            "SELECT COUNT(*) FROM ticketsystem "
+            "WHERE guildID=%s AND channelID=%s AND "
+            "(panelMsgID IS NULL OR panelMsgID=0) AND "
+            "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
+            "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
+            "(thema <=> %s)"
+        )
+        errors: List[str] = []
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                for (g, ch, rid, cid, thema) in items:
+                    await cur.execute(sel_q, (int(g), int(ch), rid, rid, cid, cid, thema))
+                    row = await cur.fetchone()
+                    cnt = int(row[0]) if row else 0
+                    if cnt != 1:
+                        errors.append(f"Selector not unique or missing (count={cnt}) for guild={g} channel={ch} thema={thema}")
+        return (len(errors) == 0), errors
+
+    async def apply_panel_msg_ids_batch(self, updates: List[Tuple[int, int, Optional[int], Optional[int], str, int]]) -> Dict[str, Any]:
+        """Apply all updates in a single transaction. Rolls back on ANY error.
+
+        updates: list of tuples (guild_id, channel_id, role_id, category_id, thema, message_id)
+        Returns a result dict with keys: planned, applied, rolled_back (bool), errors (list[str]).
+        """
+        result = {"planned": len(updates), "applied": 0, "rolled_back": False, "errors": []}  # type: ignore[dict-item]
+        if not updates:
+            return result
+
+        # Prevalidate selectors first
+        ok, errs = await self.prevalidate_unique_selectors([(g, ch, rid, cid, th) for (g, ch, rid, cid, th, _mid) in updates])
+        if not ok:
+            result["errors"] = errs
+            result["rolled_back"] = True
+            return result
+
+        q_update = (
+            "UPDATE ticketsystem "
+            "SET panelMsgID=%s "
+            "WHERE guildID=%s AND channelID=%s AND "
+            "(panelMsgID IS NULL OR panelMsgID=0) AND "
+            "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
+            "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
+            "(thema <=> %s)"
+        )
+
+        async with self.pool.acquire() as conn:
             try:
+                # Ensure we're in transactional mode
+                try:
+                    await conn.begin()
+                except Exception:
+                    # aiomysql connections in pools may start transactions implicitly on first statement
+                    pass
                 async with conn.cursor() as cur:
-                    await cur.execute(q, (
-                        int(message_id), int(guild_id), int(channel_id),
-                        role_id, role_id, category_id, category_id, thema
-                    ))
-                    affected = cur.rowcount
-                    if affected == 1:
-                        await conn.commit()
-                    else:
-                        # Either already set or row not found; never overwrite
-                        await conn.rollback()
-                        raise RuntimeError(
-                            f"Unsafe update (affected={affected}) for guild={guild_id} channel={channel_id}; aborted"
-                        )
-            except Exception:
-                # Safety net: rollback any partial changes
+                    for (g, ch, rid, cid, th, mid) in updates:
+                        await cur.execute(q_update, (int(mid), int(g), int(ch), rid, rid, cid, cid, th))
+                        if cur.rowcount != 1:
+                            raise RuntimeError(f"Unsafe update (affected={cur.rowcount}) for guild={g} channel={ch} thema={th}")
+                        result["applied"] += 1
+                await conn.commit()
+            except Exception as e:
+                result["errors"].append(str(e))
+                result["rolled_back"] = True
                 try:
                     await conn.rollback()
                 except Exception:
                     pass
-                raise
+            return result
 
 
 class PanelScanner:
@@ -298,7 +363,7 @@ async def run(args: argparse.Namespace) -> int:
     except Exception:
         pass
 
-    token = os.getenv("DISCORD_TOKEN") or os.getenv("DISCORD_TOKEN")
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("ASTRA_BOT_TOKEN")
     if not token:
         LOGGER.error("DISCORD_TOKEN / ASTRA_BOT_TOKEN not set")
         return 2
@@ -650,14 +715,45 @@ async def run(args: argparse.Namespace) -> int:
 
             # Apply phase
             if args.apply and unique_matches:
-                updated = 0
-                for p, mid in unique_matches:
+                # Build updates list strictly from MATCH_FOUND results only (unique_matches) and NEVER overwrite existing IDs
+                updates = [
+                    (p.guild_id, p.channel_id, p.role_id, p.category_id, p.thema or "", int(mid))
+                    for (p, mid) in unique_matches
+                ]
+                apply_result = await db.apply_panel_msg_ids_batch(updates)
+                print("APPLY result:")
+                print(f"  planned: {apply_result['planned']}")
+                print(f"  applied: {apply_result['applied']}")
+                print(f"  rolled_back: {apply_result['rolled_back']}")
+                if apply_result.get('errors'):
+                    print("  errors:")
+                    for err in apply_result['errors']:
+                        print(f"    - {err}")
+
+                # If we have a JSON report, augment it with apply results to reflect the final outcome
+                if args.report and args.report.lower().endswith('.json'):
                     try:
-                        await db.update_panel_msg_id(p.guild_id, p.channel_id, mid, role_id=p.role_id, category_id=p.category_id, thema=p.thema or "")
-                        updated += 1
+                        with open(args.report, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        data = data if isinstance(data, dict) else {"meta": {}, "rows": []}
+                        data["apply"] = {
+                            "planned": apply_result["planned"],
+                            "applied": apply_result["applied"],
+                            "rolled_back": apply_result["rolled_back"],
+                            "errors": apply_result.get("errors", []),
+                        }
+                        # If rolled back, ensure persisted count remains 0 for clarity
+                        if apply_result["rolled_back"]:
+                            data["apply"]["persisted_updates"] = 0
+                        with open(args.report, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, ensure_ascii=False, indent=2)
+                        print(f"Apply details appended to report {args.report}")
                     except Exception as e:
-                        LOGGER.error("Failed to update panelMsgID for guild=%s channel=%s: %s", p.guild_id, p.channel_id, e)
-                print(f"Applied updates: {updated}")
+                        LOGGER.error("Failed to append apply details to report: %s", e)
+
+                # Non-zero exit on any failed apply
+                if apply_result["rolled_back"] or apply_result["applied"] != apply_result["planned"]:
+                    exit_code = 1
             elif not args.apply:
                 print("Dry-run mode: no database changes were made. Use --apply to write panelMsgID for unique matches.")
         except Exception:
