@@ -527,32 +527,21 @@ def get_server_roles(guild_id: int):
     if perm_info is None:
         return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
 
-    bot = get_bot_instance()
-    if bot is None:
+    # Über IPC beim Bot abfragen
+    status_code, data = _ipc_request(
+        "/ipc/resources/roles",
+        {"guild_id": str(guild_id)},
+        timeout=6.0,
+    )
+    if status_code == 200 and data.get("success"):
+        return jsonify(success=True, roles=data.get("roles", [])), 200
+    if status_code == 404:
+        return jsonify(success=False, error="Server not found"), 404
+    if status_code in (401, 502):
         return jsonify(success=False, error="Service not ready"), 503
-
-    async def _bot_fetch_roles(_bot, _guild_id: int):
-        g = _bot.get_guild(int(_guild_id))
-        if g is None:
-            raise RuntimeError("Guild not found")
-        out = []
-        for r in g.roles:
-            if r.name == "@everyone":
-                continue
-            out.append({
-                "id": str(r.id),
-                "name": r.name,
-                "color": int(r.color.value) if getattr(r.color, "value", None) is not None else 0,
-            })
-        return out
-
-    try:
-        roles = submit_bot_task(_bot_fetch_roles(bot, guild_id), timeout=5.0)
-    except Exception:
-        logger.exception("Failed to fetch roles via bot for guild %s", guild_id)
-        return jsonify(success=False, error="Failed to fetch roles"), 500
-
-    return jsonify(success=True, roles=roles), 200
+    if status_code in (503, 504):
+        return jsonify(success=False, error="Service not ready"), 503
+    return jsonify(success=False, error="Failed to fetch roles"), 500
 
 
 @api_bp.route("/servers/<int:guild_id>/channels", methods=["GET"])
@@ -580,33 +569,21 @@ def get_server_channels(guild_id: int):
     if perm_info is None:
         return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
 
-    bot = get_bot_instance()
-    if bot is None:
+    # Über IPC beim Bot abfragen
+    status_code, data = _ipc_request(
+        "/ipc/resources/channels",
+        {"guild_id": str(guild_id)},
+        timeout=6.0,
+    )
+    if status_code == 200 and data.get("success"):
+        return jsonify(success=True, channels=data.get("channels", [])), 200
+    if status_code == 404:
+        return jsonify(success=False, error="Server not found"), 404
+    if status_code in (401, 502):
         return jsonify(success=False, error="Service not ready"), 503
-
-    async def _bot_fetch_channels(_bot, _guild_id: int):
-        g = _bot.get_guild(int(_guild_id))
-        if g is None:
-            raise RuntimeError("Guild not found")
-        out = []
-        for ch in g.channels:
-            # Include all channel types present in g.channels; skip categories here (returned separately)
-            parent_id = getattr(ch, "category_id", None)
-            out.append({
-                "id": str(ch.id),
-                "name": getattr(ch, "name", str(ch.id)),
-                "type": int(getattr(ch, "type", 0).value) if getattr(ch, "type", None) is not None else 0,
-                "parent_id": str(parent_id) if parent_id else None,
-            })
-        return out
-
-    try:
-        channels = submit_bot_task(_bot_fetch_channels(bot, guild_id), timeout=6.0)
-    except Exception:
-        logger.exception("Failed to fetch channels via bot for guild %s", guild_id)
-        return jsonify(success=False, error="Failed to fetch channels"), 500
-
-    return jsonify(success=True, channels=channels), 200
+    if status_code in (503, 504):
+        return jsonify(success=False, error="Service not ready"), 503
+    return jsonify(success=False, error="Failed to fetch channels"), 500
 
 
 @api_bp.route("/servers/<int:guild_id>/categories", methods=["GET"])
@@ -634,29 +611,21 @@ def get_server_categories(guild_id: int):
     if perm_info is None:
         return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
 
-    bot = get_bot_instance()
-    if bot is None:
+    # Über IPC beim Bot abfragen
+    status_code, data = _ipc_request(
+        "/ipc/resources/categories",
+        {"guild_id": str(guild_id)},
+        timeout=6.0,
+    )
+    if status_code == 200 and data.get("success"):
+        return jsonify(success=True, categories=data.get("categories", [])), 200
+    if status_code == 404:
+        return jsonify(success=False, error="Server not found"), 404
+    if status_code in (401, 502):
         return jsonify(success=False, error="Service not ready"), 503
-
-    async def _bot_fetch_categories(_bot, _guild_id: int):
-        g = _bot.get_guild(int(_guild_id))
-        if g is None:
-            raise RuntimeError("Guild not found")
-        out = []
-        for ch in g.categories:
-            out.append({
-                "id": str(ch.id),
-                "name": ch.name,
-            })
-        return out
-
-    try:
-        categories = submit_bot_task(_bot_fetch_categories(bot, guild_id), timeout=5.0)
-    except Exception:
-        logger.exception("Failed to fetch categories via bot for guild %s", guild_id)
-        return jsonify(success=False, error="Failed to fetch categories"), 500
-
-    return jsonify(success=True, categories=categories), 200
+    if status_code in (503, 504):
+        return jsonify(success=False, error="Service not ready"), 503
+    return jsonify(success=False, error="Failed to fetch categories"), 500
 
 
 # Neue: Server-Mitglieder (ressourcenorientiert für Dashboard)

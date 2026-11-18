@@ -246,6 +246,10 @@ class BotIPC:
             web.post("/ipc/panel/update", self._handle_update),
             web.post("/ipc/panel/move", self._handle_move),
             web.post("/ipc/panel/delete", self._handle_delete),
+            # Ressourcen-Endpunkte für Dashboard-Dropdowns
+            web.post("/ipc/resources/roles", self._handle_roles),
+            web.post("/ipc/resources/channels", self._handle_channels),
+            web.post("/ipc/resources/categories", self._handle_categories),
         ])
         self._runner = web.AppRunner(app)
         await self._runner.setup()
@@ -258,3 +262,104 @@ class BotIPC:
             await self._site.stop()
         if self._runner:
             await self._runner.cleanup()
+
+    # =============================
+    #    Ressourcen: Rollen/Chans
+    # =============================
+
+    async def _handle_roles(self, request: web.Request) -> web.Response:
+        """Liefert Rollen einer Guild (ohne @everyone)."""
+        if not self._auth(request):
+            return web.json_response({"success": False, "code": "unauthorized"}, status=401)
+        data = await self._json(request)
+        try:
+            guild_id_raw = data.get("guild_id")
+            if guild_id_raw is None:
+                return web.json_response({"success": False, "code": "invalid_payload"}, status=400)
+            guild_id = int(guild_id_raw)
+            g = self.bot.get_guild(guild_id)
+            if g is None:
+                return web.json_response({"success": False, "code": "guild_not_found"}, status=404)
+
+            out = []
+            for r in g.roles:
+                # @everyone nicht anzeigen
+                if r.name == "@everyone":
+                    continue
+                color_val = 0
+                try:
+                    color_val = int(getattr(r.color, "value", 0))
+                except Exception:
+                    color_val = 0
+                out.append({
+                    "id": str(r.id),
+                    "name": r.name,
+                    "color": color_val,
+                })
+            return web.json_response({"success": True, "roles": out}, status=200)
+        except Exception:
+            logger.exception("IPC roles handler error")
+            return web.json_response({"success": False, "code": "roles_failed"}, status=500)
+
+    async def _handle_channels(self, request: web.Request) -> web.Response:
+        """Liefert Kanäle einer Guild (alle Typen außer Kategorien; parent_id und Typ enthalten)."""
+        if not self._auth(request):
+            return web.json_response({"success": False, "code": "unauthorized"}, status=401)
+        data = await self._json(request)
+        try:
+            guild_id_raw = data.get("guild_id")
+            if guild_id_raw is None:
+                return web.json_response({"success": False, "code": "invalid_payload"}, status=400)
+            guild_id = int(guild_id_raw)
+            g = self.bot.get_guild(guild_id)
+            if g is None:
+                return web.json_response({"success": False, "code": "guild_not_found"}, status=404)
+
+            out = []
+            # g.channels enthält bereits alle Chans; Kategorien separieren wir, daher skip bei CategoryChannel
+            for ch in g.channels:
+                try:
+                    # Kategorien hier auslassen, diese liefert eigener Endpoint
+                    if isinstance(ch, discord.CategoryChannel):
+                        continue
+                except Exception:
+                    # Falls Typprüfung fehlschlägt, weiter – UI kann "type" auswerten
+                    pass
+                parent_id = getattr(ch, "category_id", None)
+                ch_type = getattr(ch, "type", None)
+                ch_type_val = int(getattr(ch_type, "value", 0)) if ch_type is not None else 0
+                out.append({
+                    "id": str(getattr(ch, "id", 0)),
+                    "name": getattr(ch, "name", str(getattr(ch, "id", "unknown"))),
+                    "type": ch_type_val,
+                    "parent_id": str(parent_id) if parent_id else None,
+                })
+            return web.json_response({"success": True, "channels": out}, status=200)
+        except Exception:
+            logger.exception("IPC channels handler error")
+            return web.json_response({"success": False, "code": "channels_failed"}, status=500)
+
+    async def _handle_categories(self, request: web.Request) -> web.Response:
+        """Liefert nur Kategorien (CategoryChannel) einer Guild."""
+        if not self._auth(request):
+            return web.json_response({"success": False, "code": "unauthorized"}, status=401)
+        data = await self._json(request)
+        try:
+            guild_id_raw = data.get("guild_id")
+            if guild_id_raw is None:
+                return web.json_response({"success": False, "code": "invalid_payload"}, status=400)
+            guild_id = int(guild_id_raw)
+            g = self.bot.get_guild(guild_id)
+            if g is None:
+                return web.json_response({"success": False, "code": "guild_not_found"}, status=404)
+
+            out = []
+            for cat in getattr(g, "categories", []) or []:
+                out.append({
+                    "id": str(getattr(cat, "id", 0)),
+                    "name": getattr(cat, "name", str(getattr(cat, "id", "unknown"))),
+                })
+            return web.json_response({"success": True, "categories": out}, status=200)
+        except Exception:
+            logger.exception("IPC categories handler error")
+            return web.json_response({"success": False, "code": "categories_failed"}, status=500)
