@@ -1249,10 +1249,11 @@ class ConfigCenterView(ui.LayoutView):
         finally:
             self._loading = False
             self._panels_cache = panels
-            # set selected
-            if self.selected_channel_id is None and panels:
-                self.selected_channel_id = int(panels[0]["channel_id"])
-            self._selected_panel = next((p for p in panels if int(p["channel_id"]) == int(self.selected_channel_id or 0)), None)
+            # Keine automatische Vorauswahl mehr – erst nach expliziter Auswahl
+            if self.selected_channel_id is not None and not any(int(p["channel_id"]) == int(self.selected_channel_id) for p in panels):
+                # gewählte ID existiert nicht mehr → zurücksetzen
+                self.selected_channel_id = None
+            self._selected_panel = next((p for p in panels if self.selected_channel_id is not None and int(p["channel_id"]) == int(self.selected_channel_id)), None)
 
     def _panel_label(self, p: dict) -> str:
         ch = self.guild.get_channel(int(p["channel_id"]))
@@ -1456,8 +1457,15 @@ class ConfigCenterView(ui.LayoutView):
     async def refresh(self, interaction: discord.Interaction, *, edit_existing: bool = True):
         await self._load_panels()
         self._build()
-        if edit_existing:
-            await interaction.edit_original_response(view=self)
+        # Robust bearbeiten: abhängig vom Response-State
+        try:
+            if edit_existing:
+                if interaction.response.is_done():
+                    await interaction.edit_original_response(view=self)
+                else:
+                    await interaction.response.edit_message(view=self)
+        except discord.NotFound:
+            pass
 
     # ---------------- UI build -----------------
     def _build(self):
@@ -1474,6 +1482,8 @@ class ConfigCenterView(ui.LayoutView):
                 self.selected_channel_id = int(select.values[0])
             except Exception:
                 self.selected_channel_id = None
+            # Bei neuer Auswahl auf erste Registerkarte zurückspringen
+            self.active_tab = 0
             await self.refresh(inter)
 
         select_options: list[discord.SelectOption] = []
@@ -1790,8 +1800,13 @@ class PanelOverviewView(ui.LayoutView):
                     for ch, thema, rid, cid in rows:
                         panels.append({"channel_id": int(ch), "thema": thema or "", "role_id": rid, "category_id": cid, "panel_message_id": None})
         self._panels = panels
-        if self.selected_channel_id is None and panels:
-            self.selected_channel_id = int(panels[0]["channel_id"])
+        # Keine automatische Vorauswahl: Erst nach expliziter Auswahl anzeigen
+        # (Fix: In /ticket config anzeigen wurde bereits ein Panel unten angezeigt,
+        #  bevor der Nutzer eines ausgewählt hat.)
+        if self.selected_channel_id is not None:
+            # Safety: Verifizieren, dass bestehende Auswahl noch existiert
+            if not any(int(p["channel_id"]) == int(self.selected_channel_id) for p in panels):
+                self.selected_channel_id = None
 
     def _label(self, p: dict) -> str:
         ch = self.guild.get_channel(int(p["channel_id"]))
