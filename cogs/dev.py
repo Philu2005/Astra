@@ -2180,19 +2180,13 @@ class DevTools(commands.Cog):
 
         def planned_action(status: str) -> str:
             s = normalize_status(status)
-            # Sicherheitslogik:
-            # - MATCH_FOUND → UPDATE
-            # - ALREADY_SAVED → KEEP
-            # - NO_MATCH / CHANNEL_NOT_FOUND / INVALID_CHANNEL → REVIEW
-            # - MULTIPLE_MATCHES, GUILD_NOT_FOUND, MISSING_PERMISSIONS, SCAN_ERROR, ERROR → REVIEW
-            # - DELETE nie automatisch planen
+            # Hinweis: Diese Helper-Logik wird für die Discord-Zusammenfassung NICHT mehr genutzt.
+            # Die Aktionszähler werden direkt aus den Report-Einträgen gelesen.
+            # Fallback (nur falls alte Reports keine "action"-Felder haben): konservativ REVIEW.
             if s == "MATCH_FOUND":
                 return "UPDATE"
             if s in {"ALREADY_SAVED"}:
                 return "KEEP"
-            if s in {"NO_MATCH", "CHANNEL_NOT_FOUND", "INVALID_CHANNEL", "MULTIPLE_MATCHES", "GUILD_NOT_FOUND", "MISSING_PERMISSIONS", "SCAN_ERROR", "ERROR"}:
-                return "REVIEW"
-            # Default: REVIEW für Unbekanntes
             return "REVIEW"
 
         counters = {
@@ -2237,8 +2231,13 @@ class DevTools(commands.Cog):
                     continue
             status = normalize_status(str(get(e, "status", "")))
             counters[status] = counters.get(status, 0) + 1
-            action = planned_action(status)
-            action_counts[action] = action_counts.get(action, 0) + 1
+            # Aktionszähler ausschließlich aus dem Report lesen (keine Neuberechnung)
+            action_raw = get(e, "action", None)
+            action_norm = str(action_raw).upper() if isinstance(action_raw, str) and action_raw else None
+            if action_norm not in {"UPDATE", "KEEP", "REVIEW", "DELETE"}:
+                # Fallback für sehr alte Reports ohne action-Feld: konservativ REVIEW
+                action_norm = "REVIEW"
+            action_counts[action_norm] = action_counts.get(action_norm, 0) + 1
 
             guild_id = get(e, "guild_id", get(e, "guild", "?"))
             channel_id = get(e, "channel_id", get(e, "channel", "?"))
@@ -2250,7 +2249,7 @@ class DevTools(commands.Cog):
 
             line = (
                 f"Guild={guild_id} Channel={channel_id} "
-                f"currentMID={current_mid} → status={status} action={action}"
+                f"currentMID={current_mid} → status={status} action={action_norm}"
             )
             if found_mid:
                 line += f" foundMID={found_mid}"
