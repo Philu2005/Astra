@@ -799,6 +799,32 @@ async def run(args: argparse.Namespace) -> int:
 
     await client.start(token)
 
+    # Zusätzlicher HTTP‑Cleanup: Manche aiohttp‑Connector‑Warnungen ("Unclosed connector")
+    # können auftreten, wenn die interne Session/der Connector von discord.py noch offen ist.
+    # Obwohl client.close() im on_ready‑finally bereits aufgerufen wird, stellen wir hier
+    # sicher, dass die HTTP‑Session wirklich geschlossen ist.
+    try:
+        http = getattr(client, "http", None)
+        # Mögliche Attributnamen je nach discord.py-Version
+        session = None
+        if http is not None:
+            session = (
+                getattr(http, "_HTTPClient__session", None)
+                or getattr(http, "_session", None)
+                or getattr(http, "session", None)
+            )
+        if session is not None:
+            # Session schließen, falls noch offen
+            if getattr(session, "closed", True) is False:
+                await session.close()
+            # Connector ggf. explizit schließen
+            connector = getattr(session, "connector", None)
+            if connector is not None and getattr(connector, "closed", True) is False:
+                await connector.close()
+    except Exception:
+        # Dieser zusätzliche Cleanup darf den Exit‑Code nicht verdecken; Pool‑Cleanup folgt separat
+        pass
+
     # Pool‑Cleanup NACH dem Client‑Lauf im noch aktiven Event‑Loop durchführen
     try:
         pool.close()
