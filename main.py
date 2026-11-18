@@ -534,6 +534,7 @@ class Astra(commands.Bot):
                 self.bot_ready = True
 
         if self.heartbeat_task is None or self.heartbeat_task.done():
+            logging.info("[Heartbeat] Starte Heartbeat-Task…")
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
         if self.guild_snapshot_task is None or self.guild_snapshot_task.done():
@@ -743,9 +744,16 @@ class Astra(commands.Bot):
         headers = {"Authorization": f"Bearer {internal_api_key}"}
 
         try:
+            logging.debug("[Heartbeat] Sende Heartbeat an %s (ready=%s, gw=%s, connecting=%s, shutting_down=%s)",
+                          bot_heartbeat_url,
+                          payload.get("is_ready"),
+                          payload.get("gateway_connected"),
+                          payload.get("is_connecting"),
+                          payload.get("shutting_down", False))
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(bot_heartbeat_url, json=payload, headers=headers) as response:
                     if response.status < 400:
+                        logging.debug("[Heartbeat] Erfolgreich: HTTP %s", response.status)
                         return True
                     logging.warning("[Heartbeat] API antwortete mit HTTP %s.", response.status)
                     return False
@@ -763,12 +771,15 @@ class Astra(commands.Bot):
                 if ok:
                     # Bei Erfolg normales Intervall und Backoff zurücksetzen
                     backoff = 5
+                    logging.debug("[Heartbeat] Nächster Heartbeat in %ss", bot_heartbeat_interval)
                     await asyncio.sleep(bot_heartbeat_interval)
                 else:
                     # Bei Fehler kurzer Backoff, begrenzt und exponentiell ansteigend
+                    logging.debug("[Heartbeat] Fehler beim Senden. Retry in %ss", backoff)
                     await asyncio.sleep(backoff)
                     backoff = min(max_backoff, backoff * 2)
             except asyncio.CancelledError:
+                logging.info("[Heartbeat] Task wurde beendet (Cancel erhalten).")
                 raise
             except Exception:
                 logging.exception("[Heartbeat] Unerwarteter Fehler im Heartbeat-Loop")
@@ -1086,8 +1097,8 @@ except Exception:
 
 _ipc_started = False
 
-@bot.event
-async def on_ready():
+@bot.listen("on_ready")
+async def _ipc_on_ready():
     global _ipc_started
     if BotIPC is None or _ipc_started:
         return

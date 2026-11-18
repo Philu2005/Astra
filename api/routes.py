@@ -330,6 +330,7 @@ def health_ready():
 @require_service_auth
 def heartbeat():
     """Nimmt einen authentifizierten Bot-Heartbeat entgegen."""
+    logging.getLogger("astra.api").debug("[Heartbeat] Request eingegangen (auth ok)")
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify(success=False, error="Invalid heartbeat payload"), 400
@@ -351,7 +352,13 @@ def heartbeat():
     if shards is not None and not isinstance(shards, list):
         return jsonify(success=False, error="Invalid heartbeat payload"), 400
 
-    heartbeat_state.update(payload)
+    ts = heartbeat_state.update(payload)
+    logging.getLogger("astra.api").debug(
+        "[Heartbeat] State aktualisiert (age=0s, ready=%s, gw=%s, connecting=%s)",
+        bool(payload.get("is_ready", False)),
+        bool(payload.get("gateway_connected", False)),
+        bool(payload.get("is_connecting", False)),
+    )
     return jsonify(success=True), 200
 
 
