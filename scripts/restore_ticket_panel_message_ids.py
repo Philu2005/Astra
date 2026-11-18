@@ -180,16 +180,31 @@ class PanelScanner:
     def __init__(self, client: discord.Client):
         self.client = client
 
-    async def _resolve_guild(self, guild_id: int) -> Optional[discord.Guild]:
+    async def _resolve_guild(self, guild_id: int) -> Tuple[Optional[discord.Guild], Optional[Dict[str, Any]]]:
+        """Versucht, die Guild aufzulösen. Liefert (guild, error_info).
+
+        error_info enthält bei Fehlern folgende Felder:
+          - type: Exception-Klassenname
+          - status: Discord-HTTP-Status (falls vorhanden), sonst None
+          - message: Fehlermeldung/Text
+        """
         guild = self.client.get_guild(int(guild_id))
         if guild is not None:
-            return guild
+            return guild, None
         # Versuch eines Live-Fetch (sparsam, nur einmal pro Gruppe sinnvoll)
         try:
             guild = await self.client.fetch_guild(int(guild_id))  # type: ignore[attr-defined]
-            return guild  # type: ignore[return-value]
-        except Exception:
-            return None
+            return guild, None  # type: ignore[return-value]
+        except discord.Forbidden as e:
+            return None, {"type": type(e).__name__, "status": getattr(e, "status", None), "message": str(getattr(e, "text", None) or e)}
+        except discord.NotFound as e:
+            return None, {"type": type(e).__name__, "status": getattr(e, "status", None), "message": str(getattr(e, "text", None) or e)}
+        except discord.HTTPException as e:
+            return None, {"type": type(e).__name__, "status": getattr(e, "status", None), "message": str(getattr(e, "text", None) or e)}
+        except asyncio.TimeoutError as e:
+            return None, {"type": type(e).__name__, "status": None, "message": str(e)}
+        except Exception as e:
+            return None, {"type": type(e).__name__, "status": None, "message": str(e)}
 
     async def scan_channel_messages(self, guild: discord.Guild, channel_id: int, *,
                                     max_messages: int = 2000) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -403,11 +418,7 @@ async def run(args: argparse.Namespace) -> int:
                 scanned_channels_so_far += 1
                 LOGGER.info("[Scan %d/%d] Guild=%s Channel=%s • entries=%d", scanned_channels_so_far, len(groups), g_id, ch_id, len(entries))
                 # Gilde auflösen (Cache oder Fetch)
-                try:
-                    guild = await scanner._resolve_guild(g_id)
-                except discord.HTTPException:
-                    LOGGER.exception("Guild resolve failed for guild=%s channel=%s", g_id, ch_id)
-                    guild = None
+                guild, guild_err = await scanner._resolve_guild(g_id)
                 channel_scan_error: Optional[str] = None
                 prefiltered: List[Dict[str, Any]] = []
                 meta: Dict[str, Any] = {}
@@ -423,8 +434,9 @@ async def run(args: argparse.Namespace) -> int:
                             **selector,
                             "current_message_id": p.panel_msg_id,
                             "candidates_found": 0,
-                            "reason": "Guild not found (cache+fetch failed)",
+                            "reason": (f"Guild resolve failed: {guild_err['type']} status={guild_err.get('status')}" if guild_err else "Guild not found (cache+fetch failed)"),
                             "guild_cache_miss": True,
+                            "guild_resolve_error": guild_err,
                         })
                     not_found += len(entries)
                     continue

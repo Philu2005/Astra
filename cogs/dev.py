@@ -2180,13 +2180,19 @@ class DevTools(commands.Cog):
 
         def planned_action(status: str) -> str:
             s = normalize_status(status)
+            # Sicherheitslogik:
+            # - MATCH_FOUND → UPDATE
+            # - ALREADY_SAVED → KEEP
+            # - NO_MATCH / CHANNEL_NOT_FOUND / INVALID_CHANNEL → REVIEW
+            # - MULTIPLE_MATCHES, GUILD_NOT_FOUND, MISSING_PERMISSIONS, SCAN_ERROR, ERROR → REVIEW
+            # - DELETE nie automatisch planen
             if s == "MATCH_FOUND":
                 return "UPDATE"
-            if s in {"NO_MATCH", "CHANNEL_NOT_FOUND"}:
-                return "DELETE"
             if s in {"ALREADY_SAVED"}:
                 return "KEEP"
-            # Alles, was nicht eindeutig sicher ist, wird zur manuellen Prüfung belassen
+            if s in {"NO_MATCH", "CHANNEL_NOT_FOUND", "INVALID_CHANNEL", "MULTIPLE_MATCHES", "GUILD_NOT_FOUND", "MISSING_PERMISSIONS", "SCAN_ERROR", "ERROR"}:
+                return "REVIEW"
+            # Default: REVIEW für Unbekanntes
             return "REVIEW"
 
         counters = {
