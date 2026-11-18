@@ -1206,7 +1206,8 @@ class ConfigCenterView(ui.LayoutView):
         self._selected_panel: Optional[dict] = None
         self._loading = False
         self.ephemeral = True
-        self._build()
+        # Zusatz-Caches (guild-weit)
+        self._log_channel_id: Optional[int] = None
 
     # ---------------- Data helpers -----------------
     async def _load_panels(self):
@@ -1254,6 +1255,18 @@ class ConfigCenterView(ui.LayoutView):
                 # gewählte ID existiert nicht mehr → zurücksetzen
                 self.selected_channel_id = None
             self._selected_panel = next((p for p in panels if self.selected_channel_id is not None and int(p["channel_id"]) == int(self.selected_channel_id)), None)
+
+    async def _load_extras(self):
+        """Lädt zusätzliche, nicht panel-gebundene Werte (z.B. Log-Kanal)."""
+        try:
+            async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s", (self.guild.id,))
+                    row = await cur.fetchone()
+                    self._log_channel_id = int(row[0]) if row and row[0] else None
+        except Exception:
+            # Fehler beim Laden separat behandeln → UI zeigt dann '—'
+            self._log_channel_id = None
 
     def _panel_label(self, p: dict) -> str:
         ch = self.guild.get_channel(int(p["channel_id"]))
@@ -1456,6 +1469,7 @@ class ConfigCenterView(ui.LayoutView):
 
     async def refresh(self, interaction: discord.Interaction, *, edit_existing: bool = True):
         await self._load_panels()
+        await self._load_extras()
         self._build()
         # Robust bearbeiten: abhängig vom Response-State
         try:
@@ -1501,7 +1515,9 @@ class ConfigCenterView(ui.LayoutView):
 
         if select_options:
             select = discord.ui.Select(placeholder="Wähle ein Panel …", min_values=1, max_values=1, options=select_options)
-            select.callback = lambda inter, s=select: asyncio.create_task(panel_select_cb(inter, s))
+            async def _on_select(inter: discord.Interaction, s=select):
+                await panel_select_cb(inter, s)
+            select.callback = _on_select
             # Select im Container, aber in ActionRow verpackt (Discord-Anforderung)
             container.add_item(discord.ui.ActionRow(select))
         else:
@@ -1528,53 +1544,29 @@ class ConfigCenterView(ui.LayoutView):
             self.add_item(container)
             return
 
-        # Tabs (nur wenn Panel gewählt wurde)
-        tabs: list[discord.ui.Button] = []
-        tab_names = ["Übersicht", "Panel bearbeiten", "Discord-Zuordnungen", "Ticket-Einstellungen", "Erinnerungen", "Protokollierung"]
-        for idx, name in enumerate(tab_names):
-            style = discord.ButtonStyle.primary if idx == self.active_tab else discord.ButtonStyle.secondary
-            btn = discord.ui.Button(label=name, style=style)
+        # Navigation: Zentrale Übersicht (Tab 0) mit Schnellaktionen → Unterseiten ohne zusätzliche Tab-Leisten
+        if self.active_tab == 0:
+            # Auf der Übersicht sinnvolle Schnellaktionen anbieten
+            nav1 = discord.ui.Button(label="Panel gestalten", style=discord.ButtonStyle.primary, emoji="📝")
+            nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=discord.ButtonStyle.secondary, emoji="🧩")
+            nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=discord.ButtonStyle.secondary, emoji="⚙️")
+            nav4 = discord.ui.Button(label="Erinnerungen", style=discord.ButtonStyle.secondary, emoji="⏰")
+            nav5 = discord.ui.Button(label="Protokollierung", style=discord.ButtonStyle.secondary, emoji="🗒️")
 
-            async def cb(inter: discord.Interaction, i=idx):
-                self.active_tab = i
+            async def goto(inter: discord.Interaction, tab_idx: int):
+                self.active_tab = tab_idx
                 self._build()
                 await inter.response.edit_message(view=self)
 
-            btn.callback = cb
-            tabs.append(btn)
-        # Discord lässt max. 5 Komponenten pro ActionRow zu → Tabs in Gruppen aufteilen
-        # Tabs innerhalb des Containers halten (ActionRows innerhalb Container)
-        if tabs:
-            chunk: list[discord.ui.Button] = []
-            for b in tabs:
-                chunk.append(b)
-                if len(chunk) == 5:
-                    container.add_item(discord.ui.ActionRow(*chunk))
-                    chunk = []
-            if chunk:
-                container.add_item(discord.ui.ActionRow(*chunk))
+            nav1.callback = lambda inter: goto(inter, 1)
+            nav2.callback = lambda inter: goto(inter, 2)
+            nav3.callback = lambda inter: goto(inter, 3)
+            nav4.callback = lambda inter: goto(inter, 4)
+            nav5.callback = lambda inter: goto(inter, 5)
 
-        # Zusätzliche Routing-Buttons zum einfachen Vor/Zurück zwischen Tabs
-        if len(tabs) > 1:
-            prev_btn = discord.ui.Button(label="← Tab", style=discord.ButtonStyle.secondary, emoji="<:Astra_arrow_backwards:1392540551546671348>")
-            next_btn = discord.ui.Button(label="Tab →", style=discord.ButtonStyle.secondary, emoji="<:Astra_arrow:1141303823600717885>")
-
-            async def prev_cb(inter: discord.Interaction):
-                self.active_tab = max(0, self.active_tab - 1)
-                self._build()
-                await inter.response.edit_message(view=self)
-
-            async def next_cb(inter: discord.Interaction):
-                self.active_tab = min(len(tab_names) - 1, self.active_tab + 1)
-                self._build()
-                await inter.response.edit_message(view=self)
-
-            prev_btn.callback = prev_cb
-            next_btn.callback = next_cb
-            # Disable an den Rändern
-            prev_btn.disabled = self.active_tab <= 0
-            next_btn.disabled = self.active_tab >= (len(tab_names) - 1)
-            container.add_item(discord.ui.ActionRow(prev_btn, next_btn))
+            # Zwei Reihen zur Begrenzung von 5 Komponenten je Row
+            container.add_item(discord.ui.ActionRow(nav1, nav2, nav3))
+            container.add_item(discord.ui.ActionRow(nav4, nav5))
 
         # Übersicht
         if self.active_tab == 0:
@@ -1712,20 +1704,8 @@ class ConfigCenterView(ui.LayoutView):
         # Protokollierung
         elif self.active_tab == 5:
             container.add_item(discord.ui.TextDisplay("## Ticket‑Protokollierung"))
-            # Aktuellen Log-Kanal anzeigen
-            async def load_log_channel_id() -> Optional[int]:
-                try:
-                    async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
-                        async with conn.cursor() as cur:
-                            await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s", (self.guild.id,))
-                            row = await cur.fetchone()
-                            return int(row[0]) if row and row[0] else None
-                except Exception:
-                    return None
-
-            # Anzeige
-            # Hinweis: asynchrones Laden; hier nur Text, Werte werden nach Aktion aktualisiert
-            log_ch_id = None  # wird bei Aktionen neu geladen
+            # Aktuellen Log-Kanal anzeigen (aus Cache, vor Build asynchron geladen)
+            log_ch_id = self._log_channel_id
             container.add_item(discord.ui.TextDisplay(f"Aktueller Log‑Kanal: {('<#'+str(log_ch_id)+'>') if log_ch_id else '—'}"))
 
             set_sel = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Log‑Kanal wählen", min_values=0, max_values=1)
@@ -1830,7 +1810,9 @@ class PanelOverviewView(ui.LayoutView):
         if self._panels:
             opts = [discord.SelectOption(label=self._label(p)[:100], value=str(p["channel_id"])) for p in self._panels]
             sel = discord.ui.Select(placeholder="Panel wählen …", options=opts, min_values=1, max_values=1)
-            sel.callback = lambda inter, s=sel: asyncio.create_task(on_select(inter, s))
+            async def _ov_on_select(inter: discord.Interaction, s=sel):
+                await on_select(inter, s)
+            sel.callback = _ov_on_select
             # Select im Container (ActionRow)
             cont.add_item(discord.ui.ActionRow(sel))
         else:
@@ -1865,7 +1847,10 @@ class PanelOverviewView(ui.LayoutView):
             async def manage_cb(inter: discord.Interaction):
                 v = ConfigCenterView(self.bot, inter.user, self.guild)
                 await v._load_panels()
+                await v._load_extras()
                 v.selected_channel_id = int(p["channel_id"])
+                v.active_tab = 0
+                v._build()
                 await inter.response.edit_message(view=v)
 
             refresh_btn.callback = ref_cb
@@ -1873,7 +1858,13 @@ class PanelOverviewView(ui.LayoutView):
             cont.add_item(discord.ui.ActionRow(refresh_btn, manage_btn))
 
         close = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger)
-        close.callback = lambda inter: inter.response.defer() and asyncio.create_task(inter.delete_original_response())
+        async def _ov_close(inter: discord.Interaction):
+            await inter.response.defer()
+            try:
+                await inter.delete_original_response()
+            except Exception:
+                pass
+        close.callback = _ov_close
         cont.add_item(discord.ui.ActionRow(close))
         self.add_item(cont)
 
@@ -2363,6 +2354,7 @@ class Ticket(app_commands.Group):
             # Control-Center zum Setzen/Verwalten
             view = ConfigCenterView(self.bot, interaction.user, interaction.guild)
             await view._load_panels()
+            await view._load_extras()
             view._build()
             await interaction.response.send_message(view=view, ephemeral=True)
             return None
