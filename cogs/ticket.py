@@ -1453,7 +1453,16 @@ class ConfigCenterView(ui.LayoutView):
 
             btn.callback = cb
             tabs.append(btn)
-        container.add_item(discord.ui.ActionRow(*tabs))
+        # Discord lässt max. 5 Komponenten pro ActionRow zu → Tabs in Gruppen aufteilen
+        if tabs:
+            chunk: list[discord.ui.Button] = []
+            for b in tabs:
+                chunk.append(b)
+                if len(chunk) == 5:
+                    container.add_item(discord.ui.ActionRow(*chunk))
+                    chunk = []
+            if chunk:
+                container.add_item(discord.ui.ActionRow(*chunk))
 
         # Content je Tab
         if self.selected_channel_id is None or self._selected_panel is None:
@@ -2216,6 +2225,8 @@ class Ticket(app_commands.Group):
         # Neues Control-Center (Tabs) – ephemer und rückwärtskompatibel
         view = ConfigCenterView(self.bot, interaction.user, interaction.guild)
         await view._load_panels()
+        # Nach dem Laden der Panels die UI neu aufbauen, damit die Auswahl befüllt ist
+        view._build()
         await interaction.response.send_message(view=view, ephemeral=True)
         return None
 

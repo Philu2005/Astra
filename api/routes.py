@@ -7,6 +7,7 @@ from threading import RLock
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, jsonify, request, current_app
+import discord
 from api.auth import require_service_auth, get_expected_api_key
 from api.db import api_db
 from api.permissions import validate_user_id, check_user_guild_permissions
@@ -656,6 +657,99 @@ def get_server_categories(guild_id: int):
         return jsonify(success=False, error="Failed to fetch categories"), 500
 
     return jsonify(success=True, categories=categories), 200
+
+
+# Neue: Server-Mitglieder (ressourcenorientiert für Dashboard)
+@api_bp.route("/servers/<int:guild_id>/members", methods=["GET"])
+@require_service_auth
+@rate_limit(scope="server_members", limit=10, per_seconds=60)
+def get_server_members(guild_id: int):
+    """
+    Gibt Servermitglieder für Dropdowns/Zuordnungen im Dashboard zurück.
+
+    - Authentifiziert via Service‑Token und autorisiert gegen Guild‑Rechte des Benutzers (user_id).
+    - Unterstützt Pagination über `limit` (max 200) und `after` (Snowflake; exklusive Cursor‑Pagination).
+    - Liefert: id, username, display_name, avatar.
+    - Wenn die Members‑Intent nicht aktiv ist oder Discord den Abruf verbietet, verständlichen Fehler zurückgeben.
+    """
+    server_data_ready, error = _get_server_data_state()
+    if not server_data_ready:
+        return jsonify(success=False, error=error), 503
+
+    raw_user_id = request.args.get("user_id") or request.headers.get("X-User-ID")
+    if not raw_user_id:
+        return jsonify(success=False, error="Missing required parameter: user_id"), 400
+
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return jsonify(success=False, error="Invalid user_id format"), 400
+
+    # Pagination-Parameter
+    raw_limit = request.args.get("limit", "50")
+    raw_after = request.args.get("after")  # Cursor (Snowflake) – exklusiv
+    try:
+        limit = int(raw_limit)
+        if limit <= 0:
+            limit = 50
+        if limit > 200:
+            limit = 200
+    except Exception:
+        return jsonify(success=False, error="Invalid limit"), 400
+
+    after_obj = None
+    if raw_after:
+        try:
+            after_obj = discord.Object(id=int(raw_after))  # type: ignore
+        except Exception:
+            return jsonify(success=False, error="Invalid after"), 400
+
+    cache = get_guild_cache()
+    guild_snapshot = cache.get(guild_id)
+    if not guild_snapshot:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild_snapshot, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    bot = get_bot_instance()
+    if bot is None:
+        return jsonify(success=False, error="Service not ready"), 503
+
+    # Prüfe Members‑Intent – ohne diese können wir regulär nicht listen.
+    intents = getattr(bot, "intents", None)
+    if not intents or not getattr(intents, "members", False):
+        return jsonify(success=False, error="Members intent unavailable"), 503
+
+    async def _bot_fetch_members(_bot, _guild_id: int, _limit: int, _after: discord.Object | None):
+        g = _bot.get_guild(int(_guild_id))
+        if g is None:
+            raise RuntimeError("Guild not found")
+        # REST‑Pfad: fetch_members nutzt Discord HTTP und erfordert Intents.members
+        # Achtung: fetch_members liefert einen AsyncIterator
+        members = []
+        async for m in g.fetch_members(limit=_limit, after=_after):  # type: ignore
+            members.append({
+                "id": str(m.id),
+                "username": m.name,
+                "display_name": getattr(m, "display_name", m.name),
+                "avatar": str(getattr(getattr(m, "display_avatar", None), "url", None) or ""),
+            })
+        # Cursor für Weiterblättern bestimmen: letzter Member als neuer after‑Wert
+        next_after = members[-1]["id"] if members else None
+        return {"members": members, "next_after": next_after}
+
+    try:
+        result = submit_bot_task(_bot_fetch_members(bot, guild_id, limit, after_obj), timeout=10.0)
+    except discord.Forbidden:  # type: ignore
+        return jsonify(success=False, error="Forbidden by Discord"), 403
+    except asyncio.TimeoutError:
+        return jsonify(success=False, error="Timeout"), 504
+    except Exception:
+        logger.exception("Failed to fetch members via bot for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to fetch members"), 500
+
+    return jsonify(success=True, **result), 200
 
 
 # ---------------------------------------------
