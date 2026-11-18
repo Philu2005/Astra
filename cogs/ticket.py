@@ -1208,6 +1208,28 @@ class ConfigCenterView(ui.LayoutView):
         self.ephemeral = True
         # Zusatz-Caches (guild-weit)
         self._log_channel_id: Optional[int] = None
+        self._guild_cfg: dict = {}
+
+    async def initialize(self, *, selected_channel_id: Optional[int] = None, active_tab: int = 0):
+        """Zentrale Initialisierung der View.
+
+        - setzt eine vorgewählte Panel-Channel-ID, falls übergeben
+        - lädt Panels und Extras
+        - sorgt dafür, dass `selected_channel_id` und `_selected_panel` konsistent sind
+        - baut die View erst nach vollständiger Initialisierung
+
+        Gibt die View selbst zurück, damit sie inline verwendet werden kann.
+        """
+        if selected_channel_id is not None:
+            try:
+                self.selected_channel_id = int(selected_channel_id)
+            except Exception:
+                self.selected_channel_id = None
+        await self._load_panels()
+        await self._load_extras()
+        self.active_tab = int(active_tab)
+        self._build()
+        return self
 
     # ---------------- Data helpers -----------------
     async def _load_panels(self):
@@ -1264,9 +1286,12 @@ class ConfigCenterView(ui.LayoutView):
                     await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s", (self.guild.id,))
                     row = await cur.fetchone()
                     self._log_channel_id = int(row[0]) if row and row[0] else None
+            # Serverweite Ticket-Einstellungen (autoclose, reopen, reminder, ping-throttle)
+            self._guild_cfg = await get_guild_config(self.bot.pool, self.guild.id)  # type: ignore[attr-defined]
         except Exception:
             # Fehler beim Laden separat behandeln → UI zeigt dann '—'
             self._log_channel_id = None
+            self._guild_cfg = {}
 
     def _panel_label(self, p: dict) -> str:
         ch = self.guild.get_channel(int(p["channel_id"]))
@@ -1544,29 +1569,29 @@ class ConfigCenterView(ui.LayoutView):
             self.add_item(container)
             return
 
-        # Navigation: Zentrale Übersicht (Tab 0) mit Schnellaktionen → Unterseiten ohne zusätzliche Tab-Leisten
-        if self.active_tab == 0:
-            # Auf der Übersicht sinnvolle Schnellaktionen anbieten
-            nav1 = discord.ui.Button(label="Panel gestalten", style=discord.ButtonStyle.primary, emoji="📝")
-            nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=discord.ButtonStyle.secondary, emoji="🧩")
-            nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=discord.ButtonStyle.secondary, emoji="⚙️")
-            nav4 = discord.ui.Button(label="Erinnerungen", style=discord.ButtonStyle.secondary, emoji="⏰")
-            nav5 = discord.ui.Button(label="Protokollierung", style=discord.ButtonStyle.secondary, emoji="🗒️")
+        # Permanente Kategorienavigation (immer sichtbar)
+        nav0 = discord.ui.Button(label="Übersicht", style=(discord.ButtonStyle.primary if self.active_tab == 0 else discord.ButtonStyle.secondary), emoji="📋")
+        nav1 = discord.ui.Button(label="Panel gestalten", style=(discord.ButtonStyle.primary if self.active_tab == 1 else discord.ButtonStyle.secondary), emoji="📝")
+        nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=(discord.ButtonStyle.primary if self.active_tab == 2 else discord.ButtonStyle.secondary), emoji="🧩")
+        nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=(discord.ButtonStyle.primary if self.active_tab == 3 else discord.ButtonStyle.secondary), emoji="⚙️")
+        nav4 = discord.ui.Button(label="Erinnerungen", style=(discord.ButtonStyle.primary if self.active_tab == 4 else discord.ButtonStyle.secondary), emoji="⏰")
+        nav5 = discord.ui.Button(label="Protokollierung", style=(discord.ButtonStyle.primary if self.active_tab == 5 else discord.ButtonStyle.secondary), emoji="🗒️")
 
-            async def goto(inter: discord.Interaction, tab_idx: int):
-                self.active_tab = tab_idx
-                self._build()
-                await inter.response.edit_message(view=self)
+        async def goto(inter: discord.Interaction, tab_idx: int):
+            self.active_tab = tab_idx
+            self._build()
+            await inter.response.edit_message(view=self)
 
-            nav1.callback = lambda inter: goto(inter, 1)
-            nav2.callback = lambda inter: goto(inter, 2)
-            nav3.callback = lambda inter: goto(inter, 3)
-            nav4.callback = lambda inter: goto(inter, 4)
-            nav5.callback = lambda inter: goto(inter, 5)
+        nav0.callback = lambda inter: goto(inter, 0)
+        nav1.callback = lambda inter: goto(inter, 1)
+        nav2.callback = lambda inter: goto(inter, 2)
+        nav3.callback = lambda inter: goto(inter, 3)
+        nav4.callback = lambda inter: goto(inter, 4)
+        nav5.callback = lambda inter: goto(inter, 5)
 
-            # Zwei Reihen zur Begrenzung von 5 Komponenten je Row
-            container.add_item(discord.ui.ActionRow(nav1, nav2, nav3))
-            container.add_item(discord.ui.ActionRow(nav4, nav5))
+        container.add_item(discord.ui.ActionRow(nav0, nav1, nav2))
+        container.add_item(discord.ui.ActionRow(nav3, nav4, nav5))
+        container.add_item(discord.ui.Separator())
 
         # Übersicht
         if self.active_tab == 0:
@@ -1575,19 +1600,74 @@ class ConfigCenterView(ui.LayoutView):
             role = self.guild.get_role(p.get("role_id") or 0)
             cat = self.guild.get_channel(p.get("category_id") or 0)
             msg_id = p.get("panel_message_id")
-            lines = [
-                f"**Thema:** {p.get('thema') or '—'}",
-                f"**Zielkanal:** {(ch.mention if isinstance(ch, discord.abc.GuildChannel) else ('#'+str(p['channel_id'])))} (`{p['channel_id']}`)",
-                f"**Support‑Rolle:** {role.mention if role else '—'} ({getattr(role,'id','—')})",
-                f"**Kategorie:** {cat.name if isinstance(cat, discord.CategoryChannel) else '—'} ({getattr(cat,'id','—')})",
-                f"**Status:** {'veröffentlicht' if msg_id else 'nicht veröffentlicht'}",
-                f"**Message‑ID:** {msg_id or '—'}",
+            info_lines = [
+                "## Panel‑Informationen",
+                f"**Panel‑Thema:** {p.get('thema') or '—'}",
+                f"**Embed‑Titel:** {p.get('thema') or '—'}",
+                f"**Panel‑Kanal:** {(ch.mention if isinstance(ch, discord.abc.GuildChannel) else ('#'+str(p['channel_id'])))}",
+                f"**Ticket‑Kategorie:** {cat.name if isinstance(cat, discord.CategoryChannel) else '—'}",
+                f"**Support‑Rolle:** {role.mention if role else '—'}",
+                "",
+                "## Veröffentlichungsstatus",
+                f"{('✅ Veröffentlicht' if msg_id else '⏳ Nicht veröffentlicht')}",
             ]
-            container.add_item(discord.ui.TextDisplay("\n".join(lines)))
+            # Warnhinweise
+            warnings: list[str] = []
+            if not isinstance(ch, discord.TextChannel):
+                warnings.append("⚠️ Panel‑Kanal existiert nicht mehr oder ist nicht sichtbar.")
+            if not isinstance(cat, discord.CategoryChannel) and p.get("category_id"):
+                warnings.append("⚠️ Zugewiesene Ticket‑Kategorie existiert nicht mehr.")
+            if role is None and p.get("role_id"):
+                warnings.append("⚠️ Zugewiesene Support‑Rolle existiert nicht mehr.")
+            if warnings:
+                info_lines += ["", "## Hinweise"] + warnings
+            container.add_item(discord.ui.TextDisplay("\n".join(info_lines)))
+
+            # Direkte Reparaturaktionen je nach Problem
+            actions: list[discord.ui.Button] = []
+            if (role is None and p.get("role_id")) or role is None:
+                fix_role = discord.ui.Button(label="Rolle zuweisen", style=discord.ButtonStyle.primary, emoji="👥")
+                async def _go_role(inter: discord.Interaction):
+                    self.active_tab = 2
+                    self._build()
+                    await inter.response.edit_message(view=self)
+                fix_role.callback = _go_role
+                actions.append(fix_role)
+            if (not isinstance(cat, discord.CategoryChannel) and p.get("category_id")) or not isinstance(cat, discord.CategoryChannel):
+                fix_cat = discord.ui.Button(label="Kategorie festlegen", style=discord.ButtonStyle.primary, emoji="🗂️")
+                async def _go_cat(inter: discord.Interaction):
+                    self.active_tab = 2
+                    self._build()
+                    await inter.response.edit_message(view=self)
+                fix_cat.callback = _go_cat
+                actions.append(fix_cat)
+            if not isinstance(ch, discord.TextChannel):
+                fix_ch = discord.ui.Button(label="Kanal auswählen", style=discord.ButtonStyle.primary, emoji="🧭")
+                async def _go_ch(inter: discord.Interaction):
+                    self.active_tab = 2
+                    self._build()
+                    await inter.response.edit_message(view=self)
+                fix_ch.callback = _go_ch
+                actions.append(fix_ch)
+            if actions:
+                # Max 5 je Reihe – wir haben max. 3
+                container.add_item(discord.ui.ActionRow(*actions))
 
         # Panel bearbeiten
         elif self.active_tab == 1:
             p = self._selected_panel
+            ch = self.guild.get_channel(int(p["channel_id"]))
+            lines = [
+                "## Panel‑Gestaltung",
+                "Bearbeite Titel, Beschreibung und Thema des Ticket‑Panels.",
+                "",
+                f"Aktueller Embed‑Titel: **{p.get('thema') or '—'}**",
+                f"Panel‑Kanal: {(ch.mention if isinstance(ch, discord.abc.GuildChannel) else ('#'+str(p['channel_id'])))}",
+                "",
+                "Ändern: Öffne den Bearbeiten‑Dialog.",
+            ]
+            container.add_item(discord.ui.TextDisplay("\n".join(lines)))
+
             edit_btn = discord.ui.Button(label="Texte bearbeiten", style=discord.ButtonStyle.primary, emoji="📝")
 
             async def edit_cb(inter: discord.Interaction):
@@ -1599,6 +1679,21 @@ class ConfigCenterView(ui.LayoutView):
 
         # Discord-Zuordnungen
         elif self.active_tab == 2:
+            # Einordnung anzeigen
+            p = self._selected_panel
+            role = self.guild.get_role(p.get("role_id") or 0)
+            cat = self.guild.get_channel(p.get("category_id") or 0)
+            lines = [
+                "## Discord‑Zuordnungen",
+                "Weise Rolle, Kategorie und Panel‑Zielkanal zu.",
+                "",
+                f"Aktuelle Support‑Rolle: {role.mention if role else '—'}",
+                f"Aktuelle Ticket‑Kategorie: {cat.name if isinstance(cat, discord.CategoryChannel) else '—'}",
+                "",
+                "Wähle unten neue Zuordnungen aus, um sie zu speichern.",
+            ]
+            container.add_item(discord.ui.TextDisplay("\n".join(lines)))
+
             # Role select
             role_select = discord.ui.RoleSelect(placeholder="Support-Rolle wählen", min_values=0, max_values=1)
 
@@ -1642,7 +1737,21 @@ class ConfigCenterView(ui.LayoutView):
 
         # Ticket-Einstellungen
         elif self.active_tab == 3:
-            container.add_item(discord.ui.TextDisplay("## Ticket‑Einstellungen\n`autoclose_hours` und `reopen_hours` verwalten."))
+            ac = int(self._guild_cfg.get("autoclose_hours", 0) or 0)
+            ro = int(self._guild_cfg.get("reopen_hours", 0) or 0)
+            lines = [
+                "## Ticket‑Verhalten",
+                "Verwalte Auto‑Close und Wiederöffnungsfrist serverweit.",
+                "",
+                "### Auto‑Close",
+                f"Aktueller Wert: {('Deaktiviert' if ac <= 0 else format_native_value('autoclose_hours', ac))}",
+                "Ändern: Button unten nutzen.",
+                "",
+                "### Wiederöffnungsfrist",
+                f"Aktueller Wert: {('Deaktiviert' if ro <= 0 else format_native_value('reopen_hours', ro))}",
+                "Ändern: Button unten nutzen.",
+            ]
+            container.add_item(discord.ui.TextDisplay("\n".join(lines)))
 
             btn_auto = discord.ui.Button(label="Auto‑Close setzen", style=discord.ButtonStyle.secondary, emoji="⏱️")
             btn_reopen = discord.ui.Button(label="Wiederöffnungsfrist setzen", style=discord.ButtonStyle.secondary, emoji="🔁")
@@ -1676,7 +1785,21 @@ class ConfigCenterView(ui.LayoutView):
 
         # Erinnerungen
         elif self.active_tab == 4:
-            container.add_item(discord.ui.TextDisplay("## Erinnerungen\n`remind_minutes` und `ping_throttle_minutes` (0 = aus)."))
+            rem = int(self._guild_cfg.get("remind_minutes", 0) or 0)
+            thr = int(self._guild_cfg.get("ping_throttle_minutes", 0) or 0)
+            lines = [
+                "## Erinnerungen",
+                "Konfiguriere Reminder und Ping‑Throttle serverweit.",
+                "",
+                "### Reminder",
+                f"Aktueller Wert: {('Deaktiviert' if rem <= 0 else format_native_value('remind_minutes', rem))}",
+                "Ändern: Button unten nutzen.",
+                "",
+                "### Ping‑Throttle",
+                f"Aktueller Wert: {('Deaktiviert' if thr <= 0 else format_native_value('ping_throttle_minutes', thr))}",
+                "Ändern: Button unten nutzen.",
+            ]
+            container.add_item(discord.ui.TextDisplay("\n".join(lines)))
             btn_rem = discord.ui.Button(label="Reminder setzen (Minuten)", style=discord.ButtonStyle.secondary, emoji="🔔")
             btn_ping = discord.ui.Button(label="Ping‑Throttle (Minuten)", style=discord.ButtonStyle.secondary, emoji="📵")
 
@@ -1839,18 +1962,14 @@ class PanelOverviewView(ui.LayoutView):
 
             # Aktionen
             refresh_btn = discord.ui.Button(label="Status aktualisieren", style=discord.ButtonStyle.secondary, emoji="🔄")
-            manage_btn = discord.ui.Button(label="Im Control‑Center verwalten", style=discord.ButtonStyle.primary, emoji="🛠️")
+            manage_btn = discord.ui.Button(label="Einstellungen öffnen", style=discord.ButtonStyle.primary, emoji="⚙️")
 
             async def ref_cb(inter: discord.Interaction):
                 await self.refresh(inter)
 
             async def manage_cb(inter: discord.Interaction):
                 v = ConfigCenterView(self.bot, inter.user, self.guild)
-                await v._load_panels()
-                await v._load_extras()
-                v.selected_channel_id = int(p["channel_id"])
-                v.active_tab = 0
-                v._build()
+                await v.initialize(selected_channel_id=int(p["channel_id"]), active_tab=0)
                 await inter.response.edit_message(view=v)
 
             refresh_btn.callback = ref_cb
@@ -2353,9 +2472,7 @@ class Ticket(app_commands.Group):
         else:
             # Control-Center zum Setzen/Verwalten
             view = ConfigCenterView(self.bot, interaction.user, interaction.guild)
-            await view._load_panels()
-            await view._load_extras()
-            view._build()
+            await view.initialize()
             await interaction.response.send_message(view=view, ephemeral=True)
             return None
 
