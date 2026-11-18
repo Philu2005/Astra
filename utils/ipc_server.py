@@ -15,6 +15,7 @@ import json
 import logging
 import os
 from typing import Any, Optional
+import discord
 
 from aiohttp import web
 
@@ -171,12 +172,80 @@ class BotIPC:
             logger.exception("IPC move failed")
             return web.json_response({"success": False, "code": "move_failed"}, status=500)
 
+    async def _handle_delete(self, request: web.Request) -> web.Response:
+        """
+        Löscht eine veröffentlichte Panel-Nachricht in Discord.
+        Anforderungen:
+        - 404 (Not Found) ist zulässig und wird als success zurückgegeben ("message_missing").
+        - Bei fehlenden Berechtigungen 403 zurückgeben, damit der Aufrufer die DB nicht löscht.
+        - Keine DB-Änderungen hier – nur Discord-Operationen.
+        """
+        if not self._auth(request):
+            return web.json_response({"success": False, "code": "unauthorized"}, status=401)
+        data = await self._json(request)
+        try:
+            guild_id = int(data.get("guild_id"))
+            channel_id = int(data.get("channel_id"))
+            message_id = int(data.get("message_id"))
+            if not guild_id or not channel_id or not message_id:
+                return web.json_response({"success": False, "code": "invalid_payload"}, status=400)
+
+            guild = self.bot.get_guild(guild_id)
+            if guild is None:
+                return web.json_response({"success": False, "code": "guild_unavailable"}, status=503)
+            ch = guild.get_channel(channel_id) or await guild.fetch_channel(channel_id)
+
+            # Berechtigungen prüfen
+            me = guild.me or await guild.fetch_member(self.bot.user.id)  # type: ignore
+            perms = ch.permissions_for(me) if hasattr(ch, "permissions_for") else None
+            if not perms or not getattr(perms, "manage_messages", False):
+                # Fallback: Manche Bots können auch ohne manage_messages eigene Nachrichten löschen,
+                # aber wenn Permissions klar fehlen, geben wir 403 zurück.
+                # Löschversuch erfolgt dennoch – wenn erfolgreich, prima; wenn nicht, 403.
+                try:
+                    # Teilschnittstelle verwenden, wenn verfügbar
+                    if hasattr(ch, "get_partial_message"):
+                        await ch.get_partial_message(message_id).delete()
+                    else:
+                        msg = await ch.fetch_message(message_id)
+                        await msg.delete()
+                except discord.Forbidden:  # type: ignore
+                    return web.json_response({"success": False, "code": "permission_denied"}, status=403)
+                except discord.NotFound:  # type: ignore
+                    return web.json_response({"success": True, "status": "message_missing"}, status=200)
+                except Exception:
+                    logger.exception("IPC delete failed (no perms branch)")
+                    return web.json_response({"success": False, "code": "delete_failed"}, status=500)
+                return web.json_response({"success": True, "status": "deleted"}, status=200)
+
+            # Regulärer Löschpfad
+            try:
+                if hasattr(ch, "get_partial_message"):
+                    await ch.get_partial_message(message_id).delete()
+                else:
+                    msg = await ch.fetch_message(message_id)
+                    await msg.delete()
+                return web.json_response({"success": True, "status": "deleted"}, status=200)
+            except discord.NotFound:  # type: ignore
+                return web.json_response({"success": True, "status": "message_missing"}, status=200)
+            except discord.Forbidden:  # type: ignore
+                return web.json_response({"success": False, "code": "permission_denied"}, status=403)
+            except Exception:
+                logger.exception("IPC delete failed")
+                return web.json_response({"success": False, "code": "delete_failed"}, status=500)
+        except asyncio.TimeoutError:
+            return web.json_response({"success": False, "code": "timeout"}, status=504)
+        except Exception:
+            logger.exception("IPC delete handler error")
+            return web.json_response({"success": False, "code": "delete_failed"}, status=500)
+
     async def start(self):
         app = web.Application()
         app.add_routes([
             web.post("/ipc/panel/publish", self._handle_publish),
             web.post("/ipc/panel/update", self._handle_update),
             web.post("/ipc/panel/move", self._handle_move),
+            web.post("/ipc/panel/delete", self._handle_delete),
         ])
         self._runner = web.AppRunner(app)
         await self._runner.setup()

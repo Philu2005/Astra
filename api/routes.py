@@ -1754,22 +1754,128 @@ def put_ticket_panel_config(guild_id: int, channel_id: int):
             return _api_error(sc, code, None)
         return _api_error(500, code, None)
 
-    # DB: Panel-Zeile auf neuen Kanal und Metadaten aktualisieren; panelMsgID wurde vom Bot bereits gesetzt
-    updates = {"channelID": new_channel_id_int}
-    if thema is not None:
-        updates["thema"] = str(thema)
-    if role_id_int is not None:
-        updates["roleID"] = role_id_int
-    if category_id_int is not None:
-        updates["categoryID"] = category_id_int
+    # DB: Metadaten für neue Kanalzeile aktualisieren (falls vorhanden) und alte Zeile entfernen,
+    # um doppelte Einträge zu vermeiden. Die neue Zeile wurde durch Publish bereits angelegt/aktualisiert.
     try:
-        api_db.run_coro(_update_panel_row(api_db.get_pool(), guild_id, channel_id, updates), timeout=5.0)
+        # Neue Panel-Zeile ggf. mit gewünschter Meta überschreiben
+        new_updates = {}
+        if thema is not None:
+            new_updates["thema"] = str(thema)
+        if role_id_int is not None:
+            new_updates["roleID"] = role_id_int
+        if category_id_int is not None:
+            new_updates["categoryID"] = category_id_int
+        if new_updates:
+            # Update anhand der neuen channelID
+            async def _update_new_row(pool, guild_id: int, channel_id_new: int, updates: dict):
+                sets = []
+                vals = []
+                for k, v in updates.items():
+                    sets.append(f"{k}=%s")
+                    vals.append(v)
+                vals.extend([guild_id, channel_id_new])
+                q2 = f"UPDATE ticketsystem SET {', '.join(sets)} WHERE guildID=%s AND channelID=%s"
+                async with pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(q2, tuple(vals))
+            api_db.run_coro(_update_new_row(api_db.get_pool(), guild_id, new_channel_id_int, new_updates), timeout=5.0)
+
+        # Alte Panel-Zeile entfernen
+        async def _delete_old_row(pool, guild_id: int, channel_id_old: int):
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM ticketsystem WHERE guildID=%s AND channelID=%s", (guild_id, channel_id_old))
+        api_db.run_coro(_delete_old_row(api_db.get_pool(), guild_id, channel_id), timeout=5.0)
     except Exception:
         logger.exception("Failed to persist panel move updates")
-        # Hinweis: Neue Nachricht existiert bereits – alter Zustand nicht löschen; als Teilfehler melden
+        # Hinweis: Neue Nachricht existiert bereits – alter Zustand bleibt; als Teilfehler melden
         return jsonify(success=True, status="moved_db_update_failed", channel_id=data.get("channel_id"), message_id=data.get("message_id")), 200
 
     return jsonify(success=True, status=data.get("status", "moved"), channel_id=data.get("channel_id"), message_id=data.get("message_id")), 200
+
+
+@api_bp.route("/tickets/panels/<int:guild_id>/<int:channel_id>/<int:message_id>", methods=["DELETE"]) 
+@require_service_auth
+@rate_limit(scope="tickets_panel_delete", limit=10, per_seconds=60)
+def delete_ticket_panel(guild_id: int, channel_id: int, message_id: int):
+    """
+    Löscht ein Ticket-Panel vollständig.
+    Ablauf:
+    1) Berechtigungen prüfen
+    2) Panel anhand Guild/Channel laden und mit message_id plausibilisieren (falls vorhanden)
+    3) Discord-Nachricht via IPC löschen (404 tolerieren; 403 verhindert DB-Delete)
+    4) Panel-Datensatz aus ticketsystem entfernen
+    5) Konsistenz sicherstellen (keine Löschung aktiver Tickets)
+    """
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    pool = api_db.get_pool()
+    if pool is None:
+        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
+
+    # Panel-Zeile laden
+    try:
+        panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
+        existing = next((p for p in panels if p["channel_id"] == channel_id), None)
+        if not existing:
+            # Falls nicht vorhanden, Discord trotzdem versuchen zu löschen und 200 liefern, wenn 404/Deleted
+            pass
+        else:
+            db_msg_id = existing.get("panel_message_id")
+            if db_msg_id is not None and int(db_msg_id) != int(message_id):
+                # Plausibilisierung: andere Message-ID gespeichert → Schutz
+                return _api_error(409, "conflict_message_id", "Panel message_id mismatch")
+    except Exception:
+        logger.exception("Failed to load panel for delete")
+        # Kein Hard-Fail hier – wir versuchen weiterhin die Discord-Löschung.
+
+    # Discord-Löschung via IPC
+    sc, data = _ipc_request(
+        "/ipc/panel/delete",
+        {
+            "guild_id": str(guild_id),
+            "channel_id": str(channel_id),
+            "message_id": str(message_id),
+        },
+        timeout=15.0,
+    )
+    if sc == 403:
+        return _api_error(403, "permission_denied", None)
+    if sc not in (200, 410) and not (sc == 200 and (data or {}).get("success")):
+        # Unerwarteter Fehler – nicht stillschweigend fortfahren
+        code = (data or {}).get("code", "delete_failed")
+        if sc in (400, 401, 404, 503, 504):
+            return _api_error(sc, code, None)
+        return _api_error(500, code, None)
+
+    # DB-Eintrag entfernen (auch wenn Nachricht bereits weg war)
+    try:
+        async def _delete_row(pool, g_id: int, ch_id: int):
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM ticketsystem WHERE guildID=%s AND channelID=%s", (g_id, ch_id))
+        api_db.run_coro(_delete_row(pool, guild_id, channel_id), timeout=5.0)
+    except Exception:
+        logger.exception("Failed to delete panel row from DB")
+        # Zustand bleibt nachvollziehbar: Nachricht ist gelöscht/fehlte; ein erneuter Versuch ist möglich.
+        return _api_error(500, "db_delete_failed", "Failed to delete panel from database")
+
+    return jsonify(success=True, status=(data or {}).get("status", "deleted")), 200
 
 
 async def _fetch_open_tickets_async(pool, guild_id: int):
