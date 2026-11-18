@@ -503,7 +503,7 @@ async def run(args: argparse.Namespace) -> int:
                             "guild_cache_miss": True,
                             "guild_resolve_error": guild_err,
                         })
-                    not_found += len(entries)
+                    # getrennte Zählung über report_rows am Ende
                     continue
                 # Channel einmal scannen
                 try:
@@ -572,11 +572,12 @@ async def run(args: argparse.Namespace) -> int:
                         if not cands:
                             # Kanal existiert?
                             if meta.get("channel_fetch") == "not_found":
-                                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "INVALID_CHANNEL", action="REVIEW")
+                                # Einheitlicher Statusname für Bericht und Zusammenfassung
+                                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "CHANNEL_NOT_FOUND", action="REVIEW")
                                 results.append(mr)
                                 report_rows.append({
                                     "row_index": idx, "row_selector_hash": selector_hash,
-                                    "status": "CHANNEL_NOT_FOUND", "action": mr.action,
+                                    "status": mr.status, "action": mr.action,
                                     **selector,
                                     "current_message_id": p.panel_msg_id,
                                     "candidates_found": 0,
@@ -595,7 +596,7 @@ async def run(args: argparse.Namespace) -> int:
                                     "reason": "No matching messages found",
                                     "scan_meta": meta,
                                 })
-                            not_found += 1
+                            # getrennte Zählung über report_rows am Ende
                             continue
 
                         if len(cands) > 1:
@@ -654,16 +655,40 @@ async def run(args: argparse.Namespace) -> int:
                         })
                         errors += 1
 
-            # Summary
+            # Summary – Zählung strikt anhand tatsächlicher Statuswerte aus report_rows
             elapsed = time.perf_counter() - start_ts
+            def _norm_status(s: str) -> str:
+                s = (s or "").upper()
+                if s == "INVALID_CHANNEL":
+                    return "CHANNEL_NOT_FOUND"
+                return s
+            status_counters: Dict[str, int] = {
+                "MATCH_FOUND": 0,
+                "ALREADY_SAVED": 0,
+                "NO_MATCH": 0,
+                "MULTIPLE_MATCHES": 0,
+                "MISSING_PERMISSIONS": 0,
+                "GUILD_NOT_FOUND": 0,
+                "CHANNEL_NOT_FOUND": 0,
+                "SCAN_ERROR": 0,
+            }
+            for r in report_rows:
+                try:
+                    st = _norm_status(str(r.get("status", "")))
+                except Exception:
+                    st = ""
+                if st in status_counters:
+                    status_counters[st] += 1
             print("\n=== Scan Summary ===")
             print(f"Total panels: {total}")
-            print(f"  ALREADY_SAVED      : {already}")
-            print(f"  MATCH_FOUND        : {len(unique_matches)}")
-            print(f"  MULTIPLE_MATCHES   : {multiple}")
-            print(f"  NO_MATCH           : {not_found}")
-            print(f"  MISSING_PERMISSIONS: {denied}")
-            print(f"  SCAN_ERROR         : {errors}")
+            print(f"  ALREADY_SAVED      : {status_counters['ALREADY_SAVED']}")
+            print(f"  MATCH_FOUND        : {status_counters['MATCH_FOUND']}")
+            print(f"  MULTIPLE_MATCHES   : {status_counters['MULTIPLE_MATCHES']}")
+            print(f"  NO_MATCH           : {status_counters['NO_MATCH']}")
+            print(f"  CHANNEL_NOT_FOUND  : {status_counters['CHANNEL_NOT_FOUND']}")
+            print(f"  GUILD_NOT_FOUND    : {status_counters['GUILD_NOT_FOUND']}")
+            print(f"  MISSING_PERMISSIONS: {status_counters['MISSING_PERMISSIONS']}")
+            print(f"  SCAN_ERROR         : {status_counters['SCAN_ERROR']}")
             print(f"Channels scanned     : {total_scanned_channels}")
             print(f"Messages scanned     : {total_scanned_messages}")
             if slowest_channel:
@@ -678,12 +703,15 @@ async def run(args: argparse.Namespace) -> int:
                             json.dump({
                                 "meta": {
                                     "total_panels": total,
-                                    "already_saved": already,
-                                    "match_found": len(unique_matches),
-                                    "multiple_matches": multiple,
-                                    "no_match": not_found,
-                                    "missing_permissions": denied,
-                                    "scan_error": errors,
+                                    # Werte werden aus report_rows gezählt, damit Konsole und JSON übereinstimmen
+                                    "already_saved": status_counters.get("ALREADY_SAVED", 0),
+                                    "match_found": status_counters.get("MATCH_FOUND", 0),
+                                    "multiple_matches": status_counters.get("MULTIPLE_MATCHES", 0),
+                                    "no_match": status_counters.get("NO_MATCH", 0),
+                                    "channel_not_found": status_counters.get("CHANNEL_NOT_FOUND", 0),
+                                    "guild_not_found": status_counters.get("GUILD_NOT_FOUND", 0),
+                                    "missing_permissions": status_counters.get("MISSING_PERMISSIONS", 0),
+                                    "scan_error": status_counters.get("SCAN_ERROR", 0),
                                     "channels_scanned": total_scanned_channels,
                                     "messages_scanned": total_scanned_messages,
                                     "slowest_channel": {
@@ -766,12 +794,20 @@ async def run(args: argparse.Namespace) -> int:
                 await client.close()
             except Exception:
                 pass
-            try:
-                pool.close(); await pool.wait_closed()
-            except Exception:
-                pass
+            # DB‑Pool nicht hier schließen – der Event‑Loop von discord.Client läuft noch.
+            # Cleanup erfolgt nach client.start() im run().
 
     await client.start(token)
+
+    # Pool‑Cleanup NACH dem Client‑Lauf im noch aktiven Event‑Loop durchführen
+    try:
+        pool.close()
+        await pool.wait_closed()
+    except Exception as e:
+        LOGGER.exception("DB pool cleanup failed: %s", e)
+        # Keine Exceptions verschlucken, non‑zero Exit signalisieren
+        exit_code = exit_code or 1
+
     return exit_code
 
 
