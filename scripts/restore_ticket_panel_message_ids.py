@@ -193,18 +193,22 @@ class DB:
         """Apply all updates in a single transaction. Rolls back on ANY error.
 
         updates: list of tuples (guild_id, channel_id, role_id, category_id, thema, message_id)
-        Returns a result dict with keys: planned, applied, rolled_back (bool), errors (list[str]).
+        Returns a result dict with keys: planned, attempted, committed, applied (alias of committed),
+        rolled_back (bool), errors (list[str]).
         """
-        result = {"planned": len(updates), "applied": 0, "rolled_back": False, "errors": []}  # type: ignore[dict-item]
+        result: Dict[str, Any] = {
+            "planned": len(updates),
+            "attempted": 0,
+            "committed": 0,
+            "applied": 0,  # backward-compat alias, set at the end
+            "rolled_back": False,
+            "errors": [],
+        }
         if not updates:
             return result
 
-        # Prevalidate selectors first
-        ok, errs = await self.prevalidate_unique_selectors([(g, ch, rid, cid, th) for (g, ch, rid, cid, th, _mid) in updates])
-        if not ok:
-            result["errors"] = errs
-            result["rolled_back"] = True
-            return result
+        # Die Eindeutigkeitsprüfung MUSS innerhalb derselben Transaktion erfolgen.
+        # Vorvalidierungen außerhalb der TX helfen nicht gegen Race Conditions und werden daher hier nicht verwendet.
 
         q_update = (
             "UPDATE ticketsystem "
@@ -215,22 +219,43 @@ class DB:
             "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
             "(thema <=> %s)"
         )
+        # Selektorprüfung und Sperre der Zielzeile(n) innerhalb derselben TX
+        q_select_for_update = (
+            "SELECT guildID, channelID, roleID, categoryID, thema FROM ticketsystem "
+            "WHERE guildID=%s AND channelID=%s AND "
+            "(panelMsgID IS NULL OR panelMsgID=0) AND "
+            "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
+            "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
+            "(thema <=> %s) "
+            "FOR UPDATE"
+        )
 
         async with self.pool.acquire() as conn:
             try:
-                # Ensure we're in transactional mode
-                try:
-                    await conn.begin()
-                except Exception:
-                    # aiomysql connections in pools may start transactions implicitly on first statement
-                    pass
+                # Explizites BEGIN – darf NICHT fehlschlagen/verschluckt werden
+                await conn.begin()
                 async with conn.cursor() as cur:
                     for (g, ch, rid, cid, th, mid) in updates:
+                        # 1) Exakte Zielzeile finden und sperren
+                        await cur.execute(q_select_for_update, (int(g), int(ch), rid, rid, cid, cid, th))
+                        rows = await cur.fetchall()
+                        sel_count = len(rows) if rows else 0
+                        if sel_count != 1:
+                            raise RuntimeError(
+                                f"Selector not unique or missing (count={sel_count}) for guild={g} channel={ch} thema={th}"
+                            )
+                        # 2) Update mit zusätzlicher Absicherung panelMsgID IS NULL/0
                         await cur.execute(q_update, (int(mid), int(g), int(ch), rid, rid, cid, cid, th))
+                        result["attempted"] += 1
                         if cur.rowcount != 1:
-                            raise RuntimeError(f"Unsafe update (affected={cur.rowcount}) for guild={g} channel={ch} thema={th}")
-                        result["applied"] += 1
+                            # Wenn hier nicht genau 1 Zeile verändert wurde, ist das ein Sicherheitsfehler → ROLLBACK
+                            raise RuntimeError(
+                                f"Unsafe update (affected={cur.rowcount}) for guild={g} channel={ch} thema={th}"
+                            )
                 await conn.commit()
+                # Alle Updates erfolgreich – committed = attempted
+                result["committed"] = result["attempted"]
+                result["applied"] = result["committed"]  # alias
             except Exception as e:
                 result["errors"].append(str(e))
                 result["rolled_back"] = True
@@ -238,6 +263,9 @@ class DB:
                     await conn.rollback()
                 except Exception:
                     pass
+                # Bei Rollback wurden keine Änderungen dauerhaft übernommen
+                result["committed"] = 0
+                result["applied"] = 0
             return result
 
 
