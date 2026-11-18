@@ -1394,6 +1394,65 @@ class ConfigCenterView(ui.LayoutView):
         self.selected_channel_id = int(new_channel.id)
         await self.refresh(interaction, edit_existing=True)
 
+    async def _delete_panel(self, interaction: discord.Interaction):
+        """Panel sicher löschen: zuerst Discord-Nachricht (wenn vorhanden), dann DB-Eintrag.
+        Anforderungen:
+        - Ist die Nachricht bereits weg (404), dennoch DB-Eintrag löschen.
+        - Bei fehlenden Berechtigungen (403) NICHT den DB-Eintrag löschen.
+        - Niemals aktive Tickets (ticketsystem_channels) anfassen.
+        """
+        if not self._selected_panel:
+            return await interaction.response.send_message("Kein Panel ausgewählt.", ephemeral=True)
+
+        ch_id = int(self._selected_panel["channel_id"])
+        msg_id = self._selected_panel.get("panel_message_id")
+
+        # 1) Versuche, die Panel-Nachricht zu löschen (Best Effort / 403 stoppt)
+        try:
+            ch = self.guild.get_channel(ch_id) or await self.guild.fetch_channel(ch_id)
+            if msg_id and isinstance(ch, discord.TextChannel):
+                try:
+                    await ch.get_partial_message(int(msg_id)).delete()
+                except discord.Forbidden:
+                    return await interaction.response.send_message(
+                        "<:Astra_x:1141303954555289600> Mir fehlen Berechtigungen, um die Panel-Nachricht zu löschen.",
+                        ephemeral=True,
+                    )
+                except discord.NotFound:
+                    # Bereits gelöscht → ok, weiter mit DB
+                    pass
+                except Exception:
+                    # Unerwarteter Fehler beim Löschen → abbrechen, um Konsistenz nicht zu gefährden
+                    return await interaction.response.send_message(
+                        "<:Astra_x:1141303954555289600> Die Panel-Nachricht konnte nicht gelöscht werden.",
+                        ephemeral=True,
+                    )
+        except Exception:
+            # Kanal nicht auffindbar o.ä. → wir versuchen dennoch, den DB-Eintrag zu löschen
+            pass
+
+        # 2) Panel-Konfiguration entfernen (ticketsystem). Niemals ticketsystem_channels anfassen!
+        try:
+            async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "DELETE FROM ticketsystem WHERE guildID=%s AND channelID=%s",
+                        (self.guild.id, ch_id),
+                    )
+        except Exception:
+            return await interaction.response.send_message(
+                "<:Astra_x:1141303954555289600> Der Datenbankeintrag konnte nicht entfernt werden. Bitte erneut versuchen.",
+                ephemeral=True,
+            )
+
+        await interaction.response.send_message(
+            "<:Astra_accept:1141303821176422460> Panel wurde gelöscht.",
+            ephemeral=True,
+        )
+        # UI neu laden
+        self.selected_channel_id = None
+        await self.refresh(interaction, edit_existing=True)
+
     async def refresh(self, interaction: discord.Interaction, *, edit_existing: bool = True):
         await self._load_panels()
         self._build()
@@ -1433,7 +1492,8 @@ class ConfigCenterView(ui.LayoutView):
         if select_options:
             select = discord.ui.Select(placeholder="Wähle ein Panel …", min_values=1, max_values=1, options=select_options)
             select.callback = lambda inter, s=select: asyncio.create_task(panel_select_cb(inter, s))
-            container.add_item(select)
+            # Interaktive Elemente nicht in den Text-Container einbetten
+            self.add_item(select)
         else:
             container.add_item(discord.ui.TextDisplay("> Keine Panels gefunden. Nutze **/ticket setup**, um eines zu erstellen."))
 
@@ -1454,15 +1514,16 @@ class ConfigCenterView(ui.LayoutView):
             btn.callback = cb
             tabs.append(btn)
         # Discord lässt max. 5 Komponenten pro ActionRow zu → Tabs in Gruppen aufteilen
+        # Buttons/ActionRows werden auf View-Ebene hinzugefügt (nicht im Container)
         if tabs:
             chunk: list[discord.ui.Button] = []
             for b in tabs:
                 chunk.append(b)
                 if len(chunk) == 5:
-                    container.add_item(discord.ui.ActionRow(*chunk))
+                    self.add_item(discord.ui.ActionRow(*chunk))
                     chunk = []
             if chunk:
-                container.add_item(discord.ui.ActionRow(*chunk))
+                self.add_item(discord.ui.ActionRow(*chunk))
 
         # Content je Tab
         if self.selected_channel_id is None or self._selected_panel is None:
@@ -1497,7 +1558,7 @@ class ConfigCenterView(ui.LayoutView):
                 await inter.response.send_modal(modal)
 
             edit_btn.callback = edit_cb
-            container.add_item(discord.ui.ActionRow(edit_btn))
+            self.add_item(discord.ui.ActionRow(edit_btn))
 
         # Discord-Zuordnungen
         elif self.active_tab == 2:
@@ -1509,7 +1570,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._set_role(inter, role)
 
             role_select.callback = role_cb
-            container.add_item(role_select)
+            self.add_item(role_select)
 
             # Category select
             cat_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.category], placeholder="Ticket-Kategorie wählen", min_values=0, max_values=1)
@@ -1519,7 +1580,7 @@ class ConfigCenterView(ui.LayoutView):
                 await self._set_category(inter, cat if isinstance(cat, discord.CategoryChannel) else None)
 
             cat_select.callback = cat_cb
-            container.add_item(cat_select)
+            self.add_item(cat_select)
 
             # Move (Zielkanal ändern)
             txt_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Zielkanal für Panel verschieben", min_values=1, max_values=1)
@@ -1531,7 +1592,16 @@ class ConfigCenterView(ui.LayoutView):
                 await self._move_panel(inter, ch)
 
             txt_select.callback = move_cb
-            container.add_item(txt_select)
+            self.add_item(txt_select)
+
+            # Panel löschen (Button)
+            del_btn = discord.ui.Button(label="Panel löschen", style=discord.ButtonStyle.danger, emoji="🗑️")
+
+            async def del_cb(inter: discord.Interaction):
+                await self._delete_panel(inter)
+
+            del_btn.callback = del_cb
+            self.add_item(discord.ui.ActionRow(del_btn))
 
         # Ticket-Einstellungen
         elif self.active_tab == 3:
@@ -1565,7 +1635,7 @@ class ConfigCenterView(ui.LayoutView):
 
             btn_auto.callback = auto_cb
             btn_reopen.callback = reopen_cb
-            container.add_item(discord.ui.ActionRow(btn_auto, btn_reopen))
+            self.add_item(discord.ui.ActionRow(btn_auto, btn_reopen))
 
         # Erinnerungen
         elif self.active_tab == 4:
@@ -1592,7 +1662,7 @@ class ConfigCenterView(ui.LayoutView):
 
             btn_rem.callback = lambda inter: inter.response.send_modal(_ValueModal2("remind_minutes"))
             btn_ping.callback = lambda inter: inter.response.send_modal(_ValueModal2("ping_throttle_minutes"))
-            container.add_item(discord.ui.ActionRow(btn_rem, btn_ping))
+            self.add_item(discord.ui.ActionRow(btn_rem, btn_ping))
 
         # Protokollierung
         elif self.active_tab == 5:
