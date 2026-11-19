@@ -1818,13 +1818,35 @@ def put_ticket_panel_config(guild_id: int, channel_id: int):
 
     # Live-Guild-Prüfung für neue IDs, falls gesetzt (Kategorie/Kanal)
     if new_channel_id_int is not None:
-        # harte Channel-Zugehörigkeit via Bot prüfen
+        bot = get_bot_instance()
         try:
-            belongs = submit_bot_task(_bot_channel_belongs_to_guild(get_bot_instance(), guild_id, new_channel_id_int), timeout=5.0)
+            belongs = submit_bot_task(
+                _bot_channel_belongs_to_guild(
+                    bot,
+                    guild_id,
+                    new_channel_id_int
+                ),
+                timeout=5.0
+            )
         except Exception:
-            belongs = False
+            logger.exception(
+                "Ticket panel move: channel validation failed "
+                "(guild_id=%s, channel_id=%s)",
+                guild_id,
+                new_channel_id_int
+            )
+            return _api_error(
+                500,
+                "channel_validation_failed",
+                "Failed to validate target channel"
+            )
+
         if not belongs:
-            return _api_error(400, "invalid_channel", "Channel does not belong to the guild")
+            return _api_error(
+                400,
+                "invalid_channel",
+                "Channel does not belong to the guild"
+            )
 
     # DB-Update-Helfer für ticketsystem (thema/roleID/categoryID/channelID)
     async def _update_panel_row(pool, guild_id: int, channel_id_old: int, updates: dict):
