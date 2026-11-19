@@ -1187,7 +1187,7 @@ class SetupWizardView(ui.LayoutView):
     async def _switch(self, interaction, page: int):
         self.page = page
         self._build()
-        await interaction.response.edit_message(view=self)
+        await interaction.response.edit_message(content=None, view=self)
 
     async def validate(self):
         return all([
@@ -1204,22 +1204,19 @@ class SetupWizardView(ui.LayoutView):
 # =========================================================
 
 class _EditPanelTextModal(discord.ui.Modal, title="Panel-Texte bearbeiten"):
-    def __init__(self, view: "ConfigCenterView", *, init_title: str = "", init_desc: str = "", init_thema: str = ""):
+    def __init__(self, view: "ConfigCenterView", *, init_title: str = "", init_desc: str = ""):
         super().__init__()
         self.view = view
-        self.inp_title = discord.ui.TextInput(label="Panel-Titel", default=init_title[:256], max_length=256, required=False)
-        self.inp_desc = discord.ui.TextInput(label="Panel-Beschreibung", default=init_desc[:4000], style=discord.TextStyle.paragraph, max_length=4000, required=False)
-        self.inp_thema = discord.ui.TextInput(label="Ticket-Thema", default=init_thema[:128], required=False)
+        self.inp_title = discord.ui.TextInput(label="Ticket Titel", default=init_title[:256], max_length=256, required=False)
+        self.inp_desc = discord.ui.TextInput(label="Ticket Beschreibung", default=init_desc[:4000], style=discord.TextStyle.paragraph, max_length=4000, required=False)
         self.add_item(self.inp_title)
         self.add_item(self.inp_desc)
-        self.add_item(self.inp_thema)
 
     async def on_submit(self, interaction: discord.Interaction):
         await self.view.apply_text_changes(
             interaction,
             title=str(self.inp_title.value or ""),
             description=str(self.inp_desc.value or ""),
-            thema=str(self.inp_thema.value or ""),
         )
 
 
@@ -1333,7 +1330,7 @@ class ConfigCenterView(ui.LayoutView):
         return f"{ch_name} – {thema}" if thema else ch_name
 
     # ---------------- Actions -----------------
-    async def apply_text_changes(self, interaction: discord.Interaction, *, title: str, description: str, thema: str):
+    async def apply_text_changes(self, interaction: discord.Interaction, *, title: str, description: str):
         if not self._selected_panel:
             return await interaction.response.send_message("Kein Panel ausgewählt.", ephemeral=True)
         ch_id = int(self._selected_panel["channel_id"])
@@ -1343,7 +1340,7 @@ class ConfigCenterView(ui.LayoutView):
                 async with conn.cursor() as cur:
                     await cur.execute(
                         "UPDATE ticketsystem SET thema=%s, description=%s WHERE guildID=%s AND channelID=%s",
-                        (thema, description, self.guild.id, ch_id),
+                        (title, description, self.guild.id, ch_id),
                     )
         except Exception:
             return await interaction.response.send_message("Fehler beim Speichern des Themas.", ephemeral=True)
@@ -1533,9 +1530,10 @@ class ConfigCenterView(ui.LayoutView):
         try:
             if edit_existing:
                 if interaction.response.is_done():
-                    await interaction.edit_original_response(view=self)
+                    # IS_COMPONENTS_V2 Fix: content explizit None setzen, falls LayoutView es befüllt
+                    await interaction.edit_original_response(content=None, view=self)
                 else:
-                    await interaction.response.edit_message(view=self)
+                    await interaction.response.edit_message(content=None, view=self)
         except discord.NotFound:
             pass
 
@@ -1543,6 +1541,7 @@ class ConfigCenterView(ui.LayoutView):
     def _build(self):
         self.clear_items()
         container = discord.ui.Container(accent_color=get_current_colour().value)
+        self.add_item(container)
 
         # Header
         container.add_item(discord.ui.TextDisplay("# Ticket-Verwaltung\nBitte wähle zunächst ein Ticket-Panel aus, das du anzeigen oder bearbeiten möchtest."))
@@ -1598,8 +1597,6 @@ class ConfigCenterView(ui.LayoutView):
 
             close_btn.callback = close_cb
             container.add_item(discord.ui.ActionRow(close_btn))
-
-            self.add_item(container)
             return
 
         # Permanente Kategorienavigation (immer sichtbar)
@@ -1613,7 +1610,7 @@ class ConfigCenterView(ui.LayoutView):
         async def goto(inter: discord.Interaction, tab_idx: int):
             self.active_tab = tab_idx
             self._build()
-            await inter.response.edit_message(view=self)
+            await inter.response.edit_message(content=None, view=self)
 
         nav0.callback = lambda inter: goto(inter, 0)
         nav1.callback = lambda inter: goto(inter, 1)
@@ -1663,7 +1660,7 @@ class ConfigCenterView(ui.LayoutView):
                 async def _go_role(inter: discord.Interaction):
                     self.active_tab = 2
                     self._build()
-                    await inter.response.edit_message(view=self)
+                    await inter.response.edit_message(content=None, view=self)
                 fix_role.callback = _go_role
                 actions.append(fix_role)
             if (not isinstance(cat, discord.CategoryChannel) and p.get("category_id")) or not isinstance(cat, discord.CategoryChannel):
@@ -1671,7 +1668,7 @@ class ConfigCenterView(ui.LayoutView):
                 async def _go_cat(inter: discord.Interaction):
                     self.active_tab = 2
                     self._build()
-                    await inter.response.edit_message(view=self)
+                    await inter.response.edit_message(content=None, view=self)
                 fix_cat.callback = _go_cat
                 actions.append(fix_cat)
             if not isinstance(ch, discord.TextChannel):
@@ -1679,7 +1676,7 @@ class ConfigCenterView(ui.LayoutView):
                 async def _go_ch(inter: discord.Interaction):
                     self.active_tab = 2
                     self._build()
-                    await inter.response.edit_message(view=self)
+                    await inter.response.edit_message(content=None, view=self)
                 fix_ch.callback = _go_ch
                 actions.append(fix_ch)
             if actions:
@@ -1704,7 +1701,7 @@ class ConfigCenterView(ui.LayoutView):
             edit_btn = discord.ui.Button(label="Texte bearbeiten", style=discord.ButtonStyle.primary, emoji="📝")
 
             async def edit_cb(inter: discord.Interaction):
-                modal = _EditPanelTextModal(self, init_title=p.get("thema") or "", init_desc="", init_thema=p.get("thema") or "")
+                modal = _EditPanelTextModal(self, init_title=p.get("thema") or "", init_desc=p.get("description") or "")
                 await inter.response.send_modal(modal)
 
             edit_btn.callback = edit_cb
@@ -2007,6 +2004,8 @@ class PanelOverviewView(ui.LayoutView):
         self.guild = guild
         self._panels: list[dict] = []
         self.selected_channel_id: Optional[int] = None
+        self._guild_cfg: dict = {}
+        self._log_channel_id: Optional[int] = None
         self._build()
 
     async def _load(self):
@@ -2046,6 +2045,18 @@ class PanelOverviewView(ui.LayoutView):
             if not any(int(p["channel_id"]) == int(self.selected_channel_id) for p in panels):
                 self.selected_channel_id = None
 
+        # Serverweite Einstellungen laden
+        try:
+            self._guild_cfg = await get_guild_config(self.bot.pool, self.guild.id) # type: ignore[attr-defined]
+            async with self.bot.pool.acquire() as conn: # type: ignore[attr-defined]
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s AND panel_key IS NULL", (self.guild.id,))
+                    row = await cur.fetchone()
+                    self._log_channel_id = int(row[0]) if row and row[0] else None
+        except Exception:
+            self._guild_cfg = {}
+            self._log_channel_id = None
+
     def _label(self, p: dict) -> str:
         ch = self.guild.get_channel(int(p["channel_id"]))
         n = f"#{ch.name}" if isinstance(ch, discord.abc.GuildChannel) else f"#{p['channel_id']}"
@@ -2055,8 +2066,29 @@ class PanelOverviewView(ui.LayoutView):
     def _build(self):
         self.clear_items()
         cont = discord.ui.Container(accent_color=get_current_colour().value)
-        cont.add_item(discord.ui.TextDisplay("# Ticket‑Panels\nBitte wähle zunächst ein Ticket‑Panel aus, das du dir ansehen oder im Control‑Center verwalten möchtest."))
+        cont.add_item(discord.ui.TextDisplay("# Ticket‑System Verwaltung\nVerwalte deine Ticket‑Panels und serverweiten Einstellungen bequem an einem Ort."))
+        
+        # Sektion 1: Globale Einstellungen
+        log_ch = self.guild.get_channel(self._log_channel_id) if self._log_channel_id else None
+        cfg_lines = [
+            "### ⚙️ Serverweite Einstellungen",
+            f"**Log-Kanal:** {log_ch.mention if log_ch else '—'}",
+            human_cfg(self._guild_cfg) if self._guild_cfg else "> Konfiguration konnte nicht geladen werden."
+        ]
+        cont.add_item(discord.ui.TextDisplay("\n".join(cfg_lines)))
+        
+        # Button zum Control-Center (allgemeine Einstellungen)
+        async def global_cfg_cb(inter: discord.Interaction):
+            v = ConfigCenterView(self.bot, inter.user, self.guild)
+            await v.initialize(active_tab=3) # Direkt zu Tab 3 (Ticket-Einstellungen)
+            await inter.response.edit_message(content=None, view=v)
+
+        global_btn = discord.ui.Button(label="System-Einstellungen", style=discord.ButtonStyle.secondary, emoji="🔧")
+        global_btn.callback = global_cfg_cb
+        cont.add_item(discord.ui.ActionRow(global_btn))
+
         cont.add_item(discord.ui.Separator())
+        cont.add_item(discord.ui.TextDisplay("### 🎫 Ticket‑Panels\nWähle ein Panel aus, um Details zu sehen oder es zu bearbeiten."))
 
         async def on_select(inter: discord.Interaction, s: discord.ui.Select):
             try:
@@ -2066,20 +2098,18 @@ class PanelOverviewView(ui.LayoutView):
             await self.refresh(inter)
 
         if self._panels:
-            opts = [discord.SelectOption(label=self._label(p)[:100], value=str(p["channel_id"])) for p in self._panels]
+            opts = [discord.SelectOption(label=self._label(p)[:100], value=str(p["channel_id"]), default=(int(p["channel_id"]) == self.selected_channel_id)) for p in self._panels]
             sel = discord.ui.Select(placeholder="Panel wählen …", options=opts, min_values=1, max_values=1)
             async def _ov_on_select(inter: discord.Interaction, s=sel):
                 await on_select(inter, s)
             sel.callback = _ov_on_select
-            # Select im Container (ActionRow)
             cont.add_item(discord.ui.ActionRow(sel))
         else:
             cont.add_item(discord.ui.TextDisplay("> Keine Panels vorhanden. Starte **/ticket setup**."))
 
-        cont.add_item(discord.ui.Separator())
-
         p = next((x for x in self._panels if int(x["channel_id"]) == int(self.selected_channel_id or 0)), None)
         if p:
+            cont.add_item(discord.ui.Separator())
             ch = self.guild.get_channel(int(p["channel_id"]))
             role = self.guild.get_role(p.get("role_id") or 0)
             cat = self.guild.get_channel(p.get("category_id") or 0)
@@ -2099,15 +2129,15 @@ class PanelOverviewView(ui.LayoutView):
 
             # Aktionen
             refresh_btn = discord.ui.Button(label="Status aktualisieren", style=discord.ButtonStyle.secondary, emoji="🔄")
-            manage_btn = discord.ui.Button(label="Einstellungen öffnen", style=discord.ButtonStyle.primary, emoji="⚙️")
+            manage_btn = discord.ui.Button(label="Panel verwalten", style=discord.ButtonStyle.primary, emoji="⚙️")
 
             async def ref_cb(inter: discord.Interaction):
                 await self.refresh(inter)
 
             async def manage_cb(inter: discord.Interaction):
                 v = ConfigCenterView(self.bot, inter.user, self.guild)
-                await v.initialize(selected_channel_id=int(p["channel_id"]), active_tab=0)
-                await inter.response.edit_message(view=v)
+                await v.initialize(selected_channel_id=int(p["channel_id"]), active_tab=1)
+                await inter.response.edit_message(content=None, view=v)
 
             refresh_btn.callback = ref_cb
             manage_btn.callback = manage_cb
@@ -2128,13 +2158,11 @@ class PanelOverviewView(ui.LayoutView):
         await self._load()
         self._build()
         try:
-            # Bei Komponenten-Interaktionen die Nachricht direkt bearbeiten, um 404 Unknown Webhook zu vermeiden
             if interaction.response.is_done():
-                await interaction.edit_original_response(view=self)
+                await interaction.edit_original_response(content=None, view=self)
             else:
-                await interaction.response.edit_message(view=self)
+                await interaction.response.edit_message(content=None, view=self)
         except discord.NotFound:
-            # Fallback: Nachricht könnte gelöscht/abgelaufen sein – stillschweigend ignorieren
             pass
 
 
@@ -2553,13 +2581,14 @@ class Ticket(app_commands.Group):
             ephemeral=True  # wichtig → nur der User sieht den Wizard
         )
 
-    # Panels auflisten
-    @app_commands.command(name="anzeigen", description="Listet alle Ticket-Panels dieses Servers auf.")
-    @app_commands.checks.has_permissions(manage_channels=True)
+    # Panels auflisten und verwalten
+    @app_commands.command(name="anzeigen", description="Öffnet die Ticket-Verwaltung für Panels und Einstellungen.")
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 5, key=lambda i: (i.guild_id, i.user.id))
     async def ticket_list(self, interaction: discord.Interaction):
         view = PanelOverviewView(self.bot, interaction.guild)
         await view._load()
+        view._build()
         await interaction.response.send_message(view=view, ephemeral=True)
         return None
 
@@ -2648,28 +2677,15 @@ class Ticket(app_commands.Group):
                     await interaction.response.send_message("<:Astra_accept:1141303821176422460> Der Ticket Log ist nun nicht mehr aktiv.", ephemeral=True)
                     return None
 
-    # Konfiguration: Auto-Close & Reminder & Reopen
-    @app_commands.command(name="config", description="Zeigt oder ändert Ticket-Einstellungen.")
-    @app_commands.describe(modus="Was möchtest du tun?")
+    # Alias für /ticket anzeigen
+    @app_commands.command(name="config", description="Alias für /ticket anzeigen (Ticket-Verwaltung).")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def ticket_config(
-            self,
-            interaction: discord.Interaction,
-            modus: Literal["Anzeigen", "Setzen"],
-    ):
-        if modus == "Anzeigen":
-            # Übersicht/Info-Container mit Panel-Auswahl
-            ov = PanelOverviewView(self.bot, interaction.guild)
-            await ov._load()
-            ov._build()
-            await interaction.response.send_message(view=ov, ephemeral=True)
-            return None
-        else:
-            # Control-Center zum Setzen/Verwalten
-            view = ConfigCenterView(self.bot, interaction.user, interaction.guild)
-            await view.initialize()
-            await interaction.response.send_message(view=view, ephemeral=True)
-            return None
+    async def ticket_config(self, interaction: discord.Interaction):
+        view = PanelOverviewView(self.bot, interaction.guild)
+        await view._load()
+        view._build()
+        await interaction.response.send_message(view=view, ephemeral=True)
+        return None
 
 
 # =========================================================
