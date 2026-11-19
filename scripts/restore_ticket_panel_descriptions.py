@@ -173,7 +173,6 @@ class DB:
             "UPDATE ticketsystem "
             "SET panelMsgID=%s, description=%s "
             "WHERE guildID=%s AND channelID=%s AND "
-            "(panelMsgID IS NULL OR panelMsgID=0) AND "
             "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
             "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
             "(thema <=> %s)"
@@ -195,7 +194,6 @@ class DB:
         sel_q = (
             "SELECT COUNT(*) FROM ticketsystem "
             "WHERE guildID=%s AND channelID=%s AND "
-            "(panelMsgID IS NULL OR panelMsgID=0) AND "
             "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
             "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
             "(thema <=> %s)"
@@ -236,7 +234,6 @@ class DB:
             "UPDATE ticketsystem "
             "SET panelMsgID=%s, description=%s "
             "WHERE guildID=%s AND channelID=%s AND "
-            "(panelMsgID IS NULL OR panelMsgID=0) AND "
             "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
             "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
             "(thema <=> %s)"
@@ -245,7 +242,6 @@ class DB:
         q_select_for_update = (
             "SELECT guildID, channelID, roleID, categoryID, thema FROM ticketsystem "
             "WHERE guildID=%s AND channelID=%s AND "
-            "(panelMsgID IS NULL OR panelMsgID=0) AND "
             "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
             "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
             "(thema <=> %s) "
@@ -500,13 +496,16 @@ async def run(args: argparse.Namespace) -> int:
             denied = 0
             errors = 0
 
-            # 1) Bereits gesetzte IDs zuerst klassifizieren (KEEP) – kein Discord-Scan nötig
-            remaining: List[PanelRow] = []
+            # 1) Panels klassifizieren
+            remaining_to_scan: List[Tuple[int, PanelRow, str]] = []
+            row_index = 0
             for p in panels:
                 row_index += 1
                 selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
                 selector_hash = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
-                if p.panel_msg_id and p.panel_msg_id != 0:
+                
+                # Wenn beides (ID und Beschreibung) bereits da ist -> KEEP
+                if p.panel_msg_id and p.panel_msg_id != 0 and p.description and p.description.strip():
                     mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ALREADY_SAVED", message_id=p.panel_msg_id, action="KEEP")
                     results.append(mr)
                     report_rows.append({
@@ -515,23 +514,18 @@ async def run(args: argparse.Namespace) -> int:
                         **selector,
                         "current_message_id": p.panel_msg_id,
                         "candidates_found": 0,
-                        "reason": "panelMsgID already present",
+                        "reason": "panelMsgID and description already present",
                     })
                     already += 1
                 else:
-                    # Merken für gruppierten Scan
-                    remaining.append(p)
+                    # Merken für gruppierten Scan (entweder ID fehlt ODER Beschreibung fehlt)
+                    remaining_to_scan.append((row_index, p, selector_hash))
 
-            # 2) Gruppiert nach (guild, channel) nur einmal scannen und Ergebnisse für alle Panels des Kanals nutzen
+            # 2) Gruppiert nach (guild, channel) scannen
             groups: Dict[Tuple[int, int], List[Tuple[int, PanelRow, str]]] = {}
-            # Wir brauchen weiterhin row_index je Panel; daher speichern wir ihn mit ab
-            row_index = 0
-            for p in remaining:
-                row_index += 1
+            for (idx, p, s_hash) in remaining_to_scan:
                 key = (p.guild_id, p.channel_id)
-                selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
-                selector_hash = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
-                groups.setdefault(key, []).append((row_index, p, selector_hash))
+                groups.setdefault(key, []).append((idx, p, s_hash))
 
             scanned_channels_so_far = 0
             for (g_id, ch_id), entries in groups.items():
