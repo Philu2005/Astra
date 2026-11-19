@@ -1239,9 +1239,19 @@ class ConfigCenterView(ui.LayoutView):
         self._selected_panel: Optional[dict] = None
         self._loading = False
         self.ephemeral = True
+        # Eindeutiger Namespace für diese View-Instanz zur Vermeidung von Duplicate-Custom-ID Fehlern
+        self._ns = uuid.uuid4().hex[:12]
         # Zusatz-Caches (guild-weit)
         self._log_channel_id: Optional[int] = None
         self._guild_cfg: dict = {}
+
+    def _cid(self, name: str) -> str:
+        """Erzeugt eine eindeutige custom_id für eine Komponente innerhalb dieser View."""
+        cid = f"cfg_{self._ns}_{name}"
+        if len(cid) > 100:
+            # Falls zu lang, kürzen wir den Namen, aber behalten den Namespace
+            cid = cid[:100]
+        return cid
 
     async def initialize(self, *, selected_channel_id: Optional[int] = None, active_tab: int = 0):
         """Zentrale Initialisierung der View.
@@ -1574,7 +1584,7 @@ class ConfigCenterView(ui.LayoutView):
             pid = self.selected_channel_id or 0
             # Wir verwenden eine eindeutige custom_id für das Select
             select = discord.ui.Select(
-                custom_id=f"cfg_panel_sel_{self.guild.id}_{pid}",
+                custom_id=self._cid("panel_sel"),
                 placeholder="Wähle ein Panel …", 
                 min_values=1, 
                 max_values=1, 
@@ -1594,7 +1604,7 @@ class ConfigCenterView(ui.LayoutView):
         if self.selected_channel_id is None or self._selected_panel is None:
             container.add_item(discord.ui.TextDisplay("> Noch kein Panel ausgewählt. Nutze die Auswahlliste oben, um fortzufahren."))
             # Footer / Close
-            close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖", custom_id=f"cfg_close_initial_{self.guild.id}")
+            close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖", custom_id=self._cid("close_init"))
 
             async def close_cb(inter: discord.Interaction):
                 await inter.response.defer()
@@ -1608,14 +1618,12 @@ class ConfigCenterView(ui.LayoutView):
             return
 
         # Permanente Kategorienavigation (immer sichtbar)
-        # Wir fügen die ChannelID hinzu, um Kollisionen zu vermeiden, falls mehrere Views offen sind
-        pid = self.selected_channel_id
-        nav0 = discord.ui.Button(label="Übersicht", style=(discord.ButtonStyle.primary if self.active_tab == 0 else discord.ButtonStyle.secondary), emoji="📋", custom_id=f"nav_tab_0_{self.guild.id}_{pid}")
-        nav1 = discord.ui.Button(label="Panel gestalten", style=(discord.ButtonStyle.primary if self.active_tab == 1 else discord.ButtonStyle.secondary), emoji="📝", custom_id=f"nav_tab_1_{self.guild.id}_{pid}")
-        nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=(discord.ButtonStyle.primary if self.active_tab == 2 else discord.ButtonStyle.secondary), emoji="🧩", custom_id=f"nav_tab_2_{self.guild.id}_{pid}")
-        nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=(discord.ButtonStyle.primary if self.active_tab == 3 else discord.ButtonStyle.secondary), emoji="⚙️", custom_id=f"nav_tab_3_{self.guild.id}_{pid}")
-        nav4 = discord.ui.Button(label="Erinnerungen", style=(discord.ButtonStyle.primary if self.active_tab == 4 else discord.ButtonStyle.secondary), emoji="⏰", custom_id=f"nav_tab_4_{self.guild.id}_{pid}")
-        nav5 = discord.ui.Button(label="Protokollierung", style=(discord.ButtonStyle.primary if self.active_tab == 5 else discord.ButtonStyle.secondary), emoji="🗒️", custom_id=f"nav_tab_5_{self.guild.id}_{pid}")
+        nav0 = discord.ui.Button(label="Übersicht", style=(discord.ButtonStyle.primary if self.active_tab == 0 else discord.ButtonStyle.secondary), emoji="📋", custom_id=self._cid("nav_0"))
+        nav1 = discord.ui.Button(label="Panel gestalten", style=(discord.ButtonStyle.primary if self.active_tab == 1 else discord.ButtonStyle.secondary), emoji="📝", custom_id=self._cid("nav_1"))
+        nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=(discord.ButtonStyle.primary if self.active_tab == 2 else discord.ButtonStyle.secondary), emoji="🧩", custom_id=self._cid("nav_2"))
+        nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=(discord.ButtonStyle.primary if self.active_tab == 3 else discord.ButtonStyle.secondary), emoji="⚙️", custom_id=self._cid("nav_3"))
+        nav4 = discord.ui.Button(label="Erinnerungen", style=(discord.ButtonStyle.primary if self.active_tab == 4 else discord.ButtonStyle.secondary), emoji="⏰", custom_id=self._cid("nav_4"))
+        nav5 = discord.ui.Button(label="Protokollierung", style=(discord.ButtonStyle.primary if self.active_tab == 5 else discord.ButtonStyle.secondary), emoji="🗒️", custom_id=self._cid("nav_5"))
 
         async def goto(inter: discord.Interaction, tab_idx: int):
             self.active_tab = tab_idx
@@ -1666,7 +1674,7 @@ class ConfigCenterView(ui.LayoutView):
             # Direkte Reparaturaktionen je nach Problem
             actions: list[discord.ui.Button] = []
             if (role is None and p.get("role_id")) or role is None:
-                fix_role = discord.ui.Button(label="Rolle zuweisen", style=discord.ButtonStyle.primary, emoji="👥", custom_id=f"tab0_fix_role_{self.guild.id}_{pid}")
+                fix_role = discord.ui.Button(label="Rolle zuweisen", style=discord.ButtonStyle.primary, emoji="👥", custom_id=self._cid("tab0_fix_role"))
                 async def _go_role(inter: discord.Interaction):
                     self.active_tab = 2
                     self._build()
@@ -1674,7 +1682,7 @@ class ConfigCenterView(ui.LayoutView):
                 fix_role.callback = _go_role
                 actions.append(fix_role)
             if (not isinstance(cat, discord.CategoryChannel) and p.get("category_id")) or not isinstance(cat, discord.CategoryChannel):
-                fix_cat = discord.ui.Button(label="Kategorie festlegen", style=discord.ButtonStyle.primary, emoji="🗂️", custom_id=f"tab0_fix_cat_{self.guild.id}_{pid}")
+                fix_cat = discord.ui.Button(label="Kategorie festlegen", style=discord.ButtonStyle.primary, emoji="🗂️", custom_id=self._cid("tab0_fix_cat"))
                 async def _go_cat(inter: discord.Interaction):
                     self.active_tab = 2
                     self._build()
@@ -1682,7 +1690,7 @@ class ConfigCenterView(ui.LayoutView):
                 fix_cat.callback = _go_cat
                 actions.append(fix_cat)
             if not isinstance(ch, discord.TextChannel):
-                fix_ch = discord.ui.Button(label="Kanal auswählen", style=discord.ButtonStyle.primary, emoji="🧭", custom_id=f"tab0_fix_ch_{self.guild.id}_{pid}")
+                fix_ch = discord.ui.Button(label="Kanal auswählen", style=discord.ButtonStyle.primary, emoji="🧭", custom_id=self._cid("tab0_fix_ch"))
                 async def _go_ch(inter: discord.Interaction):
                     self.active_tab = 2
                     self._build()
@@ -1708,7 +1716,7 @@ class ConfigCenterView(ui.LayoutView):
             ]
             container.add_item(discord.ui.TextDisplay("\n".join(lines)))
 
-            edit_btn = discord.ui.Button(label="Texte bearbeiten", style=discord.ButtonStyle.primary, emoji="📝", custom_id=f"tab1_edit_{self.guild.id}_{pid}")
+            edit_btn = discord.ui.Button(label="Texte bearbeiten", style=discord.ButtonStyle.primary, emoji="📝", custom_id=self._cid("tab1_edit"))
 
             async def edit_cb(inter: discord.Interaction):
                 modal = _EditPanelTextModal(self, init_title=p.get("thema") or "", init_desc=p.get("description") or "")
@@ -1735,7 +1743,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.TextDisplay("\n".join(lines)))
 
             # Role select
-            role_select = discord.ui.RoleSelect(placeholder="Support-Rolle wählen", min_values=0, max_values=1, custom_id=f"tab2_role_{self.guild.id}_{pid}")
+            role_select = discord.ui.RoleSelect(placeholder="Support-Rolle wählen", min_values=0, max_values=1, custom_id=self._cid("tab2_role"))
 
             async def role_cb(inter: discord.Interaction):
                 role = role_select.values[0] if role_select.values else None
@@ -1745,7 +1753,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(role_select))
 
             # Category select
-            cat_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.category], placeholder="Ticket-Kategorie wählen", min_values=0, max_values=1, custom_id=f"tab2_cat_{self.guild.id}_{pid}")
+            cat_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.category], placeholder="Ticket-Kategorie wählen", min_values=0, max_values=1, custom_id=self._cid("tab2_cat"))
 
             async def cat_cb(inter: discord.Interaction):
                 cat = cat_select.values[0] if cat_select.values else None
@@ -1755,7 +1763,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(cat_select))
 
             # Move (Zielkanal ändern)
-            txt_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Zielkanal für Panel verschieben", min_values=1, max_values=1, custom_id=f"tab2_move_{self.guild.id}_{pid}")
+            txt_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Zielkanal für Panel verschieben", min_values=1, max_values=1, custom_id=self._cid("tab2_move"))
 
             async def move_cb(inter: discord.Interaction):
                 ch = txt_select.values[0] if txt_select.values else None
@@ -1767,7 +1775,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(txt_select))
 
             # Panel löschen (Button)
-            del_btn = discord.ui.Button(label="Panel löschen", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id=f"tab2_del_{self.guild.id}_{pid}")
+            del_btn = discord.ui.Button(label="Panel löschen", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id=self._cid("tab2_del"))
 
             async def del_cb(inter: discord.Interaction):
                 await self._delete_panel(inter)
@@ -1793,8 +1801,8 @@ class ConfigCenterView(ui.LayoutView):
             ]
             container.add_item(discord.ui.TextDisplay("\n".join(lines)))
 
-            btn_auto = discord.ui.Button(label="Auto‑Close setzen", style=discord.ButtonStyle.secondary, emoji="⏱️", custom_id=f"tab3_auto_{self.guild.id}_{pid}")
-            btn_reopen = discord.ui.Button(label="Wiederöffnungsfrist setzen", style=discord.ButtonStyle.secondary, emoji="🔁", custom_id=f"tab3_reopen_{self.guild.id}_{pid}")
+            btn_auto = discord.ui.Button(label="Auto‑Close setzen", style=discord.ButtonStyle.secondary, emoji="⏱️", custom_id=self._cid("tab3_auto"))
+            btn_reopen = discord.ui.Button(label="Wiederöffnungsfrist setzen", style=discord.ButtonStyle.secondary, emoji="🔁", custom_id=self._cid("tab3_reopen"))
 
             class _ValueModal(discord.ui.Modal, title="Wert setzen"):
                 def __init__(self, key: str):
@@ -1840,8 +1848,8 @@ class ConfigCenterView(ui.LayoutView):
                 "Ändern: Button unten nutzen.",
             ]
             container.add_item(discord.ui.TextDisplay("\n".join(lines)))
-            btn_rem = discord.ui.Button(label="Reminder setzen (Minuten)", style=discord.ButtonStyle.secondary, emoji="🔔", custom_id=f"tab4_rem_{self.guild.id}_{pid}")
-            btn_ping = discord.ui.Button(label="Ping‑Throttle (Minuten)", style=discord.ButtonStyle.secondary, emoji="📵", custom_id=f"tab4_ping_{self.guild.id}_{pid}")
+            btn_rem = discord.ui.Button(label="Reminder setzen (Minuten)", style=discord.ButtonStyle.secondary, emoji="🔔", custom_id=self._cid("tab4_rem"))
+            btn_ping = discord.ui.Button(label="Ping‑Throttle (Minuten)", style=discord.ButtonStyle.secondary, emoji="📵", custom_id=self._cid("tab4_ping"))
 
             class _ValueModal2(discord.ui.Modal, title="Wert setzen"):
                 def __init__(self, key: str):
@@ -1871,7 +1879,7 @@ class ConfigCenterView(ui.LayoutView):
             log_ch_id = self._log_channel_id
             container.add_item(discord.ui.TextDisplay(f"Aktueller Log‑Kanal: {('<#'+str(log_ch_id)+'>') if log_ch_id else '—'}"))
 
-            set_sel = discord.ui.ChannelSelect(custom_id=f"tab5_log_sel_{self.guild.id}_{pid}", channel_types=[discord.ChannelType.text], placeholder="Log‑Kanal wählen", min_values=0, max_values=1)
+            set_sel = discord.ui.ChannelSelect(custom_id=self._cid("tab5_log_sel"), channel_types=[discord.ChannelType.text], placeholder="Log‑Kanal wählen", min_values=0, max_values=1)
 
             async def set_log_cb(inter: discord.Interaction):
                 ch = set_sel.values[0] if set_sel.values else None
@@ -1900,9 +1908,8 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(set_sel))
 
         # Footer / Close
-        # Eindeutige ID basierend auf Guild und ChannelID
-        pid = self.selected_channel_id
-        close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖", custom_id=f"cfg_close_final_{self.guild.id}_{pid}")
+        # Eindeutige ID basierend auf Namespace
+        close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖", custom_id=self._cid("close_final"))
 
         async def close_cb(inter: discord.Interaction):
             await inter.response.defer()
@@ -1913,6 +1920,20 @@ class ConfigCenterView(ui.LayoutView):
 
         close_btn.callback = close_cb
         container.add_item(discord.ui.ActionRow(close_btn))
+
+        # Sicherheitsprüfung: Alle interaktiven Komponenten auf doppelte custom_id prüfen
+        cids = []
+        for item in container.children:
+            if isinstance(item, discord.ui.ActionRow):
+                for sub in item.children:
+                    if hasattr(sub, "custom_id") and sub.custom_id:
+                        cids.append(sub.custom_id)
+            elif hasattr(item, "custom_id") and item.custom_id:
+                cids.append(item.custom_id)
+        
+        dupes = [cid for cid in cids if cids.count(cid) > 1]
+        if dupes:
+            logging.getLogger("astra.ticket").error(f"Duplicate custom_id detected in ConfigCenterView: {set(dupes)}")
 
         self.add_item(container)
 
