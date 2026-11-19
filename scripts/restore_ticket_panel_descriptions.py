@@ -189,46 +189,48 @@ class DB:
                         errors.append(f"Selector not unique or missing (count={cnt}) for guild={g} channel={ch} thema={thema}")
         return (len(errors) == 0), errors
 
-    async def apply_panel_updates_batch(self, updates: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Apply all updates (msgID, description, panel_key) in a single transaction.
-        
-        updates: list of dicts with keys: guild_id, channel_id, role_id, category_id, thema, 
-                 message_id (optional), description (optional), panel_key (optional)
-        """
-        result: Dict[str, Any] = {
-            "planned": len(updates),
-            "attempted": 0,
-            "committed": 0,
-            "applied": 0,
-            "rolled_back": False,
-            "errors": [],
+    async def apply_all_updates(self, panel_updates: List[Dict[str, Any]], ticket_mappings: List[Dict[str, Any]], ac_mappings: List[Tuple[str, int]]) -> Dict[str, Any]:
+        """Führt alle Datenbankänderungen (Panels, Tickets, Autoclose) in einer gemeinsamen Transaktion atomar aus."""
+        result = {
+            "panels": {"planned": len(panel_updates), "applied": 0},
+            "tickets": {"planned": len(ticket_mappings), "applied": 0},
+            "autoclose": {"planned": len(ac_mappings), "applied": 0},
+            "committed": False,
+            "errors": []
         }
-        if not updates:
+        if not (panel_updates or ticket_mappings or ac_mappings):
+            result["committed"] = True
             return result
-
-        q_select_for_update = (
-            "SELECT guildID, channelID, roleID, categoryID, thema FROM ticketsystem "
-            "WHERE guildID=%s AND channelID=%s AND "
-            "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
-            "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
-            "(thema <=> %s) "
-            "FOR UPDATE"
-        )
 
         async with self.pool.acquire() as conn:
             try:
                 await conn.begin()
                 async with conn.cursor() as cur:
-                    for u in updates:
+                    # 1. Panels
+                    for u in panel_updates:
                         g, ch, rid, cid, th = u["guild_id"], u["channel_id"], u["role_id"], u["category_id"], u["thema"]
                         
-                        # 1) Lock row
-                        await cur.execute(q_select_for_update, (int(g), int(ch), rid, rid, cid, cid, th))
+                        # Lock & Verify uniqueness (re-check before apply)
+                        q_sel = (
+                            "SELECT panel_key FROM ticketsystem "
+                            "WHERE guildID=%s AND channelID=%s AND "
+                            "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
+                            "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
+                            "(thema <=> %s) FOR UPDATE"
+                        )
+                        await cur.execute(q_sel, (int(g), int(ch), rid, rid, cid, cid, th))
                         rows = await cur.fetchall()
                         if len(rows) != 1:
-                            raise RuntimeError(f"Selector not unique for guild={g} channel={ch} thema={th}")
+                            raise RuntimeError(f"Panel selector no longer unique or missing for guild={g} channel={ch} thema={th}")
+                        
+                        existing_key = rows[0][0]
+                        if existing_key and "panel_key" in u and u["panel_key"] != existing_key:
+                             # Falls der Key in der DB bereits existiert, darf er nicht durch den generierten Key überschrieben werden
+                             # Wir überspringen das Setzen des Keys im Update, falls er schon da ist, 
+                             # oder werfen Fehler wenn es ein Konflikt ist.
+                             # Hier: Wenn ein anderer Key da ist -> Fehler.
+                             raise RuntimeError(f"Panel for guild={g} channel={ch} already has a DIFFERENT key: {existing_key}")
 
-                        # 2) Build UPDATE dynamically based on what we want to change
                         upd_fields = []
                         upd_vals = []
                         if "message_id" in u:
@@ -237,78 +239,85 @@ class DB:
                         if "description" in u:
                             upd_fields.append("description=%s")
                             upd_vals.append(u["description"])
-                        if "panel_key" in u:
+                        if "panel_key" in u and not existing_key:
                             upd_fields.append("panel_key=%s")
                             upd_vals.append(u["panel_key"])
 
-                        if not upd_fields:
-                            continue
+                        if upd_fields:
+                            upd_q = (
+                                f"UPDATE ticketsystem SET {', '.join(upd_fields)} "
+                                "WHERE guildID=%s AND channelID=%s AND "
+                                "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
+                                "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
+                                "(thema <=> %s)"
+                            )
+                            upd_vals.extend([int(g), int(ch), rid, rid, cid, cid, th])
+                            await cur.execute(upd_q, tuple(upd_vals))
+                            if cur.rowcount != 1:
+                                raise RuntimeError(f"Failed to update panel for guild={g} channel={ch}")
+                        result["panels"]["applied"] += 1
 
-                        upd_q = f"UPDATE ticketsystem SET {', '.join(upd_fields)} WHERE guildID=%s AND channelID=%s AND ((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND ((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND (thema <=> %s)"
-                        upd_vals.extend([int(g), int(ch), rid, rid, cid, cid, th])
+                    # 2. Tickets
+                    for m in ticket_mappings:
+                        key, g_id, ch_id = m["panel_key"], m["guild_id"], m["channel_id"]
+                        # Verify uniqueness & empty key
+                        await cur.execute(
+                            "SELECT panel_key FROM ticketsystem_channels WHERE guildID=%s AND channelID=%s FOR UPDATE",
+                            (int(g_id), int(ch_id))
+                        )
+                        t_rows = await cur.fetchall()
+                        if len(t_rows) != 1:
+                            raise RuntimeError(f"Ticket channelID {ch_id} not found or not unique in guild {g_id}")
                         
-                        await cur.execute(upd_q, tuple(upd_vals))
-                        result["attempted"] += 1
-                        if cur.rowcount != 1:
-                            raise RuntimeError(f"Unsafe update for guild={g} channel={ch} thema={th}")
+                        if t_rows[0][0]: # Key already present
+                            if t_rows[0][0] == key:
+                                result["tickets"]["applied"] += 1 # Already correct
+                                continue
+                            raise RuntimeError(f"Ticket {ch_id} already has a DIFFERENT key: {t_rows[0][0]}")
 
-                await conn.commit()
-                result["committed"] = result["attempted"]
-                result["applied"] = result["committed"]
-            except Exception as e:
-                result["errors"].append(str(e))
-                result["rolled_back"] = True
-                await conn.rollback()
-                result["committed"] = 0
-                result["applied"] = 0
-            return result
-
-    async def fetch_tickets_to_map(self) -> List[Dict[str, Any]]:
-        """Holt alle Tickets aus ticketsystem_channels, die noch keinen panel_key haben."""
-        q = "SELECT guildID, channelID, opened, msgID FROM ticketsystem_channels WHERE panel_key IS NULL OR panel_key = ''"
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(q)
-                rows = await cur.fetchall()
-                return [{"guild_id": r[0], "channel_id": r[1], "opener_id": r[2], "msg_id": r[3]} for r in rows]
-
-    async def apply_ticket_mapping(self, mappings: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Ordnet Tickets einem panel_key zu.
-        
-        mappings: list of dicts with: panel_key, guild_id, channel_id
-        """
-        result = {"planned": len(mappings), "applied": 0, "errors": []}
-        if not mappings: return result
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                for m in mappings:
-                    key, g_id, ch_id = m["panel_key"], m["guild_id"], m["channel_id"]
-                    try:
-                        # Absicherung: Guild-ID und Ticket-Channel-ID gemeinsam verwenden.
-                        # Nur Datensätze mit leerem panel_key aktualisieren.
-                        # Bestehende Keys niemals überschreiben.
                         await cur.execute(
                             "UPDATE ticketsystem_channels SET panel_key=%s "
                             "WHERE guildID=%s AND channelID=%s AND (panel_key IS NULL OR panel_key = '')",
                             (key, int(g_id), int(ch_id))
                         )
-                        cnt = cur.rowcount
-                        if cnt == 0:
-                            # Prüfen ob er schon gesetzt war
-                            await cur.execute("SELECT panel_key FROM ticketsystem_channels WHERE guildID=%s AND channelID=%s", (int(g_id), int(ch_id)))
-                            row = await cur.fetchone()
-                            if row and row[0]:
-                                result["errors"].append(f"Ticket {ch_id} already has a key: {row[0]}")
-                            else:
-                                result["errors"].append(f"Ticket {ch_id} not found for update (or already has key)")
-                        elif cnt > 1:
-                            # Das sollte bei channelID als Teil des PK eigentlich nicht passieren, aber zur Sicherheit:
-                            raise RuntimeError(f"Unexpected rowcount {cnt} for ticket {ch_id}")
-                        else:
-                            result["applied"] += 1
-                    except Exception as e:
-                        result["errors"].append(f"Ticket {ch_id} failed: {e}")
-            await conn.commit()
+                        if cur.rowcount != 1:
+                            raise RuntimeError(f"Failed to map ticket {ch_id}")
+                        result["tickets"]["applied"] += 1
+
+                    # 3. Autoclose
+                    for key, ch_id in ac_mappings:
+                        # Verify existence (ticket must exist and be mapped/to be mapped to this key)
+                        await cur.execute(
+                            "SELECT panel_key FROM ticket_autoclose_state WHERE channelID=%s FOR UPDATE",
+                            (int(ch_id),)
+                        )
+                        ac_rows = await cur.fetchall()
+                        if len(ac_rows) == 0:
+                            # Autoclose-Eintrag fehlt? Ignorieren oder Fehler?
+                            # Da Autoclose optional ist, schauen wir ob es den Datensatz überhaupt gibt.
+                            continue
+                        
+                        if ac_rows[0][0]:
+                             if ac_rows[0][0] == key:
+                                 result["autoclose"]["applied"] += 1
+                                 continue
+                             raise RuntimeError(f"Autoclose for {ch_id} already has a DIFFERENT key: {ac_rows[0][0]}")
+
+                        await cur.execute(
+                            "UPDATE ticket_autoclose_state SET panel_key=%s "
+                            "WHERE channelID=%s AND (panel_key IS NULL OR panel_key = '')",
+                            (key, int(ch_id))
+                        )
+                        if cur.rowcount != 1:
+                            raise RuntimeError(f"Failed to map autoclose for {ch_id}")
+                        result["autoclose"]["applied"] += 1
+
+                await conn.commit()
+                result["committed"] = True
+            except Exception as e:
+                await conn.rollback()
+                result["errors"].append(str(e))
+                result["committed"] = False
         return result
 
     async def fetch_autoclose_states_to_map(self) -> List[Dict[str, Any]]:
@@ -603,15 +612,19 @@ async def run(args: argparse.Namespace) -> int:
                     # Update für den Key einplanen
                     panel_updates.append({**selector, "panel_key": current_key})
                 else:
+                    # Hinweis: KEY_ALREADY_SAVED bedeutet der Key ist in der DB.
+                    # Wenn wir hier ALREADY_SAVED setzen, meinen wir das Management.
                     already_keys += 1
                 
                 p.panel_key = current_key # Im Objekt halten für später
                 key_to_panel_map[current_key] = p
 
                 # b) Message ID / Description Management
+                found_msg_id = None
                 if p.panel_msg_id and p.panel_msg_id != 0 and p.description and p.description.strip():
                     already_msg_ids += 1
-                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, "ALREADY_SAVED", message_id=p.panel_msg_id, action="KEEP", panel_key=current_key, key_status=key_status)
+                    status = "KEY_ALREADY_SAVED" if p.panel_key and key_status == "KEY_ALREADY_SAVED" else "PANEL_HAS_MSGID"
+                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, status, message_id=p.panel_msg_id, action="KEEP", panel_key=current_key, key_status=key_status)
                     results.append(mr)
                     report_rows.append({
                         "row_index": row_index, "row_selector_hash": selector_hash,
@@ -846,20 +859,22 @@ async def run(args: argparse.Namespace) -> int:
 
             # Apply phase
             if args.apply:
-                if panel_updates:
-                    p_res = await db.apply_panel_updates_batch(panel_updates)
-                    print(f"Panels applied: {p_res['applied']}/{p_res['planned']} (Rollback: {p_res['rolled_back']})")
-                    if p_res["errors"]: print(f"Errors: {p_res['errors']}")
+                # Führe alle Datenbankänderungen in einer gemeinsamen Transaktion atomar aus
+                res = await db.apply_all_updates(panel_updates, ticket_mappings, ac_mappings)
                 
-                if ticket_mappings:
-                    t_res = await db.apply_ticket_mapping(ticket_mappings)
-                    print(f"Tickets mapped: {t_res['applied']}/{t_res['planned']}")
-                    if t_res["errors"]: print(f"Errors: {t_res['errors']}")
-
-                if ac_mappings:
-                    ac_res = await db.apply_autoclose_mapping(ac_mappings)
-                    print(f"Autoclose states mapped: {ac_res['applied']}/{ac_res['planned']}")
-                    if ac_res["errors"]: print(f"Errors: {ac_res['errors']}")
+                print("\n=== Apply Results ===")
+                if res["committed"]:
+                    print(f"Migration COMMITTED successfully.")
+                    print(f"  Panels updated : {res['panels']['applied']}/{res['panels']['planned']}")
+                    print(f"  Tickets mapped : {res['tickets']['applied']}/{res['tickets']['planned']}")
+                    print(f"  Autoclose mapped: {res['autoclose']['applied']}/{res['autoclose']['planned']}")
+                else:
+                    print(f"Migration FAILED and ROLLED BACK.")
+                    if res["errors"]:
+                        print(f"Errors encountered:")
+                        for err in res["errors"]:
+                            print(f"  - {err}")
+                    print("\nNo changes were saved to the database.")
             else:
                 print("\nDry-run mode: no database changes were made. Use --apply to save keys and mappings.")
         except Exception:
