@@ -463,10 +463,9 @@ async def run(args: argparse.Namespace) -> int:
         return 3
 
     intents = discord.Intents.default()
-    # discord.py v2: message_content is required to read history/content, 
-    # and history is just a method on the channel. Intents.messages is from v1.
+    # discord.py v2: message_content is required to read history/content
     try:
-        intents.message_content = True 
+        intents.message_content = True
     except AttributeError:
         pass
 
