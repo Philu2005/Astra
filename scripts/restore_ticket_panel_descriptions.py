@@ -272,16 +272,40 @@ class DB:
                 rows = await cur.fetchall()
                 return [{"guild_id": r[0], "channel_id": r[1], "opener_id": r[2], "msg_id": r[3]} for r in rows]
 
-    async def apply_ticket_mapping(self, mappings: List[Tuple[str, int]]) -> Dict[str, Any]:
-        """Ordnet Tickets einem panel_key zu. mappings: list of (panel_key, channel_id)"""
+    async def apply_ticket_mapping(self, mappings: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Ordnet Tickets einem panel_key zu.
+        
+        mappings: list of dicts with: panel_key, guild_id, channel_id
+        """
         result = {"planned": len(mappings), "applied": 0, "errors": []}
         if not mappings: return result
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                for key, ch_id in mappings:
+                for m in mappings:
+                    key, g_id, ch_id = m["panel_key"], m["guild_id"], m["channel_id"]
                     try:
-                        await cur.execute("UPDATE ticketsystem_channels SET panel_key=%s WHERE channelID=%s", (key, ch_id))
-                        result["applied"] += cur.rowcount
+                        # Absicherung: Guild-ID und Ticket-Channel-ID gemeinsam verwenden.
+                        # Nur Datensätze mit leerem panel_key aktualisieren.
+                        # Bestehende Keys niemals überschreiben.
+                        await cur.execute(
+                            "UPDATE ticketsystem_channels SET panel_key=%s "
+                            "WHERE guildID=%s AND channelID=%s AND (panel_key IS NULL OR panel_key = '')",
+                            (key, int(g_id), int(ch_id))
+                        )
+                        cnt = cur.rowcount
+                        if cnt == 0:
+                            # Prüfen ob er schon gesetzt war
+                            await cur.execute("SELECT panel_key FROM ticketsystem_channels WHERE guildID=%s AND channelID=%s", (int(g_id), int(ch_id)))
+                            row = await cur.fetchone()
+                            if row and row[0]:
+                                result["errors"].append(f"Ticket {ch_id} already has a key: {row[0]}")
+                            else:
+                                result["errors"].append(f"Ticket {ch_id} not found for update (or already has key)")
+                        elif cnt > 1:
+                            # Das sollte bei channelID als Teil des PK eigentlich nicht passieren, aber zur Sicherheit:
+                            raise RuntimeError(f"Unexpected rowcount {cnt} for ticket {ch_id}")
+                        else:
+                            result["applied"] += 1
                     except Exception as e:
                         result["errors"].append(f"Ticket {ch_id} failed: {e}")
             await conn.commit()
@@ -570,12 +594,10 @@ async def run(args: argparse.Namespace) -> int:
                 current_key = p.panel_key
                 key_status = "KEY_ALREADY_SAVED"
                 if not current_key:
-                    # Stabile UUID Generierung basierend auf dem Selektor für deterministischen Dry-Run
-                    # Aber wir nutzen uuid4 für echte neue Keys.
-                    # WICHTIG: Dry-Run darf keine Keys in der DB speichern.
-                    # Die Zuordnung muss beim Apply eindeutig und dauerhaft sein.
-                    # Da wir hier im Speicher arbeiten, ist das OK.
-                    current_key = str(uuid.uuid4())
+                    # Stabile UUID Generierung basierend auf dem Selektor für deterministische Dry-Run
+                    # Wir nutzen den Selector-Hash als Seed für einen deterministischen Namespace
+                    NAMESPACE_ASTRA = uuid.UUID('12345678-1234-5678-1234-567812345678')
+                    current_key = str(uuid.uuid5(NAMESPACE_ASTRA, selector_hash))
                     key_status = "KEY_GENERATED"
                     generated_keys += 1
                     # Update für den Key einplanen
@@ -712,7 +734,7 @@ async def run(args: argparse.Namespace) -> int:
             for p in panels:
                 panels_by_guild.setdefault(p.guild_id, []).append(p)
             
-            ticket_mappings: List[Tuple[str, int]] = [] # (key, channel_id)
+            ticket_mappings: List[Dict[str, Any]] = [] # list of dict with panel_key, guild_id, channel_id
             ticket_results = []
             
             mapped_tickets = 0
@@ -743,7 +765,11 @@ async def run(args: argparse.Namespace) -> int:
                 
                 if len(possible_panels) == 1:
                     target_p = possible_panels[0]
-                    ticket_mappings.append((target_p.panel_key, t["channel_id"]))
+                    ticket_mappings.append({
+                        "panel_key": target_p.panel_key,
+                        "guild_id": g_id,
+                        "channel_id": t["channel_id"]
+                    })
                     ticket_results.append({**t, "status": "MAPPED", "panel_key": target_p.panel_key, "thema": target_p.thema})
                     mapped_tickets += 1
                 elif len(possible_panels) > 1:
@@ -762,7 +788,7 @@ async def run(args: argparse.Namespace) -> int:
                 ch_id = ac["channel_id"]
                 # Suche das Ticket in ticketsystem_channels (das sollte schon gemappt sein oder wir nehmen die Zuordnung von oben)
                 # Da wir hier in on_ready sind, nutzen wir ticket_mappings als Cache
-                p_key = next((m[0] for m in ticket_mappings if m[1] == ch_id), None)
+                p_key = next((m["panel_key"] for m in ticket_mappings if m["channel_id"] == ch_id), None)
                 if not p_key:
                     # Fallback: DB fragen, falls das Ticket schon in einem früheren Run gemappt wurde
                     async with db.pool.acquire() as conn:
