@@ -439,14 +439,33 @@ class BotIPC:
             for uid_raw in target_ids:
                 try:
                     uid = int(uid_raw)
-                    member = fetch_member_threadsafe(self.bot, g, uid, timeout=2.0)
-                    if member:
-                        results[str(uid)] = {
-                            "id": str(member.id),
-                            "username": member.name,
-                            "display_name": member.display_name,
-                            "avatar": str(member.display_avatar.url if member.display_avatar else ""),
-                        }
+                    member = g.get_member(uid)
+
+                    if member is None:
+                        try:
+                            member = await g.fetch_member(uid)
+                        except discord.NotFound:
+                            continue
+                        except discord.Forbidden:
+                            logger.warning(
+                                "Keine Berechtigung zum Abrufen von Mitglied %s auf Guild %s",
+                                uid, guild_id
+                            )
+                            continue
+                        except discord.HTTPException as e:
+                            logger.warning(
+                                "Discord-API-Fehler beim Abruf von Mitglied %s auf Guild %s: %s",
+                                uid, guild_id, e
+                            )
+                            continue
+
+                    results[str(uid)] = {
+                        "id": str(member.id),
+                        "username": member.name,
+                        "display_name": member.display_name,
+                        "avatar": str(member.display_avatar.url if member.display_avatar else ""),
+                    }
+
                 except (ValueError, TypeError):
                     continue
 
