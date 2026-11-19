@@ -2010,10 +2010,11 @@ async def delete_panel_completely(bot: commands.Bot, guild_id: int, panel_key: s
 # =========================================================
 
 class PanelOverviewView(ui.LayoutView):
-    def __init__(self, bot: commands.Bot, guild: discord.Guild):
+    def __init__(self, bot: commands.Bot, guild: discord.Guild, is_config_mode: bool = False):
         super().__init__(timeout=120)
         self.bot = bot
         self.guild = guild
+        self.is_config_mode = is_config_mode
         self._panels: list[dict] = []
         self.selected_channel_id: Optional[int] = None
         self._guild_cfg: dict = {}
@@ -2151,7 +2152,19 @@ class PanelOverviewView(ui.LayoutView):
                 await self.refresh(inter)
 
             refresh_btn.callback = ref_cb
-            cont.add_item(discord.ui.ActionRow(refresh_btn))
+
+            if self.is_config_mode:
+                manage_btn = discord.ui.Button(label="Panel verwalten", style=discord.ButtonStyle.primary, emoji="⚙️", custom_id=f"ov_manage_{self.guild.id}_{pid}")
+
+                async def manage_cb(inter: discord.Interaction):
+                    v = ConfigCenterView(self.bot, inter.user, self.guild)
+                    await v.initialize(selected_channel_id=int(p["channel_id"]), active_tab=1)
+                    await inter.response.edit_message(content=None, view=v)
+
+                manage_btn.callback = manage_cb
+                cont.add_item(discord.ui.ActionRow(refresh_btn, manage_btn))
+            else:
+                cont.add_item(discord.ui.ActionRow(refresh_btn))
 
         close = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, custom_id=f"ov_close_{self.guild.id}_{self.selected_channel_id or 0}")
         async def _ov_close(inter: discord.Interaction):
@@ -2596,7 +2609,7 @@ class Ticket(app_commands.Group):
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 5, key=lambda i: (i.guild_id, i.user.id))
     async def ticket_list(self, interaction: discord.Interaction):
-        view = PanelOverviewView(self.bot, interaction.guild)
+        view = PanelOverviewView(self.bot, interaction.guild, is_config_mode=False)
         await view._load()
         view._build()
         await interaction.response.send_message(view=view, ephemeral=True)
@@ -2691,7 +2704,7 @@ class Ticket(app_commands.Group):
     @app_commands.command(name="config", description="Alias für /ticket anzeigen (Ticket-Verwaltung).")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def ticket_config(self, interaction: discord.Interaction):
-        view = PanelOverviewView(self.bot, interaction.guild)
+        view = PanelOverviewView(self.bot, interaction.guild, is_config_mode=True)
         await view._load()
         view._build()
         await interaction.response.send_message(view=view, ephemeral=True)
