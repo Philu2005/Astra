@@ -597,8 +597,13 @@ async def run(args: argparse.Namespace) -> int:
             # Wir machen einen ersten Pass, um alle KEEPs zu identifizieren
             for p in panels:
                 if p.panel_msg_id:
-                    # Wir prüfen später im Loop, ob die Nachricht noch existiert
+                    # Wir prüfen in den Channel-Scans, ob sie existieren
                     pass
+            
+            # Wir müssen sicherstellen, dass wir die occupied_messages Map global füllen
+            # Bevor wir mit dem Matching neuer Kandidaten beginnen.
+            # Da die Panels nach Channel gruppiert verarbeitet werden, 
+            # machen wir die Registrierung innerhalb des Channel-Loops für die bereits gespeicherten IDs.
 
             # Liste der geplanten Updates (msgID, description, panel_key)
             panel_updates: List[Dict[str, Any]] = []

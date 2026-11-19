@@ -2224,7 +2224,6 @@ class DevTools(commands.Cog):
         # Duplikat-Ermittlung (gleiche Guild/Channel/Thema/Role/Category)
         dup_map = {}
         for e in report_rows:
-            # Einige ältere Skriptversionen könnten Zeilen als JSON-Strings ausgegeben haben.
             if not isinstance(e, dict):
                 if isinstance(e, str):
                     try:
@@ -2235,7 +2234,9 @@ class DevTools(commands.Cog):
                 else: continue
             
             status = normalize_status(str(get(e, "status", "UNKNOWN")))
-            counters[status] = counters.get(status, 0) + 1
+            if status not in counters:
+                counters[status] = 0
+            counters[status] += 1
             
             # Aktionszähler
             action_raw = get(e, "action", None)
@@ -2278,11 +2279,13 @@ class DevTools(commands.Cog):
             f"  • Autoclose gemappt: {report_meta.get('mapped_autoclose', 0)}\n"
             
             f"\nStatus-Übersicht:\n"
-            f"  • MATCH_FOUND: {counters['MATCH_FOUND']}\n"
-            f"  • ALREADY_SAVED: {counters['ALREADY_SAVED']}\n"
-            f"  • NO_MATCH: {counters['NO_MATCH']}\n"
-            f"  • MULTIPLE_MATCHES: {counters['MULTIPLE_MATCHES']}\n"
-            f"  • SCAN_ERROR: {counters['SCAN_ERROR']}\n"
+            f"  • VERIFIED: {counters.get('PANEL_MESSAGE_VERIFIED', 0)}\n"
+            f"  • FOUND: {counters.get('PANEL_MESSAGE_FOUND', 0)}\n"
+            f"  • MISSING: {counters.get('PANEL_MESSAGE_MISSING', 0)}\n"
+            f"  • AMBIGUOUS: {counters.get('PANEL_MESSAGE_AMBIGUOUS', 0)}\n"
+            f"  • STALE: {counters.get('PANEL_MESSAGE_STALE', 0)}\n"
+            f"  • COLLISION: {counters.get('PANEL_MESSAGE_COLLISION', 0)}\n"
+            f"  • SCAN_ERROR: {counters.get('SCAN_ERROR', 0)}\n"
             
             f"\nGeplante Aktionen:\n"
             f"  • UPDATE: {action_counts['UPDATE']}\n"
