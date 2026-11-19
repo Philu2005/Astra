@@ -132,28 +132,28 @@ class modlog(commands.Cog):
                         await channel.send(embed=embed)
 
     @commands.Cog.listener()
-    async def on_guild_channel_create(self, channelname):
-        if await is_temp_category(self.bot, channelname):
+    async def on_guild_channel_create(self, channel):
+        if await is_temp_category(self.bot, channel):
             return
 
-        if "ticket-" in channelname.name:
+        if channel.name.startswith("ticket-"):
             return
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(
                     "SELECT channelID FROM modlog WHERE serverID = %s",
-                    (channelname.guild.id,)
+                    (channel.guild.id,)
                 )
                 result = await cursor.fetchone()
                 if not result:
                     return
 
-        channel = channelname.guild.get_channel(int(result[0]))
-        if not channel:
+        modlog_channel = channel.guild.get_channel(int(result[0]))
+        if not modlog_channel:
             return
 
-        async for entry in channelname.guild.audit_logs(
+        async for entry in channel.guild.audit_logs(
                 action=discord.AuditLogAction.channel_create,
                 limit=1
         ):
@@ -163,34 +163,34 @@ class modlog(commands.Cog):
                 colour=discord.Colour.green(),
                 timestamp=discord.utils.utcnow()
             )
-            embed.add_field(name="Kanalname", value=channelname.name, inline=True)
-            embed.add_field(name="Kategorie", value=channelname.category, inline=True)
-            await channel.send(embed=embed)
+            embed.add_field(name="Kanalname", value=channel.name, inline=True)
+            embed.add_field(name="Kategorie", value=channel.category, inline=True)
+            await modlog_channel.send(embed=embed)
             break
 
     @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channelname):
-        if await is_temp_category(self.bot, channelname):
+    async def on_guild_channel_delete(self, channel):
+        if await is_temp_category(self.bot, channel):
             return
 
-        if "ticket-" in channelname.name:
+        if channel.name.startswith("ticket-"):
             return
 
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(
                     "SELECT channelID FROM modlog WHERE serverID = %s",
-                    (channelname.guild.id,)
+                    (channel.guild.id,)
                 )
                 result = await cursor.fetchone()
                 if not result:
                     return
 
-        channel = channelname.guild.get_channel(int(result[0]))
-        if not channel:
+        modlog_channel = channel.guild.get_channel(int(result[0]))
+        if not modlog_channel:
             return
 
-        async for entry in channelname.guild.audit_logs(
+        async for entry in channel.guild.audit_logs(
                 action=discord.AuditLogAction.channel_delete,
                 limit=1
         ):
@@ -200,14 +200,17 @@ class modlog(commands.Cog):
                 colour=discord.Colour.red(),
                 timestamp=discord.utils.utcnow()
             )
-            embed.add_field(name="Kanalname", value=channelname.name, inline=True)
-            embed.add_field(name="Kategorie", value=channelname.category, inline=True)
-            await channel.send(embed=embed)
+            embed.add_field(name="Kanalname", value=channel.name, inline=True)
+            embed.add_field(name="Kategorie", value=channel.category, inline=True)
+            await modlog_channel.send(embed=embed)
             break
 
     @commands.Cog.listener()
     async def on_guild_channel_update(self, before, after):
         if await is_temp_category(self.bot, before):
+            return
+
+        if before.name.startswith("ticket-") or after.name.startswith("ticket-"):
             return
 
         async with self.bot.pool.acquire() as conn:
