@@ -1816,36 +1816,41 @@ def put_ticket_panel_config(guild_id: int, channel_id: int):
         logger.exception("Failed to load panel for config update")
         return _api_error(500, "load_failed", "Failed to load panel")
 
-    # Live-Guild-Prüfung für neue IDs, falls gesetzt (Kategorie/Kanal)
     if new_channel_id_int is not None:
-        bot = get_bot_instance()
-        try:
-            belongs = submit_bot_task(
-                _bot_channel_belongs_to_guild(
-                    bot,
-                    guild_id,
-                    new_channel_id_int
-                ),
-                timeout=5.0
-            )
-        except Exception:
-            logger.exception(
-                "Ticket panel move: channel validation failed "
-                "(guild_id=%s, channel_id=%s)",
+        # Channel-Zugehörigkeit über den IPC-Server des Bot-Prozesses prüfen.
+        sc, ipc_data = _ipc_request(
+            "/ipc/resources/channels",
+            {"guild_id": str(guild_id)},
+            timeout=8.0,
+        )
+
+        if sc != 200 or not ipc_data.get("success"):
+            logger.error(
+                "Ticket panel move: IPC channel validation failed "
+                "(guild_id=%s, status=%s, response=%s)",
                 guild_id,
-                new_channel_id_int
+                sc,
+                ipc_data,
             )
             return _api_error(
-                500,
-                "channel_validation_failed",
-                "Failed to validate target channel"
+                502,
+                "channel_validation_unavailable",
+                "Could not validate target channel",
             )
+
+        channels = ipc_data.get("channels", [])
+
+        belongs = any(
+            str(channel.get("id")) == str(new_channel_id_int)
+            for channel in channels
+            if isinstance(channel, dict)
+        )
 
         if not belongs:
             return _api_error(
                 400,
                 "invalid_channel",
-                "Channel does not belong to the guild"
+                "Channel does not belong to the guild",
             )
 
     # DB-Update-Helfer für ticketsystem (thema/roleID/categoryID/channelID)
