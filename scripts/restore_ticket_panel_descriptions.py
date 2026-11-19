@@ -659,8 +659,8 @@ async def run(args: argparse.Namespace) -> int:
                 prefiltered = []
                 try:
                     t0 = time.perf_counter()
-                    # Wir erhöhen das Limit auf 5000 Nachrichten, um wirklich ALLES zu finden
-                    prefiltered, meta = await scanner.scan_channel_messages(guild, ch_id, max_messages=5000)
+                    # Wir erhöhen das Limit auf max_messages, falls angegeben
+                    prefiltered, meta = await scanner.scan_channel_messages(guild, ch_id, max_messages=args.max_messages)
                     dt = time.perf_counter() - t0
                     total_scanned_channels += 1
                     total_scanned_messages += int(meta.get("scanned") or 0)
@@ -680,6 +680,7 @@ async def run(args: argparse.Namespace) -> int:
                         if match:
                             msg_verified = True
                             status = "PANEL_MESSAGE_VERIFIED"
+                            already_msg_ids += 1
                         else:
                             status = "PANEL_MESSAGE_STALE" # ID da, aber Nachricht nicht gefunden
                     
@@ -687,24 +688,40 @@ async def run(args: argparse.Namespace) -> int:
                         # Suche nach passenden Kandidaten
                         cands = []
                         for item in prefiltered:
-                            thema = p.thema or ""
-                            # Thema Match (exakt oder Start)
+                            thema = (p.thema or "").strip()
+                            thema_lower = thema.lower()
+                            title_lower = item["title_text"].lower()
+                            
                             score = 0
-                            if item["title_text"] == thema: score += 10
-                            elif thema and item["title_text"].startswith(thema): score += 5
+                            # Exakter Match (Case Insensitive)
+                            if title_lower == thema_lower:
+                                score += 20
+                            # Tippfehler/Varianten Match
+                            elif thema_lower in ["support", "spport"] and title_lower in ["support", "spport"]:
+                                score += 15
+                            elif thema and title_lower.startswith(thema_lower):
+                                score += 10
                             
                             # Beschreibung Match
-                            if p.description and p.description in item["description_text"]: score += 5
+                            if p.description and p.description in item["description_text"]:
+                                score += 5
                             
-                            if score >= 5:
+                            # Footer Match (Wichtig für Unterscheidung bei gleichen Titeln)
+                            if item["has_footer"]:
+                                score += 3
+                            
+                            if score >= 10:
                                 cands.append((score, item))
                         
-                        cands.sort(key=lambda x: x[0], reverse=True)
+                        cands.sort(key=lambda x: (x[0], x[1]["message_id"]), reverse=True)
                         
                         if not cands:
                             mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_MISSING", action="REVIEW", panel_key=p.panel_key)
                         elif len(cands) > 1 and cands[0][0] == cands[1][0]:
+                            # Wenn Scores gleich sind, schauen wir ob wir über den Footer oder das Alter unterscheiden können
+                            # Aber laut Anweisung: Niemals willkürlich zuordnen.
                             mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_AMBIGUOUS", action="REVIEW", panel_key=p.panel_key, candidates=len(cands))
+                            ambiguous_panels_count += 1
                         else:
                             best = cands[0][1]
                             unique_msg_matches += 1
