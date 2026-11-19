@@ -357,7 +357,9 @@ class BotIPC:
 
             out = []
             # g.channels enthält bereits alle Chans; Kategorien separieren wir, daher skip bei CategoryChannel
-            for ch in g.channels:
+            # Sortierung nach Position für konsistente Ausgabe
+            channels = sorted(g.channels, key=lambda c: getattr(c, "position", 0))
+            for ch in channels:
                 try:
                     # Kategorien hier auslassen, diese liefert eigener Endpoint
                     if isinstance(ch, discord.CategoryChannel):
@@ -366,13 +368,17 @@ class BotIPC:
                     # Falls Typprüfung fehlschlägt, weiter – UI kann "type" auswerten
                     pass
                 parent_id = getattr(ch, "category_id", None)
+                # Falls category_id nicht direkt da ist, evtl. über .category
+                if parent_id is None and hasattr(ch, "category") and ch.category:
+                    parent_id = ch.category.id
+
                 ch_type = getattr(ch, "type", None)
                 ch_type_val = int(getattr(ch_type, "value", 0)) if ch_type is not None else 0
                 out.append({
                     "id": str(getattr(ch, "id", 0)),
                     "name": getattr(ch, "name", str(getattr(ch, "id", "unknown"))),
                     "type": ch_type_val,
-                    "position": getattr(ch, "position", 0),
+                    "position": int(getattr(ch, "position", 0)),
                     "parent_id": str(parent_id) if parent_id else None,
                 })
             return web.json_response({"success": True, "channels": out}, status=200)
@@ -395,11 +401,13 @@ class BotIPC:
                 return web.json_response({"success": False, "code": "guild_not_found"}, status=404)
 
             out = []
-            for cat in getattr(g, "categories", []) or []:
+            # Alle Kategorien (CategoryChannel) abrufen und nach Position sortieren
+            categories = sorted(getattr(g, "categories", []) or [], key=lambda c: getattr(c, "position", 0))
+            for cat in categories:
                 out.append({
                     "id": str(getattr(cat, "id", 0)),
                     "name": getattr(cat, "name", str(getattr(cat, "id", "unknown"))),
-                    "position": getattr(cat, "position", 0),
+                    "position": int(getattr(cat, "position", 0)),
                 })
             return web.json_response({"success": True, "categories": out}, status=200)
         except Exception:
