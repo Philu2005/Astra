@@ -363,7 +363,7 @@ def heartbeat():
         bool(payload.get("gateway_connected", False)),
         bool(payload.get("is_connecting", False)),
     )
-    return jsonify(success=True), 200
+    return jsonify(success=True, sync_required=not is_bot_ready()), 200
 
 
 @api_bp.route("/guild-sync", methods=["POST"])

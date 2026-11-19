@@ -795,13 +795,13 @@ class Astra(commands.Bot):
                         WHERE id = 1
                     """)
 
-    async def _send_heartbeat(self, *, shutting_down: bool = False) -> bool:
+    async def _send_heartbeat(self, *, shutting_down: bool = False) -> tuple[bool, bool]:
         """Sendet einen Heartbeat an die Astra-Status-API.
 
-        Gibt True zurück, wenn die Anfrage erfolgreich (HTTP < 400) war, sonst False.
+        Gibt (success, sync_required) zurück.
         """
         if not internal_api_key:
-            return False
+            return False, False
 
         ws = getattr(self, "ws", None)
         gateway_connected = bool(ws is not None and not self.is_closed() and not self.is_connecting)
@@ -836,12 +836,14 @@ class Astra(commands.Bot):
                 async with session.post(bot_heartbeat_url, json=payload, headers=headers) as response:
                     if response.status < 400:
                         logging.debug("[Heartbeat] Erfolgreich: HTTP %s", response.status)
-                        return True
+                        data = await response.json()
+                        sync_required = bool(data.get("sync_required", False))
+                        return True, sync_required
                     logging.warning("[Heartbeat] API antwortete mit HTTP %s.", response.status)
-                    return False
+                    return False, False
         except Exception as e:
             logging.warning("[Heartbeat] API nicht erreichbar: %s", e)
-            return False
+            return False, False
 
     async def _heartbeat_loop(self):
         """Regelmäßiger Heartbeat mit begrenztem, nicht-blockierendem Backoff bei Fehlern."""
@@ -849,10 +851,19 @@ class Astra(commands.Bot):
         max_backoff = min(max(30, bot_heartbeat_interval), 60)
         while not self.is_closed():
             try:
-                ok = await self._send_heartbeat()
+                ok, sync_required = await self._send_heartbeat()
                 if ok:
                     # Bei Erfolg normales Intervall und Backoff zurücksetzen
                     backoff = 5
+                    
+                    if sync_required:
+                        if self.guild_sync_lock.locked():
+                            logging.debug("[Heartbeat] API signalisiert fehlenden Snapshot, aber Synchronisierung läuft bereits.")
+                        else:
+                            logging.info("[Heartbeat] API signalisiert fehlenden Snapshot. Triggere sofortige Wiederherstellung...")
+                            # Sofortigen Sync in den Hintergrund schieben
+                            asyncio.create_task(self._sync_full_guild_snapshot())
+
                     logging.debug("[Heartbeat] Nächster Heartbeat in %ss", bot_heartbeat_interval)
                     await asyncio.sleep(bot_heartbeat_interval)
                 else:
