@@ -589,6 +589,17 @@ async def run(args: argparse.Namespace) -> int:
 
             scanner = PanelScanner(client)
 
+            # Globale Belegungs-Map für Message-IDs: message_id -> panel_id
+            # Dies verhindert, dass dieselbe Nachricht mehreren Panels zugeordnet wird.
+            occupied_messages: Dict[int, int] = {}
+            
+            # 1) Vorab-Registrierung bereits gespeicherter und verifizierter IDs
+            # Wir machen einen ersten Pass, um alle KEEPs zu identifizieren
+            for p in panels:
+                if p.panel_msg_id:
+                    # Wir prüfen später im Loop, ob die Nachricht noch existiert
+                    pass
+
             # Liste der geplanten Updates (msgID, description, panel_key)
             panel_updates: List[Dict[str, Any]] = []
             
@@ -598,6 +609,7 @@ async def run(args: argparse.Namespace) -> int:
             unique_msg_matches = 0
             already_msg_ids = 0
             ambiguous_panels_count = 0
+            stale_msg_ids = 0
             
             # 1) Panels klassifizieren & Keys generieren
             remaining_to_scan: List[Tuple[int, PanelRow, str]] = []
@@ -648,11 +660,14 @@ async def run(args: argparse.Namespace) -> int:
                 
                 if guild is None:
                     for (idx, p, selector_hash) in entries:
+                        selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
                         mr = MatchResult(p.guild_id, p.channel_id, p.thema, "GUILD_NOT_FOUND", action="REVIEW", panel_key=p.panel_key)
                         results.append(mr)
                         report_rows.append({
-                            "id": p.id, "status": mr.status, **selector, "panel_key": p.panel_key,
+                            "id": p.id, "status": mr.status, "action": mr.action, **selector, "panel_key": p.panel_key,
+                            "current_message_id": p.panel_msg_id, "message_id": None,
                             "reason": (f"Guild resolve failed: {guild_err['type']}" if guild_err else "Guild not found"),
+                            "candidates": []
                         })
                     continue
 
@@ -671,23 +686,41 @@ async def run(args: argparse.Namespace) -> int:
                 for (idx, p, selector_hash) in entries:
                     selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
                     
-                    # Bestehende ID verifizieren?
+                    # 1. Schritt: Bestehende ID verifizieren
                     current_msg_id = p.panel_msg_id
                     msg_verified = False
                     if current_msg_id:
                         # Suche in prefiltered
                         match = next((m for m in prefiltered if m["message_id"] == current_msg_id), None)
                         if match:
-                            msg_verified = True
-                            status = "PANEL_MESSAGE_VERIFIED"
-                            already_msg_ids += 1
+                            # Prüfen ob ID bereits von einem ANDEREN Panel belegt wurde (sollte bei KEEPs nicht passieren, außer DB ist korrupt)
+                            if current_msg_id in occupied_messages and occupied_messages[current_msg_id] != p.id:
+                                status = "PANEL_MESSAGE_COLLISION"
+                                mr = MatchResult(p.guild_id, p.channel_id, p.thema, status, action="REVIEW", panel_key=p.panel_key)
+                                reason = f"Kollision: Nachricht {current_msg_id} bereits durch Panel ID {occupied_messages[current_msg_id]} belegt."
+                            else:
+                                occupied_messages[current_msg_id] = p.id
+                                msg_verified = True
+                                status = "PANEL_MESSAGE_VERIFIED"
+                                already_msg_ids += 1
+                                mr = MatchResult(p.guild_id, p.channel_id, p.thema, status, message_id=current_msg_id, action="KEEP", panel_key=p.panel_key)
+                                reason = "Nachricht erfolgreich verifiziert und beibehalten."
                         else:
-                            status = "PANEL_MESSAGE_STALE" # ID da, aber Nachricht nicht gefunden
+                            status = "PANEL_MESSAGE_STALE"
+                            stale_msg_ids += 1
+                            mr = MatchResult(p.guild_id, p.channel_id, p.thema, status, action="REVIEW", panel_key=p.panel_key)
+                            reason = f"Gespeicherte ID {current_msg_id} wurde im Channel-Scan (Limit: {args.max_messages}) nicht gefunden."
                     
                     if not msg_verified:
                         # Suche nach passenden Kandidaten
                         cands = []
                         for item in prefiltered:
+                            m_id = item["message_id"]
+                            
+                            # Globale Kollisionsprüfung: Ist die Nachricht bereits belegt?
+                            if m_id in occupied_messages:
+                                continue
+
                             thema = (p.thema or "").strip()
                             thema_lower = thema.lower()
                             title_lower = item["title_text"].lower()
@@ -706,42 +739,64 @@ async def run(args: argparse.Namespace) -> int:
                             if p.description and p.description in item["description_text"]:
                                 score += 5
                             
-                            # Footer Match (Wichtig für Unterscheidung bei gleichen Titeln)
-                            if item["has_footer"]:
-                                score += 3
+                            # Footer: Global identisch -> KEIN Unterscheidungsmerkmal
+                            # Wir werten ihn nur noch als allgemeines Qualitätsmerkmal für Ticket-Panels
+                            # Aber geben keinen Bonus mehr, der zwischen Panels entscheidet.
                             
                             if score >= 10:
-                                cands.append((score, item))
+                                cands.append({"score": score, "item": item})
                         
-                        cands.sort(key=lambda x: (x[0], x[1]["message_id"]), reverse=True)
+                        cands.sort(key=lambda x: (x["score"], x["item"]["message_id"]), reverse=True)
                         
                         if not cands:
-                            mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_MISSING", action="REVIEW", panel_key=p.panel_key)
-                        elif len(cands) > 1 and cands[0][0] == cands[1][0]:
-                            # Wenn Scores gleich sind, schauen wir ob wir über den Footer oder das Alter unterscheiden können
-                            # Aber laut Anweisung: Niemals willkürlich zuordnen.
+                            if not current_msg_id:
+                                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_MISSING", action="REVIEW", panel_key=p.panel_key)
+                                reason = "Keine passenden Nachrichten im Channel gefunden."
+                            else:
+                                # mr bleibt bei STALE oder COLLISION von oben
+                                pass
+                        elif len(cands) > 1 and cands[0]["score"] == cands[1]["score"]:
                             mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_AMBIGUOUS", action="REVIEW", panel_key=p.panel_key, candidates=len(cands))
                             ambiguous_panels_count += 1
+                            reason = f"{len(cands)} gleichwertige Kandidaten gefunden. Manuelle Prüfung erforderlich."
                         else:
-                            best = cands[0][1]
-                            unique_msg_matches += 1
-                            mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_FOUND", message_id=best["message_id"], action="UPDATE", panel_key=p.panel_key)
+                            best = cands[0]["item"]
+                            best_id = best["message_id"]
                             
-                            upd = next((u for u in panel_updates if u.get("row_id") == p.id), None)
-                            if upd:
-                                upd["message_id"] = best["message_id"]
-                                upd["description"] = best["description_text"]
+                            # Letzte Sicherheitsprüfung vor Belegung
+                            if best_id in occupied_messages:
+                                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_COLLISION", action="REVIEW", panel_key=p.panel_key)
+                                reason = f"Kandidat {best_id} wurde während der Verarbeitung bereits belegt."
                             else:
-                                panel_updates.append({**selector, "message_id": best["message_id"], "description": best["description_text"], "row_id": p.id})
+                                occupied_messages[best_id] = p.id
+                                unique_msg_matches += 1
+                                mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_FOUND", message_id=best_id, action="UPDATE", panel_key=p.panel_key)
+                                reason = "Eindeutiger Kandidat gefunden."
+                                
+                                upd = next((u for u in panel_updates if u.get("row_id") == p.id), None)
+                                if upd:
+                                    upd["message_id"] = best_id
+                                    upd["description"] = best["description_text"]
+                                else:
+                                    panel_updates.append({**selector, "message_id": best_id, "description": best["description_text"], "row_id": p.id})
 
-                    else:
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_VERIFIED", message_id=p.panel_msg_id, action="KEEP", panel_key=p.panel_key)
-
+                    # Report Eintrag erstellen
+                    report_entry = {
+                        "id": p.id,
+                        "status": mr.status,
+                        "action": mr.action,
+                        **selector,
+                        "panel_key": p.panel_key,
+                        "current_message_id": p.panel_msg_id,
+                        "message_id": mr.message_id,
+                        "reason": reason,
+                        "candidates": [
+                            {"message_id": c["item"]["message_id"], "score": c["score"], "title": c["item"]["title_text"]}
+                            for c in cands
+                        ] if not msg_verified and 'cands' in locals() else []
+                    }
                     results.append(mr)
-                    report_rows.append({
-                        "id": p.id, "status": mr.status, "action": mr.action, **selector,
-                        "panel_key": p.panel_key, "message_id": mr.message_id
-                    })
+                    report_rows.append(report_entry)
 
             # 3) Ticket-Zuordnung
             tickets = await db.fetch_tickets_to_map()

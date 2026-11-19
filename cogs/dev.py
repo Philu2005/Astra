@@ -2196,11 +2196,12 @@ class DevTools(commands.Cog):
             return "REVIEW"
 
         counters = {
-            "MATCH_FOUND": 0,
-            "ALREADY_SAVED": 0,
-            "NO_MATCH": 0,
-            "MULTIPLE_MATCHES": 0,
-            "MISSING_PERMISSIONS": 0,
+            "PANEL_MESSAGE_VERIFIED": 0,
+            "PANEL_MESSAGE_FOUND": 0,
+            "PANEL_MESSAGE_MISSING": 0,
+            "PANEL_MESSAGE_AMBIGUOUS": 0,
+            "PANEL_MESSAGE_STALE": 0,
+            "PANEL_MESSAGE_COLLISION": 0,
             "GUILD_NOT_FOUND": 0,
             "CHANNEL_NOT_FOUND": 0,
             "SCAN_ERROR": 0,
@@ -2210,7 +2211,13 @@ class DevTools(commands.Cog):
         # Berichtseinträge optional unterschiedliche Keys – robust lesen
         def get(entry: dict, key: str, default=None):
             if isinstance(entry, dict):
-                return entry.get(key, entry.get(str(key).lower(), default))
+                # Zuerst exakten Key, dann Lowercase
+                if key in entry: return entry[key]
+                key_l = str(key).lower()
+                if key_l in entry: return entry[key_l]
+                # Spezielle Mappings für Abwärtskompatibilität
+                if key == "message_id" and "found_message_id" in entry: return entry["found_message_id"]
+                if key == "current_message_id" and "panelMsgID" in entry: return entry["panelMsgID"]
             return default
 
         lines = []
@@ -2218,49 +2225,42 @@ class DevTools(commands.Cog):
         dup_map = {}
         for e in report_rows:
             # Einige ältere Skriptversionen könnten Zeilen als JSON-Strings ausgegeben haben.
-            # Robustheit: Falls der Eintrag ein String ist, versuchen wir ihn zu parsen;
-            # andernfalls überspringen wir ihn.
             if not isinstance(e, dict):
                 if isinstance(e, str):
                     try:
                         parsed = json.loads(e)
-                        if isinstance(parsed, dict):
-                            e = parsed
-                        else:
-                            # Nicht nutzbarer Eintrag
-                            continue
-                    except Exception:
-                        # Ungültiger JSON-String – Eintrag überspringen
-                        continue
-                else:
-                    # Unbekannter Eintragstyp – überspringen
-                    continue
-            status = normalize_status(str(get(e, "status", "")))
+                        if isinstance(parsed, dict): e = parsed
+                        else: continue
+                    except Exception: continue
+                else: continue
+            
+            status = normalize_status(str(get(e, "status", "UNKNOWN")))
             counters[status] = counters.get(status, 0) + 1
-            # Aktionszähler ausschließlich aus dem Report lesen (keine Neuberechnung)
+            
+            # Aktionszähler
             action_raw = get(e, "action", None)
-            action_norm = str(action_raw).upper() if isinstance(action_raw, str) and action_raw else None
-            if action_norm not in {"UPDATE", "KEEP", "REVIEW", "DELETE"}:
-                # Fallback für sehr alte Reports ohne action-Feld: konservativ REVIEW
-                action_norm = "REVIEW"
-            action_counts[action_norm] = action_counts.get(action_norm, 0) + 1
+            action_norm = str(action_raw).upper() if action_raw else "REVIEW"
+            if action_norm not in action_counts: action_norm = "REVIEW"
+            action_counts[action_norm] += 1
 
-            guild_id = get(e, "guild_id", get(e, "guild", "?"))
-            channel_id = get(e, "channel_id", get(e, "channel", "?"))
+            guild_id = get(e, "guild_id", "?")
+            channel_id = get(e, "channel_id", "?")
             role_id = get(e, "role_id", None)
             category_id = get(e, "category_id", None)
-            current_mid = get(e, "current_message_id", get(e, "panelMsgID", None))
-            found_mid = get(e, "found_message_id", get(e, "message_id", None))
-            reason = get(e, "reason", "") or get(e, "detail", "")
+            thema = get(e, "thema", "?")
+            current_mid = get(e, "current_message_id", None)
+            found_mid = get(e, "message_id", None)
+            reason = get(e, "reason", "")
+            panel_id = get(e, "id", "?")
 
             line = (
-                f"Guild={guild_id} Channel={channel_id} "
-                f"currentMID={current_mid} → status={status} action={action_norm}"
+                f"**ID {panel_id}** ({thema}): {status} -> **{action_norm}**\n"
+                f"   `{guild_id}/{channel_id}` | "
+                f"DB-MID: `{current_mid or 'None'}` -> Found-MID: `{found_mid or 'None'}`"
             )
-            if found_mid:
-                line += f" foundMID={found_mid}"
             if reason:
-                line += f" • {reason}"
+                line += f"\n   *Grund: {reason}*"
+            
             lines.append(line)
 
             dup_key = (str(guild_id), str(channel_id), str(role_id), str(category_id), str(get(e, "thema", "")))
