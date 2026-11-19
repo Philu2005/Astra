@@ -71,6 +71,23 @@ class GuildStateStore:
             update_ts = self._last_update_ts
         return guilds, full_sync_ts, update_ts
 
+    def get_sync_status(self) -> dict:
+        """Gibt Metadaten zum Synchronisationsstatus zurück, ohne Daten zu kopieren."""
+        with self._lock:
+            return {
+                "last_full_sync_ts": self._last_full_sync_ts,
+                "last_update_ts": self._last_update_ts,
+                "last_successful_sync_at": self._last_successful_sync_at
+            }
+
+    def get_guilds_ref(self) -> dict[int, dict]:
+        """Gibt eine direkte Referenz auf den Guild-Cache zurück.
+        SICHERHEITSHINWEIS: Nur für Lesezugriffe verwenden!
+        Da self._guilds bei jedem Update durch ein neues Objekt ersetzt wird,
+        bleibt die zurückgegebene Referenz stabil für den Stand zum Zeitpunkt des Aufrufs.
+        """
+        return self._guilds
+
     def stats_snapshot(self) -> tuple[dict[str, int], str | None, float | None]:
         with self._lock:
             stats = deepcopy(self._stats)

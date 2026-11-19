@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import traceback
 import asyncio
+import time
 import topgg
 import aiomysql
 import aiohttp
@@ -538,9 +539,8 @@ class Astra(commands.Bot):
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
         if self.guild_snapshot_task is None or self.guild_snapshot_task.done():
+            logging.info("[GuildSync] Starte Snapshot-Loop…")
             self.guild_snapshot_task = asyncio.create_task(self._guild_snapshot_loop())
-
-        asyncio.create_task(self._sync_full_guild_snapshot())
 
     async def _ensure_website_stats_row(self):
         if self.pool is None:
@@ -575,6 +575,7 @@ class Astra(commands.Bot):
         }
 
     async def _serialize_guild_for_sync(self, guild: discord.Guild) -> dict:
+        start_time = time.perf_counter()
         channels = []
         for channel in getattr(guild, "channels", []):
             channels.append({
@@ -606,7 +607,7 @@ class Astra(commands.Bot):
                 },
             })
 
-        return {
+        data = {
             "id": str(guild.id),
             "name": str(guild.name),
             "owner_id": str(guild.owner_id),
@@ -616,13 +617,22 @@ class Astra(commands.Bot):
             "roles": roles,
             "members": members,
         }
+        
+        # Performance-Tracking Metadaten
+        data["_serialization_time"] = time.perf_counter() - start_time
+        data["_counts"] = {
+            "channels": len(channels),
+            "roles": len(roles),
+            "members": len(members)
+        }
+        return data
 
     async def _post_internal_api(self, payload: dict) -> bool:
         if not internal_api_key:
             return False
 
         headers = {"Authorization": f"Bearer {internal_api_key}"}
-        timeout = aiohttp.ClientTimeout(total=10)
+        timeout = aiohttp.ClientTimeout(total=30)
         for attempt in range(1, bot_sync_retries + 1):
             try:
                 async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -640,15 +650,41 @@ class Astra(commands.Bot):
 
     async def _sync_full_guild_snapshot(self):
         async with self.guild_sync_lock:
+            start_total = time.perf_counter()
             try:
+                logging.info("[GuildSync] Starte Erstellung des vollständigen Snapshots für %s Guilds...", len(self.guilds))
+                
+                serialization_start = time.perf_counter()
                 guilds = [await self._serialize_guild_for_sync(guild) for guild in self.guilds]
+                serialization_duration = time.perf_counter() - serialization_start
+                
+                total_members = sum(g["_counts"]["members"] for g in guilds)
+                total_roles = sum(g["_counts"]["roles"] for g in guilds)
+                total_channels = sum(g["_counts"]["channels"] for g in guilds)
+                
                 payload = {
                     "mode": "full_snapshot",
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                     "stats": self._build_global_stats(),
                     "guilds": guilds,
                 }
-                await self._post_internal_api(payload)
+                
+                transmission_start = time.perf_counter()
+                success = await self._post_internal_api(payload)
+                transmission_duration = time.perf_counter() - transmission_start
+                
+                total_duration = time.perf_counter() - start_total
+                
+                if success:
+                    logging.info(
+                        "[GuildSync] Snapshot erfolgreich übertragen. "
+                        "Guilds: %s, Members: %s, Roles: %s, Channels: %s. "
+                        "Dauer: Serialisierung=%.2fs, Übertragung=%.2fs, Gesamt=%.2fs.",
+                        len(guilds), total_members, total_roles, total_channels,
+                        serialization_duration, transmission_duration, total_duration
+                    )
+                else:
+                    logging.error("[GuildSync] Snapshot-Übertragung fehlgeschlagen nach Retries.")
             except Exception:
                 logging.exception("[GuildSync] Fehler bei vollständiger Guild-Synchronisation.")
 

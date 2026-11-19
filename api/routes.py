@@ -37,7 +37,8 @@ api_bp = Blueprint("internal_api", __name__)
 
 def is_bot_ready() -> bool:
     """Prüft, ob ein verwertbarer Guild-Snapshot vorhanden und aktuell ist."""
-    _, full_sync_ts, _ = guild_state_store.snapshot()
+    status = guild_state_store.get_sync_status()
+    full_sync_ts = status.get("last_full_sync_ts")
     if full_sync_ts is None:
         return False
     max_age = float(current_app.config.get("GUILD_SNAPSHOT_STALE_AFTER_SECONDS", 120))
@@ -45,9 +46,11 @@ def is_bot_ready() -> bool:
 
 
 def get_guild_cache() -> dict:
-    """Gibt den synchronisierten Guild-Cache zurück."""
-    guilds, _, _ = guild_state_store.snapshot()
-    return guilds
+    """Gibt den synchronisierten Guild-Cache zurück.
+    Gibt eine Referenz auf das interne Dict zurück, um Deepcopy-Overhead zu vermeiden.
+    Da der Store atomar ersetzt, ist dies für Lesezugriffe thread-sicher.
+    """
+    return guild_state_store.get_guilds_ref()
 
 
 def get_guild_cache_lock():
@@ -390,7 +393,8 @@ def guild_sync():
 
 
 def _get_server_data_state() -> tuple[bool, str | None]:
-    _, full_sync_ts, _ = guild_state_store.snapshot()
+    status = guild_state_store.get_sync_status()
+    full_sync_ts = status.get("last_full_sync_ts")
     if full_sync_ts is None:
         return False, "Guild data not synchronized"
     max_age = float(current_app.config.get("GUILD_SNAPSHOT_STALE_AFTER_SECONDS", 120))
@@ -435,18 +439,11 @@ def get_user_servers():
 
     user_servers = []
     total_guilds = len(guilds_list)
-    owner_hits = 0
-    cache_member_hits = 0
     permission_matches = 0
     errors = 0
 
     for guild in guilds_list:
         try:
-            if validate_user_id(guild.get("owner_id")) == user_id:
-                owner_hits += 1
-            elif any(validate_user_id(m.get("id")) == user_id for m in guild.get("members", [])):
-                cache_member_hits += 1
-
             perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
             if perm_info is not None:
                 permission_matches += 1
@@ -458,10 +455,8 @@ def get_user_servers():
 
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     logger.info(
-        "/servers Anfrage verarbeitet: guilds=%s owner_cache_hits=%s member_cache_hits=%s authorized=%s errors=%s duration_ms=%s",
+        "/servers Anfrage verarbeitet: guilds=%s authorized=%s errors=%s duration_ms=%s",
         total_guilds,
-        owner_hits,
-        cache_member_hits,
         permission_matches,
         errors,
         duration_ms,
