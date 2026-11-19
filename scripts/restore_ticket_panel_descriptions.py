@@ -271,6 +271,21 @@ class DB:
                 rows = await cur.fetchall()
                 return [{"guild_id": r[0], "channel_id": r[1], "opener_id": r[2], "msg_id": r[3]} for r in rows]
 
+    async def apply_ticket_mapping(self, mappings: List[Tuple[str, int]]) -> Dict[str, Any]:
+        """Ordnet Tickets einem panel_key zu. mappings: list of (panel_key, channel_id)"""
+        result = {"planned": len(mappings), "applied": 0, "errors": []}
+        if not mappings: return result
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                for key, ch_id in mappings:
+                    try:
+                        await cur.execute("UPDATE ticketsystem_channels SET panel_key=%s WHERE channelID=%s", (key, ch_id))
+                        result["applied"] += cur.rowcount
+                    except Exception as e:
+                        result["errors"].append(f"Ticket {ch_id} failed: {e}")
+            await conn.commit()
+        return result
+
     async def fetch_autoclose_states_to_map(self) -> List[Dict[str, Any]]:
         """Holt alle Autoclose-States, die noch keinen panel_key haben."""
         q = "SELECT channelID FROM ticket_autoclose_state WHERE panel_key IS NULL OR panel_key = ''"

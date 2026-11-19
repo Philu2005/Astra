@@ -1970,7 +1970,7 @@ class DevTools(commands.Cog):
                 filename="tree.txt"
             ))
 
-    @commands.command(name="restorepanelids", aliases=["restorepanels", "restore_panel_ids"])  # prefix command
+    @commands.command(name="restorepanelids", aliases=["restorepanels", "restore_panel_ids", "restoreids"])  # prefix command
     @commands.is_owner()
     async def restorepanelids(self, ctx: commands.Context, mode: str = "dry"):
         """Wiederherstellung alter Ticket-Panel-Message-IDs (Dry-Run mit Bestätigung für Änderungen).
