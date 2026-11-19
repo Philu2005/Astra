@@ -372,6 +372,7 @@ class BotIPC:
                     "id": str(getattr(ch, "id", 0)),
                     "name": getattr(ch, "name", str(getattr(ch, "id", "unknown"))),
                     "type": ch_type_val,
+                    "position": getattr(ch, "position", 0),
                     "parent_id": str(parent_id) if parent_id else None,
                 })
             return web.json_response({"success": True, "channels": out}, status=200)
@@ -398,6 +399,7 @@ class BotIPC:
                 out.append({
                     "id": str(getattr(cat, "id", 0)),
                     "name": getattr(cat, "name", str(getattr(cat, "id", "unknown"))),
+                    "position": getattr(cat, "position", 0),
                 })
             return web.json_response({"success": True, "categories": out}, status=200)
         except Exception:
