@@ -255,6 +255,29 @@ class BotIPC:
             logger.exception("IPC delete handler error")
             return web.json_response({"success": False, "code": "delete_failed"}, status=500)
 
+    async def _handle_delete_complete(self, request: web.Request) -> web.Response:
+        """
+        Zentraler IPC-Handler für die vollständige Löschung eines Panels via panel_key.
+        Ruft die zentrale Bot-Funktion 'delete_panel_completely' auf.
+        """
+        if not self._auth(request):
+            return web.json_response({"success": False, "code": "unauthorized"}, status=401)
+        data = await self._json(request)
+        try:
+            from cogs.ticket import delete_panel_completely
+            guild_id = int(data.get("guild_id"))
+            panel_key = data.get("panel_key")
+            if not guild_id or not panel_key:
+                return web.json_response({"success": False, "code": "invalid_payload"}, status=400)
+            
+            res = await delete_panel_completely(self.bot, guild_id, panel_key)
+            return web.json_response({"success": True, **res}, status=200)
+        except RuntimeError as e:
+            return web.json_response({"success": False, "code": str(e)}, status=404 if "not found" in str(e).lower() else 500)
+        except Exception:
+            logger.exception("IPC complete delete failed")
+            return web.json_response({"success": False, "code": "delete_failed"}, status=500)
+
     async def start(self):
         app = web.Application()
         app.add_routes([
@@ -262,6 +285,7 @@ class BotIPC:
             web.post("/ipc/panel/update", self._handle_update),
             web.post("/ipc/panel/move", self._handle_move),
             web.post("/ipc/panel/delete", self._handle_delete),
+            web.post("/ipc/panel/delete_complete", self._handle_delete_complete),
             # Ressourcen-Endpunkte für Dashboard-Dropdowns
             web.post("/ipc/resources/roles", self._handle_roles),
             web.post("/ipc/resources/channels", self._handle_channels),

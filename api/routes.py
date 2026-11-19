@@ -1320,10 +1320,10 @@ def put_ticket_config(guild_id: int):
 async def _fetch_ticket_panels_async(pool, guild_id: int):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            # Versuche, optionales panelMsgID zu lesen (Migration ggf. noch nicht ausgeführt)
+            # Versuche, panel_key, panelMsgID und description zu lesen
             try:
                 await cur.execute(
-                    "SELECT channelID, categoryID, roleID, thema, panelMsgID FROM ticketsystem WHERE guildID=%s",
+                    "SELECT channelID, categoryID, roleID, thema, panelMsgID, description, panel_key FROM ticketsystem WHERE guildID=%s",
                     (guild_id,),
                 )
                 rows = await cur.fetchall()
@@ -1334,25 +1334,50 @@ async def _fetch_ticket_panels_async(pool, guild_id: int):
                         "role_id": int(r[2]) if r[2] is not None else None,
                         "thema": r[3] or "",
                         "panel_message_id": int(r[4]) if (len(r) > 4 and r[4] is not None) else None,
+                        "description": r[5] or "" if len(r) > 5 else "",
+                        "panel_key": r[6] if len(r) > 6 else None,
                     }
                     for r in rows
                 ]
             except Exception:
-                await cur.execute(
-                    "SELECT channelID, categoryID, roleID, thema FROM ticketsystem WHERE guildID=%s",
-                    (guild_id,),
-                )
-                rows = await cur.fetchall()
-                return [
-                    {
-                        "channel_id": int(r[0]),
-                        "category_id": int(r[1]) if r[1] is not None else None,
-                        "role_id": int(r[2]) if r[2] is not None else None,
-                        "thema": r[3] or "",
-                        "panel_message_id": None,
-                    }
-                    for r in rows
-                ]
+                # Fallback falls panel_key noch fehlt (während der Migration)
+                try:
+                    await cur.execute(
+                        "SELECT channelID, categoryID, roleID, thema, panelMsgID, description FROM ticketsystem WHERE guildID=%s",
+                        (guild_id,),
+                    )
+                    rows = await cur.fetchall()
+                    return [
+                        {
+                            "channel_id": int(r[0]),
+                            "category_id": int(r[1]) if r[1] is not None else None,
+                            "role_id": int(r[2]) if r[2] is not None else None,
+                            "thema": r[3] or "",
+                            "panel_message_id": int(r[4]) if (len(r) > 4 and r[4] is not None) else None,
+                            "description": r[5] or "" if len(r) > 5 else "",
+                            "panel_key": None,
+                        }
+                        for r in rows
+                    ]
+                except Exception:
+                    # Minimaler Fallback
+                    await cur.execute(
+                        "SELECT channelID, categoryID, roleID, thema FROM ticketsystem WHERE guildID=%s",
+                        (guild_id,),
+                    )
+                    rows = await cur.fetchall()
+                    return [
+                        {
+                            "channel_id": int(r[0]),
+                            "category_id": int(r[1]) if r[1] is not None else None,
+                            "role_id": int(r[2]) if r[2] is not None else None,
+                            "thema": r[3] or "",
+                            "panel_message_id": None,
+                            "description": "",
+                            "panel_key": None,
+                        }
+                        for r in rows
+                    ]
 
 
 @api_bp.route("/tickets/panels/<int:guild_id>", methods=["GET"]) 
@@ -1755,6 +1780,8 @@ def put_ticket_panel_config(guild_id: int, channel_id: int):
         updates = {}
         if thema is not None:
             updates["thema"] = str(thema)
+        if description is not None:
+            updates["description"] = str(description)
         if role_id_int is not None:
             updates["roleID"] = role_id_int
         if category_id_int is not None:
@@ -1824,6 +1851,8 @@ def put_ticket_panel_config(guild_id: int, channel_id: int):
         new_updates = {}
         if thema is not None:
             new_updates["thema"] = str(thema)
+        if description is not None:
+            new_updates["description"] = str(description)
         if role_id_int is not None:
             new_updates["roleID"] = role_id_int
         if category_id_int is not None:
@@ -1857,18 +1886,13 @@ def put_ticket_panel_config(guild_id: int, channel_id: int):
     return jsonify(success=True, status=data.get("status", "moved"), channel_id=data.get("channel_id"), message_id=data.get("message_id")), 200
 
 
-@api_bp.route("/tickets/panels/<int:guild_id>/<int:channel_id>/<int:message_id>", methods=["DELETE"]) 
+@api_bp.route("/tickets/panels/<int:guild_id>/<string:panel_key>", methods=["DELETE"])
 @require_service_auth
 @rate_limit(scope="tickets_panel_delete", limit=10, per_seconds=60)
-def delete_ticket_panel(guild_id: int, channel_id: int, message_id: int):
+def delete_ticket_panel_by_key(guild_id: int, panel_key: str):
     """
-    Löscht ein Ticket-Panel vollständig.
-    Ablauf:
-    1) Berechtigungen prüfen
-    2) Panel anhand Guild/Channel laden und mit message_id plausibilisieren (falls vorhanden)
-    3) Discord-Nachricht via IPC löschen (404 tolerieren; 403 verhindert DB-Delete)
-    4) Panel-Datensatz aus ticketsystem entfernen
-    5) Konsistenz sicherstellen (keine Löschung aktiver Tickets)
+    Zentraler Endpunkt zum vollständigen Löschen eines Panels via panel_key.
+    Nutzt die neue Bot-Funktion 'delete_panel_completely' via IPC.
     """
     if not is_bot_ready():
         return _api_error(503, "service_unavailable", "Service not ready")
@@ -1887,66 +1911,26 @@ def delete_ticket_panel(guild_id: int, channel_id: int, message_id: int):
     if perm_info is None:
         return _api_error(403, "permission_denied", "Forbidden")
 
-    pool = api_db.get_pool()
-    if pool is None:
-        return _api_error(503, "service_unavailable", "Service temporarily unavailable")
-
-    # Panel-Zeile laden
-    try:
-        panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
-        existing = next((p for p in panels if p["channel_id"] == channel_id), None)
-        if not existing:
-            # Falls nicht vorhanden, Discord trotzdem versuchen zu löschen und 200 liefern, wenn 404/Deleted
-            pass
-        else:
-            db_msg_id = existing.get("panel_message_id")
-            if db_msg_id is not None and int(db_msg_id) != int(message_id):
-                # Plausibilisierung: andere Message-ID gespeichert → Schutz
-                return _api_error(409, "conflict_message_id", "Panel message_id mismatch")
-    except Exception:
-        logger.exception("Failed to load panel for delete")
-        # Kein Hard-Fail hier – wir versuchen weiterhin die Discord-Löschung.
-
-    # Discord-Löschung via IPC
+    # IPC-Request an den Bot senden
     sc, data = _ipc_request(
-        "/ipc/panel/delete",
+        "/ipc/panel/delete_complete",
         {
             "guild_id": str(guild_id),
-            "channel_id": str(channel_id),
-            "message_id": str(message_id),
+            "panel_key": panel_key,
         },
-        timeout=15.0,
+        timeout=30.0, # Kann länger dauern, da viele Channels/Nachrichten gelöscht werden
     )
-    if sc == 403:
-        return _api_error(403, "permission_denied", None)
-    if sc not in (200, 410) and not (sc == 200 and (data or {}).get("success")):
-        # Unerwarteter Fehler – nicht stillschweigend fortfahren
-        code = (data or {}).get("code", "delete_failed")
-        logger.warning(
-            "Ticket panel delete via IPC failed (guild=%s, channel=%s, message=%s): status=%s code=%s",
-            guild_id, channel_id, message_id, sc, code,
-        )
-        if sc in (400, 401, 404, 503, 504):
-            return _api_error(sc, code, None)
-        if sc == 502 or code == "ipc_unavailable":
-            # Bot-Prozess/IPC nicht erreichbar – klar als Dienst-Ausfall kennzeichnen,
-            # statt generisch als 500 zu maskieren (keine irreführende Erfolgsmeldung).
-            return _api_error(503, "service_unavailable", "Bot IPC not reachable")
-        return _api_error(500, code, None)
+    
+    if sc == 200 and (data or {}).get("success"):
+        return jsonify(success=True, **data), 200
+    
+    if sc == 404:
+        return _api_error(404, "panel_not_found", "Panel not found")
+    
+    if sc == 502 or (data or {}).get("code") == "ipc_unavailable":
+        return _api_error(503, "service_unavailable", "Bot IPC not reachable")
 
-    # DB-Eintrag entfernen (auch wenn Nachricht bereits weg war)
-    try:
-        async def _delete_row(pool, g_id: int, ch_id: int):
-            async with pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute("DELETE FROM ticketsystem WHERE guildID=%s AND channelID=%s", (g_id, ch_id))
-        api_db.run_coro(_delete_row(pool, guild_id, channel_id), timeout=5.0)
-    except Exception:
-        logger.exception("Failed to delete panel row from DB")
-        # Zustand bleibt nachvollziehbar: Nachricht ist gelöscht/fehlte; ein erneuter Versuch ist möglich.
-        return _api_error(500, "db_delete_failed", "Failed to delete panel from database")
-
-    return jsonify(success=True, status=(data or {}).get("status", "deleted")), 200
+    return _api_error(sc if sc != 200 else 500, (data or {}).get("code", "delete_failed"), None)
 
 
 async def _fetch_open_tickets_async(pool, guild_id: int):

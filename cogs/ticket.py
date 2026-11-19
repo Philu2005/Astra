@@ -5,7 +5,8 @@ import re
 import html
 import asyncio
 import logging
-from typing import Optional, Literal, List, Tuple
+import uuid
+from typing import Optional, Literal, List, Tuple, Dict, Any
 from discord import ui
 import discord
 from discord.ext import commands, tasks
@@ -309,31 +310,31 @@ async def api_publish_ticket_panel(
     if getattr(bot, "pool", None) is None:
         raise RuntimeError("DB pool not available")
 
+    panel_key = str(uuid.uuid4())
+
     async with bot.pool.acquire() as conn:  # type: ignore[attr-defined]
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                INSERT INTO ticketsystem(guildID, channelID, thema, description, roleID, categoryID)
-                    VALUES (%s, %s, %s, %s, %s, %s) AS new
+                INSERT INTO ticketsystem(guildID, channelID, thema, description, roleID, categoryID, panel_key)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s) AS new
                 ON DUPLICATE KEY UPDATE thema       = new.thema,
                                         description = new.description,
                                         roleID      = new.roleID,
                                         categoryID  = new.categoryID
                 """,
-                (guild.id, chan.id, title, description, role.id, cat.id),
+                (guild.id, chan.id, title, description, role.id, cat.id, panel_key),
             )
-            # panelMsgID aktualisieren, wenn Spalte vorhanden
+            # panelMsgID aktualisieren
             try:
                 await cur.execute(
-                    "UPDATE ticketsystem SET panelMsgID=%s WHERE guildID=%s AND channelID=%s",
-                    (int(msg.id), guild.id, chan.id),
+                    "UPDATE ticketsystem SET panelMsgID=%s WHERE guildID=%s AND channelID=%s AND thema=%s",
+                    (int(msg.id), guild.id, chan.id, title),
                 )
             except Exception:
-                # Falls Spalte (noch) nicht existiert, nicht hart fehlschlagen –
-                # Veröffentlichung ist erfolgt, die Migration ergänzt die Spalte.
-                logging.getLogger("astra.ticket").warning("panelMsgID column missing; migration required")
+                logging.getLogger("astra.ticket").warning("panelMsgID update failed")
 
-    return {"message_id": int(msg.id), "channel_id": int(chan.id)}
+    return {"message_id": int(msg.id), "channel_id": int(chan.id), "panel_key": panel_key}
 
 
 async def api_update_ticket_panel(
@@ -382,6 +383,29 @@ async def api_update_ticket_panel(
         )
 
     await msg.edit(embed=new_embed, view=TicketOpenView(bot))
+
+    # DB synchronisieren
+    if getattr(bot, "pool", None):
+        try:
+            async with bot.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # Spalten dynamisch aktualisieren
+                    sets = []
+                    vals = []
+                    if title is not None:
+                        sets.append("thema=%s")
+                        vals.append(title)
+                    if description is not None:
+                        sets.append("description=%s")
+                        vals.append(description)
+
+                    if sets:
+                        vals.extend([int(guild_id), int(channel_id)])
+                        q = f"UPDATE ticketsystem SET {', '.join(sets)} WHERE guildID=%s AND channelID=%s"
+                        await cur.execute(q, tuple(vals))
+        except Exception:
+            logging.getLogger("astra.ticket").exception("Failed to update database for api_update_ticket_panel")
+
     return {"message_id": int(msg.id), "channel_id": int(chan.id)}
 
 
@@ -729,22 +753,23 @@ class SetupWizardView(ui.LayoutView):
         # =========================
         # DB speichern
         # =========================
+        panel_key = str(uuid.uuid4())
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     """
-                    INSERT INTO ticketsystem(guildID, channelID, thema, description, roleID, categoryID)
-                        VALUES (%s, %s, %s, %s, %s, %s) AS new
+                    INSERT INTO ticketsystem(guildID, channelID, thema, description, roleID, categoryID, panel_key)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s) AS new
                     ON DUPLICATE KEY UPDATE thema       = new.thema,
                                             description = new.description,
                                             roleID      = new.roleID,
                                             categoryID  = new.categoryID
                     """,
-                    (guild.id, chan.id, self.panel_title, self.panel_desc, role.id, cat.id),
+                    (guild.id, chan.id, self.panel_title, self.panel_desc, role.id, cat.id, panel_key),
                 )
 
         # =========================
-        # Panel Embed (wie im Screenshot)
+        # Panel Embed
         # =========================
         panel = mk_embed(
             title=self.panel_title,
@@ -754,10 +779,19 @@ class SetupWizardView(ui.LayoutView):
             footer="Klicke auf den Button, um ein Ticket zu erstellen!"
         )
 
-        await chan.send(
+        msg = await chan.send(
             embed=panel,
             view=TicketOpenView(self.bot)
         )
+
+        # panelMsgID nachziehen
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE ticketsystem SET panelMsgID=%s WHERE guildID=%s AND channelID=%s AND thema=%s",
+                    (msg.id, guild.id, chan.id, self.panel_title)
+                )
+        await conn.commit()
 
 
         # Neue Erfolgs-View bauen
@@ -1242,60 +1276,38 @@ class ConfigCenterView(ui.LayoutView):
         try:
             async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
                 async with conn.cursor() as cur:
-                    # Versuche mit panelMsgID & description
-                    try:
-                        await cur.execute(
-                            "SELECT channelID, thema, description, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s",
-                            (self.guild.id,),
-                        )
-                        rows = await cur.fetchall()
-                        for ch, thema, description, role_id, cat_id, msg_id in rows:
-                            panels.append({
-                                "channel_id": int(ch),
-                                "thema": thema or "",
-                                "description": description or "",
-                                "role_id": int(role_id) if role_id else None,
-                                "category_id": int(cat_id) if cat_id else None,
-                                "panel_message_id": int(msg_id) if msg_id else None,
-                            })
-                    except Exception:
-                        # Fallback ohne panelMsgID/description (alte DB-Struktur)
-                        try:
-                            await cur.execute(
-                                "SELECT channelID, thema, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s",
-                                (self.guild.id,),
-                            )
-                            rows = await cur.fetchall()
-                            for ch, thema, role_id, cat_id, msg_id in rows:
-                                panels.append({
-                                    "channel_id": int(ch),
-                                    "thema": thema or "",
-                                    "description": "",
-                                    "role_id": int(role_id) if role_id else None,
-                                    "category_id": int(cat_id) if cat_id else None,
-                                    "panel_message_id": int(msg_id) if msg_id else None,
-                                })
-                        except Exception:
-                            await cur.execute(
-                                "SELECT channelID, thema, roleID, categoryID FROM ticketsystem WHERE guildID=%s",
-                                (self.guild.id,),
-                            )
-                            rows = await cur.fetchall()
-                            for ch, thema, role_id, cat_id in rows:
-                                panels.append({
-                                    "channel_id": int(ch),
-                                    "thema": thema or "",
-                                    "description": "",
-                                    "role_id": int(role_id) if role_id else None,
-                                    "category_id": int(cat_id) if cat_id else None,
-                                    "panel_message_id": None,
-                                })
+                    await cur.execute(
+                        "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ticketsystem'"
+                    )
+                    cols = [r[0] for r in await cur.fetchall()]
+                    has_key = "panel_key" in cols
+                    has_desc = "description" in cols
+                    has_msg_id = "panelMsgID" in cols
+
+                    q_cols = ["channelID", "thema"]
+                    if has_desc: q_cols.append("description")
+                    if has_key: q_cols.append("panel_key")
+                    if has_msg_id: q_cols.append("panelMsgID")
+                    q_cols.extend(["roleID", "categoryID"])
+
+                    await cur.execute(f"SELECT {', '.join(q_cols)} FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
+                    rows = await cur.fetchall()
+                    col_map = {name: i for i, name in enumerate(q_cols)}
+
+                    for r in rows:
+                        panels.append({
+                            "channel_id": int(r[col_map["channelID"]]),
+                            "thema": r[col_map["thema"]] or "",
+                            "description": r[col_map["description"]] if has_desc else "",
+                            "panel_key": str(r[col_map["panel_key"]]) if has_key and r[col_map["panel_key"]] else None,
+                            "role_id": int(r[col_map["roleID"]]) if r[col_map["roleID"]] else None,
+                            "category_id": int(r[col_map["categoryID"]]) if r[col_map["categoryID"]] else None,
+                            "panel_message_id": int(r[col_map["panelMsgID"]]) if has_msg_id and r[col_map["panelMsgID"]] else None,
+                        })
         finally:
             self._loading = False
             self._panels_cache = panels
-            # Keine automatische Vorauswahl mehr – erst nach expliziter Auswahl
             if self.selected_channel_id is not None and not any(int(p["channel_id"]) == int(self.selected_channel_id) for p in panels):
-                # gewählte ID existiert nicht mehr → zurücksetzen
                 self.selected_channel_id = None
             self._selected_panel = next((p for p in panels if self.selected_channel_id is not None and int(p["channel_id"]) == int(self.selected_channel_id)), None)
 
@@ -1897,6 +1909,94 @@ class ConfigCenterView(ui.LayoutView):
 
 
 # =========================================================
+#                 ZENTRALE LÖSCHLOGIK
+# =========================================================
+
+async def delete_panel_completely(bot: commands.Bot, guild_id: int, panel_key: str) -> dict:
+    """Löscht ein Ticket-Panel und alle zugehörigen Ressourcen.
+    
+    Aktion:
+    1. Panel-Nachricht löschen
+    2. Panel-Eintrag aus DB löschen
+    3. Alle Ticket-Channels dieses Panels löschen
+    4. Alle DB-Einträge der Tickets löschen
+    """
+    guild = bot.get_guild(int(guild_id))
+    if not guild:
+        raise RuntimeError("Guild not found")
+
+    async with bot.pool.acquire() as conn: # type: ignore[attr-defined]
+        async with conn.cursor() as cur:
+            # 1) Panel-Daten holen
+            await cur.execute("SELECT channelID, panelMsgID FROM ticketsystem WHERE guildID=%s AND panel_key=%s", (guild.id, panel_key))
+            panel_row = await cur.fetchone()
+            if not panel_row:
+                raise RuntimeError("Panel not found")
+            
+            p_chan_id, p_msg_id = panel_row
+            
+            # 2) Tickets dieses Panels holen
+            await cur.execute("SELECT channelID FROM ticketsystem_channels WHERE guildID=%s AND panel_key=%s", (guild.id, panel_key))
+            ticket_rows = await cur.fetchall()
+            ticket_chan_ids = [int(r[0]) for r in ticket_rows]
+
+    results = {
+        "panel_msg": "not_attempted",
+        "tickets_deleted": 0,
+        "tickets_failed": 0,
+        "db_rows_deleted": 0
+    }
+
+    # A) Panel-Nachricht löschen
+    if p_chan_id and p_msg_id:
+        try:
+            p_chan = guild.get_channel(int(p_chan_id)) or await guild.fetch_channel(int(p_chan_id))
+            if isinstance(p_chan, discord.TextChannel):
+                msg = await p_chan.fetch_message(int(p_msg_id))
+                await msg.delete()
+                results["panel_msg"] = "deleted"
+        except discord.NotFound:
+            results["panel_msg"] = "already_gone"
+        except Exception as e:
+            results["panel_msg"] = f"error: {e}"
+
+    # B) Ticket-Channels löschen
+    for t_id in ticket_chan_ids:
+        try:
+            t_chan = guild.get_channel(t_id) or await guild.fetch_channel(t_id)
+            if t_chan:
+                # Nachrichten löschen (Bulk wenn möglich)
+                try:
+                    await t_chan.purge(limit=None)
+                except Exception:
+                    pass
+                await t_chan.delete(reason=f"Ticket-Panel {panel_key} gelöscht")
+                results["tickets_deleted"] += 1
+        except discord.NotFound:
+            results["tickets_deleted"] += 1 # Zählt als weg
+        except Exception:
+            results["tickets_failed"] += 1
+
+    # C) DB bereinigen
+    async with bot.pool.acquire() as conn: # type: ignore[attr-defined]
+        async with conn.cursor() as cur:
+            # Tickets löschen
+            await cur.execute("DELETE FROM ticketsystem_channels WHERE guildID=%s AND panel_key=%s", (guild.id, panel_key))
+            results["db_rows_deleted"] += cur.rowcount
+            
+            # Auto-close state
+            if ticket_chan_ids:
+                placeholders = ', '.join(['%s'] * len(ticket_chan_ids))
+                await cur.execute(f"DELETE FROM ticket_autoclose_state WHERE channelID IN ({placeholders})", tuple(ticket_chan_ids))
+            
+            # Panel löschen
+            await cur.execute("DELETE FROM ticketsystem WHERE guildID=%s AND panel_key=%s", (guild.id, panel_key))
+            results["db_rows_deleted"] += cur.rowcount
+        await conn.commit()
+
+    return results
+
+# =========================================================
 #      PANELS ÜBERSICHT – Interaktive Anzeige (/ticket anzeigen)
 # =========================================================
 
@@ -1913,28 +2013,36 @@ class PanelOverviewView(ui.LayoutView):
         panels: list[dict] = []
         async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
             async with conn.cursor() as cur:
-                try:
-                    await cur.execute("SELECT channelID, thema, description, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
-                    rows = await cur.fetchall()
-                    for ch, thema, description, rid, cid, mid in rows:
-                        panels.append({"channel_id": int(ch), "thema": thema or "", "description": description or "", "role_id": rid, "category_id": cid, "panel_message_id": mid})
-                except Exception:
-                    try:
-                        await cur.execute("SELECT channelID, thema, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
-                        rows = await cur.fetchall()
-                        for ch, thema, rid, cid, mid in rows:
-                            panels.append({"channel_id": int(ch), "thema": thema or "", "description": "", "role_id": rid, "category_id": cid, "panel_message_id": mid})
-                    except Exception:
-                        await cur.execute("SELECT channelID, thema, roleID, categoryID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
-                        rows = await cur.fetchall()
-                        for ch, thema, rid, cid in rows:
-                            panels.append({"channel_id": int(ch), "thema": thema or "", "description": "", "role_id": rid, "category_id": cid, "panel_message_id": None})
+                await cur.execute(
+                    "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ticketsystem'"
+                )
+                cols = [r[0] for r in await cur.fetchall()]
+                has_key = "panel_key" in cols
+                has_desc = "description" in cols
+                has_msg_id = "panelMsgID" in cols
+
+                q_cols = ["channelID", "thema"]
+                if has_desc: q_cols.append("description")
+                if has_key: q_cols.append("panel_key")
+                if has_msg_id: q_cols.append("panelMsgID")
+                q_cols.extend(["roleID", "categoryID"])
+
+                await cur.execute(f"SELECT {', '.join(q_cols)} FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
+                rows = await cur.fetchall()
+                col_map = {name: i for i, name in enumerate(q_cols)}
+
+                for r in rows:
+                    panels.append({
+                        "channel_id": int(r[col_map["channelID"]]),
+                        "thema": r[col_map["thema"]] or "",
+                        "description": r[col_map["description"]] if has_desc else "",
+                        "panel_key": str(r[col_map["panel_key"]]) if has_key and r[col_map["panel_key"]] else None,
+                        "role_id": r[col_map["roleID"]],
+                        "category_id": r[col_map["categoryID"]],
+                        "panel_message_id": r[col_map["panelMsgID"]] if has_msg_id else None
+                    })
         self._panels = panels
-        # Keine automatische Vorauswahl: Erst nach expliziter Auswahl anzeigen
-        # (Fix: In /ticket config anzeigen wurde bereits ein Panel unten angezeigt,
-        #  bevor der Nutzer eines ausgewählt hat.)
         if self.selected_channel_id is not None:
-            # Safety: Verifizieren, dass bestehende Auswahl noch existiert
             if not any(int(p["channel_id"]) == int(self.selected_channel_id) for p in panels):
                 self.selected_channel_id = None
 
@@ -1977,6 +2085,7 @@ class PanelOverviewView(ui.LayoutView):
             cat = self.guild.get_channel(p.get("category_id") or 0)
             msg_id = p.get("panel_message_id")
             details = [
+                f"**Panel-Key:** `{p.get('panel_key') or '—'}`",
                 f"**Thema:** {p.get('thema') or '—'}",
                 f"**Titel:** {p.get('thema') or '—'}",
                 f"**Beschreibung:** {p.get('description') or '—'}",
@@ -2035,7 +2144,7 @@ class PanelOverviewView(ui.LayoutView):
 
 class ReopenView(discord.ui.View):
     """Button im Log, um innerhalb X Stunden das Ticket neu zu öffnen."""
-    def __init__(self, bot: commands.Bot, guild_id: int, opener_id: int, thema: str, category_id: int, role_id: int, expires_ts: int):
+    def __init__(self, bot: commands.Bot, guild_id: int, opener_id: int, thema: str, category_id: int, role_id: int, expires_ts: int, panel_key: Optional[str] = None):
         super().__init__(timeout=None)  # <-- statt dynamischem Timeout
         self.bot = bot
         self.guild_id = guild_id
@@ -2044,6 +2153,7 @@ class ReopenView(discord.ui.View):
         self.category_id = category_id
         self.role_id = role_id
         self.expires_ts = expires_ts
+        self.panel_key = panel_key
 
     @discord.ui.button(label="Ticket erneut öffnen", style=discord.ButtonStyle.green, emoji="🔁", custom_id="ticket:reopen")
     async def reopen(self, interaction: discord.Interaction, _button: discord.ui.Button):
@@ -2096,9 +2206,9 @@ class ReopenView(discord.ui.View):
         async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO ticketsystem_channels(guildID, channelID, msgID, opened, claimed, closed, time) "
-                    "VALUES(%s,%s,%s,%s,%s,%s,%s)",
-                    (guild.id, new_channel.id, msg.id, self.opener_id, "Not Set", "Not Set", discord.utils.format_dt(new_channel.created_at, "F")),
+                    "INSERT INTO ticketsystem_channels(guildID, channelID, msgID, opened, claimed, closed, time, panel_key) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (guild.id, new_channel.id, msg.id, self.opener_id, "Not Set", "Not Set", discord.utils.format_dt(new_channel.created_at, "F"), self.panel_key),
                 )
 
         await interaction.response.send_message(f"<:Astra_accept:1141303821176422460> Das folgende Ticket: {new_channel.mention} wurde wieder geöffnet.", ephemeral=True)
@@ -2139,7 +2249,7 @@ class TicketButtons(discord.ui.View):
                 async with inter.client.pool.acquire() as conn:
                     async with conn.cursor() as cur:
                         await cur.execute(
-                            "SELECT msgID, opened, claimed, time FROM ticketsystem_channels WHERE channelID=%s",
+                            "SELECT msgID, opened, claimed, time, panel_key FROM ticketsystem_channels WHERE channelID=%s",
                             (channel.id,),
                         )
                         row2 = await cur.fetchone()
@@ -2147,7 +2257,7 @@ class TicketButtons(discord.ui.View):
                             return await inter.response.send_message("Interner Fehler (kein DB-Eintrag).",
                                                                      ephemeral=True)
 
-                        msg_id, opened_id, claimed, time_open = row2
+                        msg_id, opened_id, claimed, time_open, p_key = row2
                         await cur.execute(
                             "UPDATE ticketsystem_channels SET closed=%s WHERE channelID=%s",
                             (inter.user.id, channel.id),
@@ -2263,6 +2373,7 @@ class TicketButtons(discord.ui.View):
                             channel.category.id,
                             role_id,
                             expires_ts,
+                            panel_key=p_key,
                         ),
                     )
 
@@ -2360,12 +2471,12 @@ class TicketOpenView(discord.ui.View):
         # Panel-Config
         async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
             async with conn.cursor() as cur:
-                await cur.execute("SELECT categoryID, thema, roleID FROM ticketsystem WHERE channelID=%s", (panel_channel.id,))
+                await cur.execute("SELECT categoryID, thema, roleID, panel_key FROM ticketsystem WHERE channelID=%s", (panel_channel.id,))
                 row = await cur.fetchone()
         if not row:
             return await interaction.response.send_message("<:Astra_x:1141303954555289600> Für diesen Kanal ist kein Ticket-Panel hinterlegt.", ephemeral=True)
 
-        category_id, thema, role_id = int(row[0]), row[1], int(row[2])
+        category_id, thema, role_id, panel_key = int(row[0]), row[1], int(row[2]), row[3]
         category = guild.get_channel(category_id)
         role = guild.get_role(role_id)
         if not isinstance(category, discord.CategoryChannel):
@@ -2412,9 +2523,9 @@ class TicketOpenView(discord.ui.View):
         async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO ticketsystem_channels(guildID, channelID, msgID, opened, claimed, closed, time) "
-                    "VALUES(%s,%s,%s,%s,%s,%s,%s)",
-                    (guild.id, new_channel.id, msg.id, user.id, "Not Set", "Not Set", discord.utils.format_dt(new_channel.created_at, "F")),
+                    "INSERT INTO ticketsystem_channels(guildID, channelID, msgID, opened, claimed, closed, time, panel_key) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (guild.id, new_channel.id, msg.id, user.id, "Not Set", "Not Set", discord.utils.format_dt(new_channel.created_at, "F"), panel_key),
                 )
 
         await interaction.response.send_message(f"<:Astra_accept:1141303821176422460> Dein Ticket wurde erstellt: {new_channel.mention}", ephemeral=True)
@@ -2453,15 +2564,71 @@ class Ticket(app_commands.Group):
         return None
 
     # Panel löschen
-    @app_commands.command(name="löschen", description="Lösche ein Ticket-Panel.")
-    @app_commands.describe(channel="Kanal mit dem Ticket-Panel")
+    @app_commands.command(name="löschen", description="Lösche ein Ticket-Panel und alle zugehörigen Tickets.")
+    @app_commands.describe(panel_key="Der eindeutige Key des Panels (siehe /ticket anzeigen)")
     @app_commands.checks.has_permissions(manage_channels=True)
-    @app_commands.checks.cooldown(1, 5, key=lambda i: (i.guild_id, i.user.id))
-    async def ticket_delete(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
+    @app_commands.checks.cooldown(1, 10, key=lambda i: (i.guild_id, i.user.id))
+    async def ticket_delete(self, interaction: discord.Interaction, panel_key: str):
+        # 1) Panel finden
+        async with self.bot.pool.acquire() as conn: # type: ignore[attr-defined]
             async with conn.cursor() as cur:
-                await cur.execute("DELETE FROM ticketsystem WHERE channelID=%s AND guildID=%s", (channel.id, interaction.guild.id))
-        await interaction.response.send_message(f"<:Astra_accept:1141303821176422460> Das Panel aus {channel.mention} wurde erfolgreich gelöscht.", ephemeral=True)
+                await cur.execute("SELECT thema, channelID FROM ticketsystem WHERE guildID=%s AND panel_key=%s", (interaction.guild.id, panel_key))
+                row = await cur.fetchone()
+        
+        if not row:
+            return await interaction.response.send_message(f"<:Astra_x:1141303954555289600> Kein Panel mit dem Key `{panel_key}` gefunden.", ephemeral=True)
+        
+        thema, ch_id = row
+        
+        # 2) Ticket-Anzahl ermitteln
+        async with self.bot.pool.acquire() as conn: # type: ignore[attr-defined]
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT COUNT(*) FROM ticketsystem_channels WHERE guildID=%s AND panel_key=%s", (interaction.guild.id, panel_key))
+                t_count = (await cur.fetchone())[0]
+
+        # 3) Bestätigung
+        class ConfirmDelete(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=30)
+                self.value = None
+            @discord.ui.button(label="Endgültig löschen", style=discord.ButtonStyle.danger)
+            async def confirm(self, inter: discord.Interaction, _: discord.ui.Button):
+                self.value = True
+                await inter.response.defer()
+                self.stop()
+            @discord.ui.button(label="Abbrechen", style=discord.ButtonStyle.secondary)
+            async def cancel(self, inter: discord.Interaction, _: discord.ui.Button):
+                self.value = False
+                await inter.response.defer()
+                self.stop()
+
+        view = ConfirmDelete()
+        await interaction.response.send_message(
+            f"### ⚠️ Panel löschen?\n"
+            f"Möchtest du das Panel **{thema}** (`{panel_key}`) wirklich löschen?\n\n"
+            f"**Folgende Ressourcen werden unwiderruflich gelöscht:**\n"
+            f"- Die Panel-Nachricht in <#{ch_id}>\n"
+            f"- **{t_count}** zugehörige Ticket-Channels und deren Nachrichten\n"
+            f"- Alle Datenbank-Einträge zu diesem Panel und seinen Tickets\n\n"
+            f"*Der Kanal <#{ch_id}> selbst bleibt bestehen.*",
+            view=view,
+            ephemeral=True
+        )
+        
+        await view.wait()
+        if not view.value:
+            return await interaction.edit_original_response(content="Löschvorgang abgebrochen.", view=None)
+
+        await interaction.edit_original_response(content="⌛ Löschvorgang läuft, bitte warten...", view=None)
+        
+        try:
+            res = await delete_panel_completely(self.bot, interaction.guild.id, panel_key)
+            msg = (f"<:Astra_accept:1141303821176422460> **Panel erfolgreich gelöscht.**\n"
+                   f"- Tickets gelöscht: {res['tickets_deleted']}\n"
+                   f"- DB-Einträge entfernt: {res['db_rows_deleted']}")
+            await interaction.edit_original_response(content=msg)
+        except Exception as e:
+            await interaction.edit_original_response(content=f"<:Astra_x:1141303954555289600> Fehler beim Löschen: {e}")
 
     # Ticket-Log konfigurieren
     @app_commands.command(name="log", description="Richte einen Ticket-Log-Kanal ein/aus.")
@@ -2473,11 +2640,11 @@ class Ticket(app_commands.Group):
                 if argument == "Einschalten":
                     if not channel:
                         return await interaction.response.send_message("<:Astra_x:1141303954555289600> Bitte gib einen Log-Kanal an.", ephemeral=True)
-                    await cur.execute("REPLACE INTO ticketlog (guildID, channelID) VALUES (%s,%s)", (interaction.guild.id, channel.id))
+                    await cur.execute("REPLACE INTO ticketlog (guildID, channelID, panel_key) VALUES (%s,%s,%s)", (interaction.guild.id, channel.id, None))
                     await interaction.response.send_message(f"<:Astra_accept:1141303821176422460> Der Ticket-Log ist nun in: {channel.mention} aktiv.", ephemeral=True)
                     return None
                 else:
-                    await cur.execute("DELETE FROM ticketlog WHERE guildID=%s", (interaction.guild.id,))
+                    await cur.execute("DELETE FROM ticketlog WHERE guildID=%s AND panel_key IS NULL", (interaction.guild.id,))
                     await interaction.response.send_message("<:Astra_accept:1141303821176422460> Der Ticket Log ist nun nicht mehr aktiv.", ephemeral=True)
                     return None
 
@@ -2530,7 +2697,8 @@ class TicketCog(commands.Cog):
                 thema="",
                 category_id=0,
                 role_id=0,
-                expires_ts=int(discord.utils.utcnow().timestamp()) + 3600
+                expires_ts=int(discord.utils.utcnow().timestamp()) + 3600,
+                panel_key=None
             )
         )
 

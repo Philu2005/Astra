@@ -2158,10 +2158,15 @@ class DevTools(commands.Cog):
         # Das Script schreibt aktuell ein Objekt { meta: {...}, rows: [...] }
         # Für Abwärtskompatibilität akzeptieren wir auch eine rohe Liste.
         report_rows: list = []
+        report_meta: dict = {}
+        report_tickets: list = []
+
         if isinstance(report_data, dict):
-            rows_val = report_data.get("rows")
+            rows_val = report_data.get("rows") or report_data.get("panels")
             if isinstance(rows_val, list):
                 report_rows = rows_val
+            report_meta = report_data.get("meta", {})
+            report_tickets = report_data.get("tickets", [])
         elif isinstance(report_data, list):
             report_rows = report_data
         if not report_rows:
@@ -2262,30 +2267,27 @@ class DevTools(commands.Cog):
             dup_map[dup_key] = dup_map.get(dup_key, 0) + 1
 
         # Zusammenfassung bauen
-        total = sum(counters.values())
-        duplicate_count = sum(1 for v in dup_map.values() if v > 1)
-        unique_matches = counters["MATCH_FOUND"]
-        multi = counters["MULTIPLE_MATCHES"]
         summary = (
             f"Dry-Run abgeschlossen (Exit {proc.returncode if proc else 'n/a'}).\n"
-            f"Gesamt Panels: {total}\n"
+            f"Gesamt Panels: {report_meta.get('total_panels', 0)}\n"
+            f"  • Neue Keys: {report_meta.get('generated_keys', 0)}\n"
+            
+            f"Tickets (unmapped): {len(report_tickets)}\n"
+            f"  • Zugeordnet: {report_meta.get('mapped_tickets', 0)}\n"
+            f"  • Mehrdeutig: {report_meta.get('ambiguous_tickets', 0)}\n"
+            f"  • Autoclose gemappt: {report_meta.get('mapped_autoclose', 0)}\n"
+            
+            f"\nStatus-Übersicht:\n"
             f"  • MATCH_FOUND: {counters['MATCH_FOUND']}\n"
             f"  • ALREADY_SAVED: {counters['ALREADY_SAVED']}\n"
             f"  • NO_MATCH: {counters['NO_MATCH']}\n"
-            f"  • CHANNEL_NOT_FOUND: {counters['CHANNEL_NOT_FOUND']}\n"
             f"  • MULTIPLE_MATCHES: {counters['MULTIPLE_MATCHES']}\n"
-            f"  • MISSING_PERMISSIONS: {counters['MISSING_PERMISSIONS']}\n"
-            f"  • GUILD_NOT_FOUND: {counters['GUILD_NOT_FOUND']}\n"
             f"  • SCAN_ERROR: {counters['SCAN_ERROR']}\n"
-            f"Geplante Aktionen:\n"
+            
+            f"\nGeplante Aktionen:\n"
             f"  • UPDATE: {action_counts['UPDATE']}\n"
-            f"  • DELETE: {action_counts['DELETE']}\n"  # sollte 0 sein; keine automatischen Löschungen
             f"  • KEEP: {action_counts['KEEP']}\n"
             f"  • REVIEW: {action_counts['REVIEW']}\n"
-            f"Duplikat-Hinweise:\n"
-            f"  • Datenbank-Duplikate (gleiches Panel-Selektor-Set): {duplicate_count}\n"
-            f"  • Eindeutige Panel-Treffer (UPDATE-Kandidaten): {unique_matches}\n"
-            f"  • Mehrdeutige Treffer: {multi}\n"
         )
 
         # Langliste als Datei anhängen, Kurzliste in Nachricht
