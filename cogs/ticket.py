@@ -1571,7 +1571,14 @@ class ConfigCenterView(ui.LayoutView):
                 ))
 
         if select_options:
-            select = discord.ui.Select(placeholder="Wähle ein Panel …", min_values=1, max_values=1, options=select_options)
+            # Wir verwenden eine eindeutige custom_id für das Select
+            select = discord.ui.Select(
+                custom_id=f"cfg_panel_sel_{self.guild.id}",
+                placeholder="Wähle ein Panel …", 
+                min_values=1, 
+                max_values=1, 
+                options=select_options
+            )
             async def _on_select(inter: discord.Interaction, s=select):
                 await panel_select_cb(inter, s)
             select.callback = _on_select
@@ -1586,7 +1593,7 @@ class ConfigCenterView(ui.LayoutView):
         if self.selected_channel_id is None or self._selected_panel is None:
             container.add_item(discord.ui.TextDisplay("> Noch kein Panel ausgewählt. Nutze die Auswahlliste oben, um fortzufahren."))
             # Footer / Close
-            close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖")
+            close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖", custom_id=f"cfg_close_initial_{self.guild.id}")
 
             async def close_cb(inter: discord.Interaction):
                 await inter.response.defer()
@@ -1600,12 +1607,12 @@ class ConfigCenterView(ui.LayoutView):
             return
 
         # Permanente Kategorienavigation (immer sichtbar)
-        nav0 = discord.ui.Button(label="Übersicht", style=(discord.ButtonStyle.primary if self.active_tab == 0 else discord.ButtonStyle.secondary), emoji="📋")
-        nav1 = discord.ui.Button(label="Panel gestalten", style=(discord.ButtonStyle.primary if self.active_tab == 1 else discord.ButtonStyle.secondary), emoji="📝")
-        nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=(discord.ButtonStyle.primary if self.active_tab == 2 else discord.ButtonStyle.secondary), emoji="🧩")
-        nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=(discord.ButtonStyle.primary if self.active_tab == 3 else discord.ButtonStyle.secondary), emoji="⚙️")
-        nav4 = discord.ui.Button(label="Erinnerungen", style=(discord.ButtonStyle.primary if self.active_tab == 4 else discord.ButtonStyle.secondary), emoji="⏰")
-        nav5 = discord.ui.Button(label="Protokollierung", style=(discord.ButtonStyle.primary if self.active_tab == 5 else discord.ButtonStyle.secondary), emoji="🗒️")
+        nav0 = discord.ui.Button(label="Übersicht", style=(discord.ButtonStyle.primary if self.active_tab == 0 else discord.ButtonStyle.secondary), emoji="📋", custom_id=f"nav_tab_0_{self.guild.id}")
+        nav1 = discord.ui.Button(label="Panel gestalten", style=(discord.ButtonStyle.primary if self.active_tab == 1 else discord.ButtonStyle.secondary), emoji="📝", custom_id=f"nav_tab_1_{self.guild.id}")
+        nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=(discord.ButtonStyle.primary if self.active_tab == 2 else discord.ButtonStyle.secondary), emoji="🧩", custom_id=f"nav_tab_2_{self.guild.id}")
+        nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=(discord.ButtonStyle.primary if self.active_tab == 3 else discord.ButtonStyle.secondary), emoji="⚙️", custom_id=f"nav_tab_3_{self.guild.id}")
+        nav4 = discord.ui.Button(label="Erinnerungen", style=(discord.ButtonStyle.primary if self.active_tab == 4 else discord.ButtonStyle.secondary), emoji="⏰", custom_id=f"nav_tab_4_{self.guild.id}")
+        nav5 = discord.ui.Button(label="Protokollierung", style=(discord.ButtonStyle.primary if self.active_tab == 5 else discord.ButtonStyle.secondary), emoji="🗒️", custom_id=f"nav_tab_5_{self.guild.id}")
 
         async def goto(inter: discord.Interaction, tab_idx: int):
             self.active_tab = tab_idx
@@ -1698,7 +1705,7 @@ class ConfigCenterView(ui.LayoutView):
             ]
             container.add_item(discord.ui.TextDisplay("\n".join(lines)))
 
-            edit_btn = discord.ui.Button(label="Texte bearbeiten", style=discord.ButtonStyle.primary, emoji="📝")
+            edit_btn = discord.ui.Button(label="Texte bearbeiten", style=discord.ButtonStyle.primary, emoji="📝", custom_id=f"tab1_edit_{self.guild.id}")
 
             async def edit_cb(inter: discord.Interaction):
                 modal = _EditPanelTextModal(self, init_title=p.get("thema") or "", init_desc=p.get("description") or "")
@@ -1725,7 +1732,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.TextDisplay("\n".join(lines)))
 
             # Role select
-            role_select = discord.ui.RoleSelect(placeholder="Support-Rolle wählen", min_values=0, max_values=1)
+            role_select = discord.ui.RoleSelect(placeholder="Support-Rolle wählen", min_values=0, max_values=1, custom_id=f"tab2_role_{self.guild.id}")
 
             async def role_cb(inter: discord.Interaction):
                 role = role_select.values[0] if role_select.values else None
@@ -1735,7 +1742,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(role_select))
 
             # Category select
-            cat_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.category], placeholder="Ticket-Kategorie wählen", min_values=0, max_values=1)
+            cat_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.category], placeholder="Ticket-Kategorie wählen", min_values=0, max_values=1, custom_id=f"tab2_cat_{self.guild.id}")
 
             async def cat_cb(inter: discord.Interaction):
                 cat = cat_select.values[0] if cat_select.values else None
@@ -1745,7 +1752,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(cat_select))
 
             # Move (Zielkanal ändern)
-            txt_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Zielkanal für Panel verschieben", min_values=1, max_values=1)
+            txt_select = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Zielkanal für Panel verschieben", min_values=1, max_values=1, custom_id=f"tab2_move_{self.guild.id}")
 
             async def move_cb(inter: discord.Interaction):
                 ch = txt_select.values[0] if txt_select.values else None
@@ -1757,7 +1764,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(txt_select))
 
             # Panel löschen (Button)
-            del_btn = discord.ui.Button(label="Panel löschen", style=discord.ButtonStyle.danger, emoji="🗑️")
+            del_btn = discord.ui.Button(label="Panel löschen", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id=f"tab2_del_{self.guild.id}")
 
             async def del_cb(inter: discord.Interaction):
                 await self._delete_panel(inter)
@@ -1783,8 +1790,8 @@ class ConfigCenterView(ui.LayoutView):
             ]
             container.add_item(discord.ui.TextDisplay("\n".join(lines)))
 
-            btn_auto = discord.ui.Button(label="Auto‑Close setzen", style=discord.ButtonStyle.secondary, emoji="⏱️")
-            btn_reopen = discord.ui.Button(label="Wiederöffnungsfrist setzen", style=discord.ButtonStyle.secondary, emoji="🔁")
+            btn_auto = discord.ui.Button(label="Auto‑Close setzen", style=discord.ButtonStyle.secondary, emoji="⏱️", custom_id=f"tab3_auto_{self.guild.id}")
+            btn_reopen = discord.ui.Button(label="Wiederöffnungsfrist setzen", style=discord.ButtonStyle.secondary, emoji="🔁", custom_id=f"tab3_reopen_{self.guild.id}")
 
             class _ValueModal(discord.ui.Modal, title="Wert setzen"):
                 def __init__(self, key: str):
@@ -1830,8 +1837,8 @@ class ConfigCenterView(ui.LayoutView):
                 "Ändern: Button unten nutzen.",
             ]
             container.add_item(discord.ui.TextDisplay("\n".join(lines)))
-            btn_rem = discord.ui.Button(label="Reminder setzen (Minuten)", style=discord.ButtonStyle.secondary, emoji="🔔")
-            btn_ping = discord.ui.Button(label="Ping‑Throttle (Minuten)", style=discord.ButtonStyle.secondary, emoji="📵")
+            btn_rem = discord.ui.Button(label="Reminder setzen (Minuten)", style=discord.ButtonStyle.secondary, emoji="🔔", custom_id=f"tab4_rem_{self.guild.id}")
+            btn_ping = discord.ui.Button(label="Ping‑Throttle (Minuten)", style=discord.ButtonStyle.secondary, emoji="📵", custom_id=f"tab4_ping_{self.guild.id}")
 
             class _ValueModal2(discord.ui.Modal, title="Wert setzen"):
                 def __init__(self, key: str):
@@ -1861,7 +1868,7 @@ class ConfigCenterView(ui.LayoutView):
             log_ch_id = self._log_channel_id
             container.add_item(discord.ui.TextDisplay(f"Aktueller Log‑Kanal: {('<#'+str(log_ch_id)+'>') if log_ch_id else '—'}"))
 
-            set_sel = discord.ui.ChannelSelect(channel_types=[discord.ChannelType.text], placeholder="Log‑Kanal wählen", min_values=0, max_values=1)
+            set_sel = discord.ui.ChannelSelect(custom_id=f"tab5_log_sel_{self.guild.id}", channel_types=[discord.ChannelType.text], placeholder="Log‑Kanal wählen", min_values=0, max_values=1)
 
             async def set_log_cb(inter: discord.Interaction):
                 ch = set_sel.values[0] if set_sel.values else None
@@ -1890,7 +1897,7 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(set_sel))
 
         # Footer / Close
-        close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖")
+        close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖", custom_id=f"cfg_close_final_{self.guild.id}")
 
         async def close_cb(inter: discord.Interaction):
             await inter.response.defer()
@@ -2128,8 +2135,8 @@ class PanelOverviewView(ui.LayoutView):
             cont.add_item(discord.ui.TextDisplay("\n".join(details)))
 
             # Aktionen
-            refresh_btn = discord.ui.Button(label="Status aktualisieren", style=discord.ButtonStyle.secondary, emoji="🔄")
-            manage_btn = discord.ui.Button(label="Panel verwalten", style=discord.ButtonStyle.primary, emoji="⚙️")
+            refresh_btn = discord.ui.Button(label="Status aktualisieren", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id=f"ov_refresh_{self.guild.id}")
+            manage_btn = discord.ui.Button(label="Panel verwalten", style=discord.ButtonStyle.primary, emoji="⚙️", custom_id=f"ov_manage_{self.guild.id}")
 
             async def ref_cb(inter: discord.Interaction):
                 await self.refresh(inter)
@@ -2143,7 +2150,7 @@ class PanelOverviewView(ui.LayoutView):
             manage_btn.callback = manage_cb
             cont.add_item(discord.ui.ActionRow(refresh_btn, manage_btn))
 
-        close = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger)
+        close = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, custom_id=f"ov_close_{self.guild.id}")
         async def _ov_close(inter: discord.Interaction):
             await inter.response.defer()
             try:
@@ -2681,11 +2688,7 @@ class Ticket(app_commands.Group):
     @app_commands.command(name="config", description="Alias für /ticket anzeigen (Ticket-Verwaltung).")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def ticket_config(self, interaction: discord.Interaction):
-        view = PanelOverviewView(self.bot, interaction.guild)
-        await view._load()
-        view._build()
-        await interaction.response.send_message(view=view, ephemeral=True)
-        return None
+        return await self.ticket_list(interaction)
 
 
 # =========================================================
