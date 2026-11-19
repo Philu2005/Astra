@@ -2195,18 +2195,8 @@ class DevTools(commands.Cog):
                 return "KEEP"
             return "REVIEW"
 
-        counters = {
-            "PANEL_MESSAGE_VERIFIED": 0,
-            "PANEL_MESSAGE_FOUND": 0,
-            "PANEL_MESSAGE_MISSING": 0,
-            "PANEL_MESSAGE_AMBIGUOUS": 0,
-            "PANEL_MESSAGE_STALE": 0,
-            "PANEL_MESSAGE_COLLISION": 0,
-            "GUILD_NOT_FOUND": 0,
-            "CHANNEL_NOT_FOUND": 0,
-            "SCAN_ERROR": 0,
-        }
-        action_counts = {"UPDATE": 0, "DELETE": 0, "KEEP": 0, "REVIEW": 0}
+        counters = defaultdict(int)
+        action_counts = defaultdict(int, {"UPDATE": 0, "KEEP": 0, "REVIEW": 0})
 
         # Berichtseinträge optional unterschiedliche Keys – robust lesen
         def get(entry: dict, key: str, default=None):
@@ -2234,14 +2224,11 @@ class DevTools(commands.Cog):
                 else: continue
             
             status = normalize_status(str(get(e, "status", "UNKNOWN")))
-            if status not in counters:
-                counters[status] = 0
             counters[status] += 1
             
             # Aktionszähler
             action_raw = get(e, "action", None)
             action_norm = str(action_raw).upper() if action_raw else "REVIEW"
-            if action_norm not in action_counts: action_norm = "REVIEW"
             action_counts[action_norm] += 1
 
             guild_id = get(e, "guild_id", "?")
@@ -2268,6 +2255,19 @@ class DevTools(commands.Cog):
             dup_map[dup_key] = dup_map.get(dup_key, 0) + 1
 
         # Zusammenfassung bauen
+        status_lines = []
+        # Sortierte Status-Übersicht für bessere Lesbarkeit
+        for s_name in sorted(counters.keys()):
+            status_lines.append(f"  • {s_name}: {counters[s_name]}")
+        
+        action_lines = []
+        for a_name in ["UPDATE", "KEEP", "REVIEW"]:
+            action_lines.append(f"  • {a_name}: {action_counts[a_name]}")
+        # Andere unerwartete Aktionen auch anzeigen
+        for a_name in sorted(action_counts.keys()):
+            if a_name not in ["UPDATE", "KEEP", "REVIEW"]:
+                action_lines.append(f"  • {a_name}: {action_counts[a_name]}")
+
         summary = (
             f"Dry-Run abgeschlossen (Exit {proc.returncode if proc else 'n/a'}).\n"
             f"Gesamt Panels: {report_meta.get('total_panels', 0)}\n"
@@ -2278,19 +2278,9 @@ class DevTools(commands.Cog):
             f"  • Mehrdeutig: {report_meta.get('ambiguous_tickets', 0)}\n"
             f"  • Autoclose gemappt: {report_meta.get('mapped_autoclose', 0)}\n"
             
-            f"\nStatus-Übersicht:\n"
-            f"  • VERIFIED: {counters.get('PANEL_MESSAGE_VERIFIED', 0)}\n"
-            f"  • FOUND: {counters.get('PANEL_MESSAGE_FOUND', 0)}\n"
-            f"  • MISSING: {counters.get('PANEL_MESSAGE_MISSING', 0)}\n"
-            f"  • AMBIGUOUS: {counters.get('PANEL_MESSAGE_AMBIGUOUS', 0)}\n"
-            f"  • STALE: {counters.get('PANEL_MESSAGE_STALE', 0)}\n"
-            f"  • COLLISION: {counters.get('PANEL_MESSAGE_COLLISION', 0)}\n"
-            f"  • SCAN_ERROR: {counters.get('SCAN_ERROR', 0)}\n"
+            f"\nStatus-Übersicht:\n" + "\n".join(status_lines) +
             
-            f"\nGeplante Aktionen:\n"
-            f"  • UPDATE: {action_counts['UPDATE']}\n"
-            f"  • KEEP: {action_counts['KEEP']}\n"
-            f"  • REVIEW: {action_counts['REVIEW']}\n"
+            f"\n\nGeplante Aktionen:\n" + "\n".join(action_lines)
         )
 
         # Langliste als Datei anhängen, Kurzliste in Nachricht
