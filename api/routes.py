@@ -1486,7 +1486,7 @@ def publish_ticket_panel(guild_id: int):
         return _api_error(503, "service_unavailable", "Service temporarily unavailable")
     try:
         panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
-        existing = next((p for p in panels if p["channel_id"] == channel_id), None)
+        existing = next((p for p in panels if int(p["channel_id"]) == channel_id), None)
         if existing and existing.get("panel_message_id"):
             return _api_error(409, "already_published", "Panel already published")
     except Exception:
@@ -1590,7 +1590,7 @@ def update_ticket_panel(guild_id: int, channel_id: int):
         return _api_error(503, "service_unavailable", "Service temporarily unavailable")
     try:
         panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
-        existing = next((p for p in panels if p["channel_id"] == channel_id), None)
+        existing = next((p for p in panels if int(p["channel_id"]) == channel_id), None)
         if not existing or not existing.get("panel_message_id"):
             return _api_error(404, "not_published", "No published panel found")
         message_id = int(existing.get("panel_message_id"))
@@ -1743,7 +1743,7 @@ def put_ticket_panel_config(guild_id: int, channel_id: int):
     # Bestehendes Panel laden
     try:
         panels = api_db.run_coro(_fetch_ticket_panels_async(pool, guild_id), timeout=5.0)
-        existing = next((p for p in panels if p["channel_id"] == channel_id), None)
+        existing = next((p for p in panels if int(p["channel_id"]) == channel_id), None)
         if not existing:
             return _api_error(404, "panel_not_found", "Panel not found")
         existing_msg_id = existing.get("panel_message_id")
@@ -1999,7 +1999,7 @@ def get_ticket_status(guild_id: int):
 async def _get_ticketlog_channel_async(pool, guild_id: int):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s", (guild_id,))
+            await cur.execute("SELECT channelID FROM ticketlog WHERE guildID=%s AND panel_key IS NULL", (guild_id,))
             row = await cur.fetchone()
             return int(row[0]) if row and row[0] is not None else None
 
@@ -2007,10 +2007,10 @@ async def _get_ticketlog_channel_async(pool, guild_id: int):
 async def _set_ticketlog_channel_async(pool, guild_id: int, channel_id: int | None):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            if channel_id is None:
-                await cur.execute("DELETE FROM ticketlog WHERE guildID=%s", (guild_id,))
-            else:
-                await cur.execute("REPLACE INTO ticketlog (guildID, channelID) VALUES (%s, %s)", (guild_id, channel_id))
+            # Da kein Unique Key/Index existiert, nutzen wir DELETE + INSERT für panel_key IS NULL
+            await cur.execute("DELETE FROM ticketlog WHERE guildID=%s AND panel_key IS NULL", (guild_id,))
+            if channel_id is not None:
+                await cur.execute("INSERT INTO ticketlog (guildID, channelID, panel_key) VALUES (%s, %s, NULL)", (guild_id, channel_id))
 
 
 @api_bp.route("/tickets/log/<int:guild_id>", methods=["GET"]) 
