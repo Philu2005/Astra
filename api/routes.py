@@ -984,32 +984,27 @@ def lookup_members(guild_id: int):
     if perm_info is None:
         return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
 
-    bot = get_bot_instance()
-    if bot is None:
-        return jsonify(success=False, error="Service not ready"), 503
-
-    # Bot-Instanz für discord.py Guild-Objekt
-    discord_guild = bot.get_guild(guild_id)
-    if not discord_guild:
-        return jsonify(success=False, error="Server not found in bot cache"), 404
-
-    from api.permissions import fetch_member_threadsafe
-    
-    results = {}
-    for uid in target_ids:
-        member = fetch_member_threadsafe(bot, discord_guild, uid, timeout=2.0)
-        if member:
-            results[str(uid)] = {
-                "id": str(member.id),
-                "username": member.name,
-                "display_name": member.display_name,
-                "avatar": str(member.display_avatar.url if member.display_avatar else ""),
-            }
+    # Abfrage über IPC, da Bot in eigenem Prozess läuft
+    try:
+        payload = {
+            "guild_id": guild_id,
+            "user_ids": target_ids
+        }
+        # _ipc_request ist in api/routes.py definiert und nutzt aiohttp-POST
+        resp, status = _ipc_request("/ipc/resources/members/lookup", payload)
+        
+        if status == 200 and resp.get("success"):
+            return jsonify(success=True, members=resp.get("members", {})), 200
+        elif status == 404:
+            return jsonify(success=False, error="Server not found in bot cache"), 404
+        elif status == 503:
+            return jsonify(success=False, error="Bot service currently unavailable"), 503
         else:
-            # Fallback oder als None markieren? Wir lassen es weg oder geben ID zurück.
-            pass
-
-    return jsonify(success=True, members=results), 200
+            return jsonify(success=False, error=resp.get("code") or "IPC request failed"), status or 500
+            
+    except Exception:
+        logger.exception("Failed to lookup members via IPC for guild %s", guild_id)
+        return jsonify(success=False, error="Failed to lookup members"), 500
 
 
 # Serverweite Löschung aller Warns einer Guild

@@ -290,6 +290,7 @@ class BotIPC:
             web.post("/ipc/resources/roles", self._handle_roles),
             web.post("/ipc/resources/channels", self._handle_channels),
             web.post("/ipc/resources/categories", self._handle_categories),
+            web.post("/ipc/resources/members/lookup", self._handle_members_lookup),
         ])
         self._runner = web.AppRunner(app)
         await self._runner.setup()
@@ -413,3 +414,43 @@ class BotIPC:
         except Exception:
             logger.exception("IPC categories handler error")
             return web.json_response({"success": False, "code": "categories_failed"}, status=500)
+
+    async def _handle_members_lookup(self, request: web.Request) -> web.Response:
+        """Löst User-IDs in Profile auf (innerhalb des Bot-Prozesses)."""
+        if not self._auth(request):
+            return web.json_response({"success": False, "code": "unauthorized"}, status=401)
+        data = await self._json(request)
+        try:
+            guild_id_raw = data.get("guild_id")
+            target_ids = data.get("user_ids")
+            if guild_id_raw is None or not isinstance(target_ids, list):
+                return web.json_response({"success": False, "code": "invalid_payload"}, status=400)
+            
+            guild_id = int(guild_id_raw)
+            g = self.bot.get_guild(guild_id)
+            if g is None:
+                return web.json_response({"success": False, "code": "guild_not_found"}, status=404)
+
+            # Limitierung auf 50 IDs
+            target_ids = target_ids[:50]
+
+            from api.permissions import fetch_member_threadsafe
+            results = {}
+            for uid_raw in target_ids:
+                try:
+                    uid = int(uid_raw)
+                    member = fetch_member_threadsafe(self.bot, g, uid, timeout=2.0)
+                    if member:
+                        results[str(uid)] = {
+                            "id": str(member.id),
+                            "username": member.name,
+                            "display_name": member.display_name,
+                            "avatar": str(member.display_avatar.url if member.display_avatar else ""),
+                        }
+                except (ValueError, TypeError):
+                    continue
+
+            return web.json_response({"success": True, "members": results}, status=200)
+        except Exception:
+            logger.exception("IPC members lookup handler error")
+            return web.json_response({"success": False, "code": "lookup_failed"}, status=500)
