@@ -42,7 +42,7 @@ async def fetch_all_warns(pool, guild_id: int) -> list[dict]:
             )
             rows = await cur.fetchall() or []
             return [
-                {"userId": int(user_id), "warnId": int(warn_id), "reason": (reason or "")}
+                {"userId": str(user_id), "warnId": int(warn_id), "reason": (reason or "")}
                 for (user_id, warn_id, reason) in rows
             ]
 
