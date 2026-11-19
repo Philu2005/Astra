@@ -2006,11 +2006,17 @@ async def _get_ticketlog_channel_async(pool, guild_id: int):
 
 async def _set_ticketlog_channel_async(pool, guild_id: int, channel_id: int | None):
     async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            # Da kein Unique Key/Index existiert, nutzen wir DELETE + INSERT für panel_key IS NULL
-            await cur.execute("DELETE FROM ticketlog WHERE guildID=%s AND panel_key IS NULL", (guild_id,))
-            if channel_id is not None:
-                await cur.execute("INSERT INTO ticketlog (guildID, channelID, panel_key) VALUES (%s, %s, NULL)", (guild_id, channel_id))
+        await conn.begin()
+        try:
+            async with conn.cursor() as cur:
+                # Da kein Unique Key/Index existiert, nutzen wir DELETE + INSERT für panel_key IS NULL
+                await cur.execute("DELETE FROM ticketlog WHERE guildID=%s AND panel_key IS NULL", (guild_id,))
+                if channel_id is not None:
+                    await cur.execute("INSERT INTO ticketlog (guildID, channelID, panel_key) VALUES (%s, %s, NULL)", (guild_id, channel_id))
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
 
 
 @api_bp.route("/tickets/log/<int:guild_id>", methods=["GET"]) 
