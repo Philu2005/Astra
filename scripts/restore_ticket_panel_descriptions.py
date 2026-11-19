@@ -119,7 +119,8 @@ class DB:
                 if has_key: q_cols.append("panel_key")
                 q_cols.extend(["roleID", "categoryID"])
 
-                q = f"SELECT {', '.join(q_cols)} FROM ticketsystem"
+                # Wir sortieren nach allen Selektor-Spalten, um Duplikate bei der Verarbeitung leicht zu erkennen
+                q = f"SELECT {', '.join(q_cols)} FROM ticketsystem ORDER BY guildID, channelID, roleID, categoryID, thema"
                 await cur.execute(q)
                 rows = await cur.fetchall()
                 
@@ -532,6 +533,7 @@ async def run(args: argparse.Namespace) -> int:
             generated_keys = 0
             unique_msg_matches = 0
             already_msg_ids = 0
+            ambiguous_panels_count = 0
             
             # 1) Panels klassifizieren & Keys generieren
             remaining_to_scan: List[Tuple[int, PanelRow, str]] = []
@@ -541,7 +543,25 @@ async def run(args: argparse.Namespace) -> int:
             # Nur für eindeutige Panels pro Guild!
             key_to_panel_map: Dict[str, PanelRow] = {}
 
+            # Identifiziere mehrdeutige Panels (gleiche Selektor-Kombination)
+            from collections import Counter
+            selectors = [
+                (p.guild_id, p.channel_id, p.role_id, p.category_id, p.thema)
+                for p in panels
+            ]
+            selector_counts = Counter(selectors)
+            
+            valid_panels: List[PanelRow] = []
             for p in panels:
+                sel = (p.guild_id, p.channel_id, p.role_id, p.category_id, p.thema)
+                if selector_counts[sel] > 1:
+                    ambiguous_panels_count += 1
+                    # Dokumentiere Ausschluss im Report
+                    results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "AMBIGUOUS_SELECTOR", action="EXCLUDE", reason="Multiple database rows with identical selector"))
+                    continue
+                valid_panels.append(p)
+
+            for p in valid_panels:
                 row_index += 1
                 selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
                 selector_hash = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
@@ -550,6 +570,11 @@ async def run(args: argparse.Namespace) -> int:
                 current_key = p.panel_key
                 key_status = "KEY_ALREADY_SAVED"
                 if not current_key:
+                    # Stabile UUID Generierung basierend auf dem Selektor für deterministischen Dry-Run
+                    # Aber wir nutzen uuid4 für echte neue Keys.
+                    # WICHTIG: Dry-Run darf keine Keys in der DB speichern.
+                    # Die Zuordnung muss beim Apply eindeutig und dauerhaft sein.
+                    # Da wir hier im Speicher arbeiten, ist das OK.
                     current_key = str(uuid.uuid4())
                     key_status = "KEY_GENERATED"
                     generated_keys += 1
@@ -750,20 +775,30 @@ async def run(args: argparse.Namespace) -> int:
                 if p_key:
                     ac_mappings.append((p_key, ch_id))
 
+            # 5) Log-Zuordnung (serverweit vs panelbezogen)
+            # Laut Code ist ticketlog serverweit, wenn panel_key IS NULL.
+            # Wir behalten bestehende Log-Einträge als serverweit bei (panel_key bleibt NULL).
+            # Es gibt keine panelbezogenen Logs im alten System.
+
             # Summary
             elapsed = time.perf_counter() - start_ts
             print("\n=== Scan Summary ===")
-            print(f"Total panels: {total}")
-            print(f"  Existing Keys      : {already_keys}")
-            print(f"  New Keys generated : {generated_keys}")
-            print(f"  Unique msg matches : {unique_msg_matches}")
-            print(f"  Already saved IDs  : {already_msg_ids}")
+            print(f"Total panels found in DB: {len(panels)}")
+            print(f"  Ambiguous panels (EXCLUDED): {ambiguous_panels_count}")
+            print(f"  Eindeutig migrierbare Panels: {len(valid_panels)}")
+            print(f"  Bereits vorhandene Keys     : {already_keys}")
+            print(f"  Neu vorgesehene Keys        : {generated_keys}")
+            print(f"  Unique msg matches          : {unique_msg_matches}")
+            print(f"  Already saved IDs           : {already_msg_ids}")
             
             print(f"\nTickets (unmapped): {len(tickets)}")
-            print(f"  Successfully mapped: {mapped_tickets}")
-            print(f"  Ambiguous          : {ambiguous_tickets}")
-            print(f"  No panel found     : {unmapped_tickets}")
-            print(f"Autoclose States mapped: {len(ac_mappings)}")
+            print(f"  Eindeutig zuordenbare Tickets: {mapped_tickets}")
+            print(f"  Mehrdeutige Zuordnungen      : {ambiguous_tickets}")
+            print(f"  Nicht zuordenbare Tickets    : {unmapped_tickets}")
+            print(f"Zuordenbare Autoclose-Datensätze: {len(ac_mappings)}")
+            
+            if ambiguous_panels_count > 0:
+                print(f"\nExclusion Note: {ambiguous_panels_count} panels were excluded because they have identical selectors (Guild, Channel, Category, Role, Thema) and cannot be uniquely identified.")
 
             # Optional report
             if args.report:
