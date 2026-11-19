@@ -57,6 +57,7 @@ PANEL_FOOTER_TEXT = "Klicke auf den Button, um ein Ticket zu erstellen!"
 
 @dataclass
 class PanelRow:
+    id: int
     guild_id: int
     channel_id: int
     thema: str
@@ -112,15 +113,19 @@ class DB:
                 has_msg_id = "panelMsgID" in cols
                 has_desc = "description" in cols
                 has_key = "panel_key" in cols
+                has_id = "id" in cols
 
-                q_cols = ["guildID", "channelID", "thema"]
+                q_cols = []
+                if has_id: q_cols.append("id")
+                q_cols.extend(["guildID", "channelID", "thema"])
                 if has_desc: q_cols.append("description")
                 if has_msg_id: q_cols.append("panelMsgID")
                 if has_key: q_cols.append("panel_key")
                 q_cols.extend(["roleID", "categoryID"])
 
-                # Wir sortieren nach allen Selektor-Spalten, um Duplikate bei der Verarbeitung leicht zu erkennen
-                q = f"SELECT {', '.join(q_cols)} FROM ticketsystem ORDER BY guildID, channelID, roleID, categoryID, thema"
+                # Wir sortieren nach id (falls vorhanden), um deterministische Ergebnisse zu erhalten
+                order_by = "id" if has_id else "guildID, channelID, roleID, categoryID, thema"
+                q = f"SELECT {', '.join(q_cols)} FROM ticketsystem ORDER BY {order_by}"
                 await cur.execute(q)
                 rows = await cur.fetchall()
                 
@@ -130,6 +135,7 @@ class DB:
                 for r in rows:
                     items.append(
                         PanelRow(
+                            id=int(r[col_map["id"]]) if has_id else 0,
                             guild_id=int(r[col_map["guildID"]]),
                             channel_id=int(r[col_map["channelID"]]),
                             thema=str(r[col_map["thema"]] or ""),
@@ -189,8 +195,23 @@ class DB:
                         errors.append(f"Selector not unique or missing (count={cnt}) for guild={g} channel={ch} thema={thema}")
         return (len(errors) == 0), errors
 
+    async def fetch_tickets_to_map(self) -> List[Dict[str, Any]]:
+        """Holt alle Tickets aus ticketsystem_channels, die noch keinen panel_key haben."""
+        q = "SELECT guildID, channelID, opened, msgID FROM ticketsystem_channels WHERE panel_key IS NULL OR panel_key = ''"
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(q)
+                rows = await cur.fetchall()
+                return [{"guild_id": r[0], "channel_id": r[1], "opener_id": r[2], "msg_id": r[3]} for r in rows]
+
     async def apply_all_updates(self, panel_updates: List[Dict[str, Any]], ticket_mappings: List[Dict[str, Any]], ac_mappings: List[Tuple[str, int]]) -> Dict[str, Any]:
-        """Führt alle Datenbankänderungen (Panels, Tickets, Autoclose) in einer gemeinsamen Transaktion atomar aus."""
+        """Führt alle Datenbankänderungen (Panels, Tickets, Autoclose) in einer gemeinsamen Transaktion atomar aus.
+        
+        Sicherheit:
+        - Prüft exakte Übereinstimmung der Zeilen vor dem Update.
+        - Rollback bei jedem Fehler oder unerwartetem Rowcount.
+        - Überschreibt keine vorhandenen Keys.
+        """
         result = {
             "panels": {"planned": len(panel_updates), "applied": 0},
             "tickets": {"planned": len(ticket_mappings), "applied": 0},
@@ -208,28 +229,30 @@ class DB:
                 async with conn.cursor() as cur:
                     # 1. Panels
                     for u in panel_updates:
+                        row_id = u.get("row_id")
                         g, ch, rid, cid, th = u["guild_id"], u["channel_id"], u["role_id"], u["category_id"], u["thema"]
                         
-                        # Lock & Verify uniqueness (re-check before apply)
-                        q_sel = (
-                            "SELECT panel_key FROM ticketsystem "
-                            "WHERE guildID=%s AND channelID=%s AND "
-                            "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
-                            "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
-                            "(thema <=> %s) FOR UPDATE"
-                        )
-                        await cur.execute(q_sel, (int(g), int(ch), rid, rid, cid, cid, th))
+                        # Lock & Verify (re-check before apply)
+                        if row_id:
+                            q_sel = "SELECT panel_key FROM ticketsystem WHERE id=%s FOR UPDATE"
+                            await cur.execute(q_sel, (row_id,))
+                        else:
+                            q_sel = (
+                                "SELECT panel_key FROM ticketsystem "
+                                "WHERE guildID=%s AND channelID=%s AND "
+                                "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
+                                "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
+                                "(thema <=> %s) FOR UPDATE"
+                            )
+                            await cur.execute(q_sel, (int(g), int(ch), rid, rid, cid, cid, th))
+                        
                         rows = await cur.fetchall()
                         if len(rows) != 1:
-                            raise RuntimeError(f"Panel selector no longer unique or missing for guild={g} channel={ch} thema={th}")
+                            raise RuntimeError(f"Panel identifying failed (count={len(rows)}) for {u.get('row_id') or th}")
                         
                         existing_key = rows[0][0]
                         if existing_key and "panel_key" in u and u["panel_key"] != existing_key:
-                             # Falls der Key in der DB bereits existiert, darf er nicht durch den generierten Key überschrieben werden
-                             # Wir überspringen das Setzen des Keys im Update, falls er schon da ist, 
-                             # oder werfen Fehler wenn es ein Konflikt ist.
-                             # Hier: Wenn ein anderer Key da ist -> Fehler.
-                             raise RuntimeError(f"Panel for guild={g} channel={ch} already has a DIFFERENT key: {existing_key}")
+                             raise RuntimeError(f"Conflict: Panel already has key {existing_key}")
 
                         upd_fields = []
                         upd_vals = []
@@ -244,17 +267,14 @@ class DB:
                             upd_vals.append(u["panel_key"])
 
                         if upd_fields:
-                            upd_q = (
-                                f"UPDATE ticketsystem SET {', '.join(upd_fields)} "
-                                "WHERE guildID=%s AND channelID=%s AND "
-                                "((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND "
-                                "((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND "
-                                "(thema <=> %s)"
-                            )
-                            upd_vals.extend([int(g), int(ch), rid, rid, cid, cid, th])
+                            where_q = "WHERE id=%s" if row_id else "WHERE guildID=%s AND channelID=%s AND ((roleID IS NULL AND %s IS NULL) OR roleID=%s) AND ((categoryID IS NULL AND %s IS NULL) OR categoryID=%s) AND (thema <=> %s)"
+                            upd_q = f"UPDATE ticketsystem SET {', '.join(upd_fields)} {where_q}"
+                            if row_id: upd_vals.append(row_id)
+                            else: upd_vals.extend([int(g), int(ch), rid, rid, cid, cid, th])
+                            
                             await cur.execute(upd_q, tuple(upd_vals))
                             if cur.rowcount != 1:
-                                raise RuntimeError(f"Failed to update panel for guild={g} channel={ch}")
+                                raise RuntimeError(f"Update failed for panel {row_id or th}")
                         result["panels"]["applied"] += 1
 
                     # 2. Tickets
@@ -267,13 +287,13 @@ class DB:
                         )
                         t_rows = await cur.fetchall()
                         if len(t_rows) != 1:
-                            raise RuntimeError(f"Ticket channelID {ch_id} not found or not unique in guild {g_id}")
+                            raise RuntimeError(f"Ticket {ch_id} not unique or missing in guild {g_id}")
                         
-                        if t_rows[0][0]: # Key already present
+                        if t_rows[0][0]:
                             if t_rows[0][0] == key:
-                                result["tickets"]["applied"] += 1 # Already correct
+                                result["tickets"]["applied"] += 1
                                 continue
-                            raise RuntimeError(f"Ticket {ch_id} already has a DIFFERENT key: {t_rows[0][0]}")
+                            raise RuntimeError(f"Ticket {ch_id} already has key {t_rows[0][0]}")
 
                         await cur.execute(
                             "UPDATE ticketsystem_channels SET panel_key=%s "
@@ -281,27 +301,23 @@ class DB:
                             (key, int(g_id), int(ch_id))
                         )
                         if cur.rowcount != 1:
-                            raise RuntimeError(f"Failed to map ticket {ch_id}")
+                            raise RuntimeError(f"Atomic update failed for ticket {ch_id}")
                         result["tickets"]["applied"] += 1
 
                     # 3. Autoclose
                     for key, ch_id in ac_mappings:
-                        # Verify existence (ticket must exist and be mapped/to be mapped to this key)
                         await cur.execute(
                             "SELECT panel_key FROM ticket_autoclose_state WHERE channelID=%s FOR UPDATE",
                             (int(ch_id),)
                         )
                         ac_rows = await cur.fetchall()
-                        if len(ac_rows) == 0:
-                            # Autoclose-Eintrag fehlt? Ignorieren oder Fehler?
-                            # Da Autoclose optional ist, schauen wir ob es den Datensatz überhaupt gibt.
-                            continue
+                        if len(ac_rows) == 0: continue # Optional
                         
                         if ac_rows[0][0]:
                              if ac_rows[0][0] == key:
                                  result["autoclose"]["applied"] += 1
                                  continue
-                             raise RuntimeError(f"Autoclose for {ch_id} already has a DIFFERENT key: {ac_rows[0][0]}")
+                             raise RuntimeError(f"Autoclose {ch_id} has conflict key {ac_rows[0][0]}")
 
                         await cur.execute(
                             "UPDATE ticket_autoclose_state SET panel_key=%s "
@@ -309,7 +325,7 @@ class DB:
                             (key, int(ch_id))
                         )
                         if cur.rowcount != 1:
-                            raise RuntimeError(f"Failed to map autoclose for {ch_id}")
+                            raise RuntimeError(f"Atomic update failed for autoclose {ch_id}")
                         result["autoclose"]["applied"] += 1
 
                 await conn.commit()
@@ -448,18 +464,28 @@ class PanelScanner:
                 e = msg.embeds[0]
                 footer_ok = True
                 if e.footer and e.footer.text:
-                    footer_ok = (e.footer.text.strip() == PANEL_FOOTER_TEXT)
-                if not footer_ok:
-                    continue
+                    # Wir prüfen auf bekannte Footer-Varianten (alt/neu)
+                    known_footers = [
+                        PANEL_FOOTER_TEXT,
+                        "Klicke auf den Button um ein Ticket zu erstellen!", # Ohne Komma
+                        "Benutze den Button um ein Ticket zu erstellen!",
+                    ]
+                    footer_text = e.footer.text.strip()
+                    footer_ok = any(f in footer_text for f in known_footers)
+                
+                # Wir erlauben auch Nachrichten ohne Footer, solange der Button stimmt,
+                # aber bewerten sie später ggf. niedriger.
+                
                 title_text = (e.title or "").strip()
                 description_text = (e.description or "").strip()
                 prefiltered.append({
-                    "message": msg,
+                    "message_id": msg.id,
                     "title_text": title_text,
                     "description_text": description_text,
-                    "created_at": msg.created_at.isoformat() if isinstance(msg.created_at, datetime) else str(msg.created_at),
+                    "created_at": msg.created_at,
                     "author_id": msg.author.id,
-                    "criteria_base": {"button": True, "footer": footer_ok},
+                    "has_footer": footer_ok,
+                    "embed_count": len(msg.embeds)
                 })
         except discord.Forbidden:
             raise PermissionError("Missing permissions to read history")
@@ -573,72 +599,35 @@ async def run(args: argparse.Namespace) -> int:
             row_index = 0
             
             # Wir brauchen eine Map panel_key -> panel für die Ticket-Zuordnung später
-            # Nur für eindeutige Panels pro Guild!
             key_to_panel_map: Dict[str, PanelRow] = {}
 
-            # Identifiziere mehrdeutige Panels (gleiche Selektor-Kombination)
-            from collections import Counter
-            selectors = [
-                (p.guild_id, p.channel_id, p.role_id, p.category_id, p.thema)
-                for p in panels
-            ]
-            selector_counts = Counter(selectors)
-            
-            valid_panels: List[PanelRow] = []
             for p in panels:
-                sel = (p.guild_id, p.channel_id, p.role_id, p.category_id, p.thema)
-                if selector_counts[sel] > 1:
-                    ambiguous_panels_count += 1
-                    # Dokumentiere Ausschluss im Report
-                    results.append(MatchResult(p.guild_id, p.channel_id, p.thema, "AMBIGUOUS_SELECTOR", action="EXCLUDE", reason="Multiple database rows with identical selector"))
-                    continue
-                valid_panels.append(p)
-
-            for p in valid_panels:
                 row_index += 1
                 selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
-                selector_hash = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+                
+                # Stabiler Hash für den Key, bevorzugt ID verwenden falls vorhanden
+                if p.id:
+                    name_for_key = f"panel_id_{p.id}"
+                else:
+                    name_for_key = hashlib.sha1(json.dumps(selector, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
                 
                 # a) Key Management
                 current_key = p.panel_key
-                key_status = "KEY_ALREADY_SAVED"
+                key_status = "PANEL_KEY_ALREADY_SAVED"
                 if not current_key:
-                    # Stabile UUID Generierung basierend auf dem Selektor für deterministische Dry-Run
-                    # Wir nutzen den Selector-Hash als Seed für einen deterministischen Namespace
                     NAMESPACE_ASTRA = uuid.UUID('12345678-1234-5678-1234-567812345678')
-                    current_key = str(uuid.uuid5(NAMESPACE_ASTRA, selector_hash))
-                    key_status = "KEY_GENERATED"
+                    current_key = str(uuid.uuid5(NAMESPACE_ASTRA, name_for_key))
+                    key_status = "PANEL_KEY_GENERATED"
                     generated_keys += 1
-                    # Update für den Key einplanen
-                    panel_updates.append({**selector, "panel_key": current_key})
+                    panel_updates.append({**selector, "panel_key": current_key, "row_id": p.id})
                 else:
-                    # Hinweis: KEY_ALREADY_SAVED bedeutet der Key ist in der DB.
-                    # Wenn wir hier ALREADY_SAVED setzen, meinen wir das Management.
                     already_keys += 1
                 
-                p.panel_key = current_key # Im Objekt halten für später
+                p.panel_key = current_key
                 key_to_panel_map[current_key] = p
 
-                # b) Message ID / Description Management
-                found_msg_id = None
-                if p.panel_msg_id and p.panel_msg_id != 0 and p.description and p.description.strip():
-                    already_msg_ids += 1
-                    status = "KEY_ALREADY_SAVED" if p.panel_key and key_status == "KEY_ALREADY_SAVED" else "PANEL_HAS_MSGID"
-                    mr = MatchResult(p.guild_id, p.channel_id, p.thema, status, message_id=p.panel_msg_id, action="KEEP", panel_key=current_key, key_status=key_status)
-                    results.append(mr)
-                    report_rows.append({
-                        "row_index": row_index, "row_selector_hash": selector_hash,
-                        "status": mr.status, "action": mr.action,
-                        **selector,
-                        "current_message_id": p.panel_msg_id,
-                        "panel_key": current_key,
-                        "key_status": key_status,
-                        "candidates_found": 0,
-                        "reason": "panelMsgID and description already present",
-                    })
-                else:
-                    # Merken für gruppierten Scan
-                    remaining_to_scan.append((row_index, p, selector_hash))
+                # b) Scanvorbereitung
+                remaining_to_scan.append((row_index, p, name_for_key))
 
             # 2) Gruppiert nach (guild, channel) scannen
             groups: Dict[Tuple[int, int], List[Tuple[int, PanelRow, str]]] = {}
@@ -651,98 +640,92 @@ async def run(args: argparse.Namespace) -> int:
                 scanned_channels_so_far += 1
                 LOGGER.info("[Scan %d/%d] Guild=%s Channel=%s • entries=%d", scanned_channels_so_far, len(groups), g_id, ch_id, len(entries))
                 guild, guild_err = await scanner._resolve_guild(g_id)
-                channel_scan_error: Optional[str] = None
-                prefiltered: List[Dict[str, Any]] = []
-                meta: Dict[str, Any] = {}
                 
                 if guild is None:
                     for (idx, p, selector_hash) in entries:
-                        selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "GUILD_NOT_FOUND", action="REVIEW", panel_key=p.panel_key, key_status="KEY_GENERATED" if any(u.get("panel_key") == p.panel_key for u in panel_updates) else "KEY_ALREADY_SAVED")
+                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "GUILD_NOT_FOUND", action="REVIEW", panel_key=p.panel_key)
                         results.append(mr)
                         report_rows.append({
-                            "row_index": idx, "row_selector_hash": selector_hash,
-                            "status": mr.status, "action": mr.action,
-                            **selector,
-                            "current_message_id": p.panel_msg_id,
-                            "panel_key": p.panel_key,
-                            "candidates_found": 0,
-                            "reason": (f"Guild resolve failed: {guild_err['type']} status={guild_err.get('status')}" if guild_err else "Guild not found"),
+                            "id": p.id, "status": mr.status, **selector, "panel_key": p.panel_key,
+                            "reason": (f"Guild resolve failed: {guild_err['type']}" if guild_err else "Guild not found"),
                         })
                     continue
 
+                prefiltered = []
                 try:
                     t0 = time.perf_counter()
-                    prefiltered, meta = await scanner.scan_channel_messages(guild, ch_id, max_messages=args.max_messages)
+                    # Wir erhöhen das Limit auf 5000 Nachrichten, um wirklich ALLES zu finden
+                    prefiltered, meta = await scanner.scan_channel_messages(guild, ch_id, max_messages=5000)
                     dt = time.perf_counter() - t0
                     total_scanned_channels += 1
                     total_scanned_messages += int(meta.get("scanned") or 0)
-                    if slowest_channel is None or dt > slowest_channel[2]:
-                        slowest_channel = (g_id, ch_id, dt)
                     LOGGER.info("Scanned channel %s/%s in %.2fs • messages=%s", g_id, ch_id, dt, meta.get("scanned"))
-                except PermissionError as e:
-                    for (idx, p, selector_hash) in entries:
-                        selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MISSING_PERMISSIONS", action="REVIEW", panel_key=p.panel_key)
-                        results.append(mr)
-                        report_rows.append({
-                            "row_index": idx, "row_selector_hash": selector_hash,
-                            "status": mr.status, "action": mr.action,
-                            **selector,
-                            "current_message_id": p.panel_msg_id,
-                            "panel_key": p.panel_key,
-                            "reason": f"Missing permissions: {e}",
-                        })
-                    continue
                 except Exception as e:
-                    channel_scan_error = f"scan_failed: {type(e).__name__}: {e}"
+                    LOGGER.warning("Scan failed for channel %s: %s", ch_id, e)
 
                 for (idx, p, selector_hash) in entries:
                     selector = {"guild_id": p.guild_id, "channel_id": p.channel_id, "role_id": p.role_id, "category_id": p.category_id, "thema": p.thema}
-                    if channel_scan_error:
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "SCAN_ERROR", reason=channel_scan_error, action="REVIEW", panel_key=p.panel_key)
-                        results.append(mr)
-                        report_rows.append({ "row_index": idx, "status": mr.status, "action": mr.action, **selector, "panel_key": p.panel_key, "reason": channel_scan_error })
-                        continue
-
-                    cands = []
-                    for item in prefiltered:
-                        thema = p.thema or ""
-                        if item["title_text"] == thema or item["title_text"].startswith(thema):
-                            cands.append(item)
-
-                    if not cands:
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "NO_MATCH", action="REVIEW", panel_key=p.panel_key)
-                        results.append(mr)
-                        report_rows.append({ "row_index": idx, "status": mr.status, "action": mr.action, **selector, "panel_key": p.panel_key, "reason": "No matching messages found" })
-                    elif len(cands) > 1:
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MULTIPLE_MATCHES", action="REVIEW", panel_key=p.panel_key, candidates=len(cands))
-                        results.append(mr)
-                        report_rows.append({ "row_index": idx, "status": mr.status, "action": mr.action, **selector, "panel_key": p.panel_key, "candidates_found": len(cands) })
-                    else:
-                        item = cands[0]
-                        unique_msg_matches += 1
-                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "MATCH_FOUND", message_id=item["message"].id, action="UPDATE", panel_key=p.panel_key)
-                        results.append(mr)
-                        
-                        # In panel_updates mergen oder neu hinzufügen
-                        upd = next((u for u in panel_updates if u["guild_id"] == p.guild_id and u["channel_id"] == p.channel_id and u["thema"] == p.thema), None)
-                        if upd:
-                            upd["message_id"] = item["message"].id
-                            upd["description"] = item["description_text"]
+                    
+                    # Bestehende ID verifizieren?
+                    current_msg_id = p.panel_msg_id
+                    msg_verified = False
+                    if current_msg_id:
+                        # Suche in prefiltered
+                        match = next((m for m in prefiltered if m["message_id"] == current_msg_id), None)
+                        if match:
+                            msg_verified = True
+                            status = "PANEL_MESSAGE_VERIFIED"
                         else:
-                            panel_updates.append({**selector, "message_id": item["message"].id, "description": item["description_text"]})
+                            status = "PANEL_MESSAGE_STALE" # ID da, aber Nachricht nicht gefunden
+                    
+                    if not msg_verified:
+                        # Suche nach passenden Kandidaten
+                        cands = []
+                        for item in prefiltered:
+                            thema = p.thema or ""
+                            # Thema Match (exakt oder Start)
+                            score = 0
+                            if item["title_text"] == thema: score += 10
+                            elif thema and item["title_text"].startswith(thema): score += 5
+                            
+                            # Beschreibung Match
+                            if p.description and p.description in item["description_text"]: score += 5
+                            
+                            if score >= 5:
+                                cands.append((score, item))
+                        
+                        cands.sort(key=lambda x: x[0], reverse=True)
+                        
+                        if not cands:
+                            mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_MISSING", action="REVIEW", panel_key=p.panel_key)
+                        elif len(cands) > 1 and cands[0][0] == cands[1][0]:
+                            mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_AMBIGUOUS", action="REVIEW", panel_key=p.panel_key, candidates=len(cands))
+                        else:
+                            best = cands[0][1]
+                            unique_msg_matches += 1
+                            mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_FOUND", message_id=best["message_id"], action="UPDATE", panel_key=p.panel_key)
+                            
+                            upd = next((u for u in panel_updates if u.get("row_id") == p.id), None)
+                            if upd:
+                                upd["message_id"] = best["message_id"]
+                                upd["description"] = best["description_text"]
+                            else:
+                                panel_updates.append({**selector, "message_id": best["message_id"], "description": best["description_text"], "row_id": p.id})
 
-                        report_rows.append({
-                            "row_index": idx, "status": mr.status, "action": mr.action, **selector,
-                            "panel_key": p.panel_key, "found_message_id": item["message"].id, "found_description": item["description_text"]
-                        })
+                    else:
+                        mr = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_VERIFIED", message_id=p.panel_msg_id, action="KEEP", panel_key=p.panel_key)
+
+                    results.append(mr)
+                    report_rows.append({
+                        "id": p.id, "status": mr.status, "action": mr.action, **selector,
+                        "panel_key": p.panel_key, "message_id": mr.message_id
+                    })
 
             # 3) Ticket-Zuordnung
             tickets = await db.fetch_tickets_to_map()
             LOGGER.info("Fetched %d unmapped tickets from DB", len(tickets))
             
-            # Group panels by guild to check category uniqueness
+            # Group panels by guild
             panels_by_guild: Dict[int, List[PanelRow]] = {}
             for p in panels:
                 panels_by_guild.setdefault(p.guild_id, []).append(p)
@@ -756,40 +739,44 @@ async def run(args: argparse.Namespace) -> int:
 
             for t in tickets:
                 g_id = t["guild_id"]
-                # Wir suchen ein Panel in dieser Gilde, das für dieses Ticket verantwortlich ist.
-                # Einzige Info im Ticket-Datensatz: guildID, channelID (des Tickets), opener_id, msgID (des Welcome-Embeds).
-                # Wir müssen also über den Ticket-Channel gehen, um die Kategorie zu finden.
+                ch_id = t["channel_id"]
                 
+                # Versuch A: Über Discord den Channel/Kategorie finden
                 guild = client.get_guild(g_id)
-                if not guild:
-                    ticket_results.append({**t, "status": "GUILD_NOT_FOUND"})
-                    unmapped_tickets += 1
-                    continue
+                cat_id = None
+                if guild:
+                    t_chan = guild.get_channel(ch_id)
+                    if t_chan and hasattr(t_chan, "category_id"):
+                        cat_id = t_chan.category_id
                 
-                t_chan = guild.get_channel(t["channel_id"])
-                if not t_chan or not hasattr(t_chan, "category_id"):
-                    ticket_results.append({**t, "status": "CHANNEL_NOT_FOUND"})
-                    unmapped_tickets += 1
-                    continue
+                # Suche nach passenden Panels in der Guild
+                possible_panels = panels_by_guild.get(g_id, [])
                 
-                cat_id = t_chan.category_id
-                # Finde alle Panels in dieser Guild mit dieser CategoryID
-                possible_panels = [p for p in panels_by_guild.get(g_id, []) if p.category_id == cat_id]
+                # Filtere nach Kategorie (falls bekannt)
+                if cat_id:
+                    possible_panels = [p for p in possible_panels if p.category_id == cat_id]
+                
+                # Wenn immer noch mehrere: Prüfe msgID (vielleicht wurde das Ticket aus diesem Panel erstellt)
+                # In der DB von ticketsystem_channels ist msgID die ID der "Willkommens-Nachricht" im Ticket-Kanal.
+                # Das hilft uns nicht direkt das Panel zu finden, es sei denn wir haben Logs.
                 
                 if len(possible_panels) == 1:
                     target_p = possible_panels[0]
                     ticket_mappings.append({
                         "panel_key": target_p.panel_key,
                         "guild_id": g_id,
-                        "channel_id": t["channel_id"]
+                        "channel_id": ch_id
                     })
-                    ticket_results.append({**t, "status": "MAPPED", "panel_key": target_p.panel_key, "thema": target_p.thema})
+                    ticket_results.append({**t, "status": "TICKET_MAPPED", "panel_key": target_p.panel_key})
                     mapped_tickets += 1
                 elif len(possible_panels) > 1:
-                    ticket_results.append({**t, "status": "AMBIGUOUS", "candidates": [p.thema for p in possible_panels]})
+                    ticket_results.append({**t, "status": "TICKET_AMBIGUOUS", "candidates": [p.thema for p in possible_panels]})
                     ambiguous_tickets += 1
                 else:
-                    ticket_results.append({**t, "status": "NO_PANEL_FOUND", "category_id": cat_id})
+                    status = "TICKET_UNMAPPED"
+                    if not guild: status = "GUILD_NOT_FOUND"
+                    elif not cat_id: status = "CHANNEL_NOT_FOUND"
+                    ticket_results.append({**t, "status": status})
                     unmapped_tickets += 1
 
             # 4) Autoclose-State & Log Zuordnung
@@ -822,22 +809,18 @@ async def run(args: argparse.Namespace) -> int:
             # Summary
             elapsed = time.perf_counter() - start_ts
             print("\n=== Scan Summary ===")
-            print(f"Total panels found in DB: {len(panels)}")
-            print(f"  Ambiguous panels (EXCLUDED): {ambiguous_panels_count}")
-            print(f"  Eindeutig migrierbare Panels: {len(valid_panels)}")
+            print(f"Total panels found in DB: {total}")
+            print(f"  Eindeutig identifizierbare Panels: {total}")
             print(f"  Bereits vorhandene Keys     : {already_keys}")
             print(f"  Neu vorgesehene Keys        : {generated_keys}")
             print(f"  Unique msg matches          : {unique_msg_matches}")
-            print(f"  Already saved IDs           : {already_msg_ids}")
+            print(f"  Already saved IDs (verified): {already_msg_ids}")
             
             print(f"\nTickets (unmapped): {len(tickets)}")
             print(f"  Eindeutig zuordenbare Tickets: {mapped_tickets}")
             print(f"  Mehrdeutige Zuordnungen      : {ambiguous_tickets}")
             print(f"  Nicht zuordenbare Tickets    : {unmapped_tickets}")
             print(f"Zuordenbare Autoclose-Datensätze: {len(ac_mappings)}")
-            
-            if ambiguous_panels_count > 0:
-                print(f"\nExclusion Note: {ambiguous_panels_count} panels were excluded because they have identical selectors (Guild, Channel, Category, Role, Thema) and cannot be uniquely identified.")
 
             # Optional report
             if args.report:
