@@ -676,13 +676,19 @@ async def run(args: argparse.Namespace) -> int:
             panel_to_result: Dict[int, MatchResult] = {}
             panel_to_reason: Dict[int, str] = {}
             panel_to_cands: Dict[int, List[Dict[str, Any]]] = {}
+            
+            # Cache für Channel-Scans, damit wir nicht doppelt scannen
+            # (guild_id, channel_id) -> (prefiltered_messages, meta)
+            channel_scan_cache: Dict[Tuple[int, int], Tuple[List[Dict[str, Any]], Dict[str, Any]]] = {}
 
+            # --- PHASE A: Alle gespeicherten IDs verifizieren und reservieren ---
+            # Wir scannen alle benötigten Channels einmal vorab für Phase A
             scanned_channels_so_far = 0
             for (g_id, ch_id), entries in groups.items():
                 scanned_channels_so_far += 1
-                LOGGER.info("[Scan %d/%d] Guild=%s Channel=%s • entries=%d", scanned_channels_so_far, len(groups), g_id, ch_id, len(entries))
-                guild, guild_err = await scanner._resolve_guild(g_id)
+                LOGGER.info("[Phase A %d/%d] Guild=%s Channel=%s • entries=%d", scanned_channels_so_far, len(groups), g_id, ch_id, len(entries))
                 
+                guild, guild_err = await scanner._resolve_guild(g_id)
                 if guild is None:
                     for (idx, p, selector_hash) in entries:
                         status = "GUILD_NOT_FOUND"
@@ -696,6 +702,7 @@ async def run(args: argparse.Namespace) -> int:
                     t0 = time.perf_counter()
                     prefiltered, meta = await scanner.scan_channel_messages(guild, ch_id, max_messages=args.max_messages)
                     dt = time.perf_counter() - t0
+                    channel_scan_cache[(g_id, ch_id)] = (prefiltered, meta)
                     total_scanned_channels += 1
                     total_scanned_messages += int(meta.get("scanned") or 0)
                     LOGGER.info("Scanned channel %s/%s in %.2fs • messages=%s", g_id, ch_id, dt, meta.get("scanned"))
@@ -706,8 +713,7 @@ async def run(args: argparse.Namespace) -> int:
                         panel_to_reason[p.id] = str(e)
                     continue
 
-                # --- PHASE A: Gespeicherte IDs verifizieren und reservieren ---
-                # Erst in diesem Channel alle Panels mit vorhandener ID prüfen
+                # Gespeicherte IDs in diesem Channel prüfen
                 for (idx, p, selector_hash) in entries:
                     current_msg_id = p.panel_msg_id
                     if not current_msg_id:
@@ -740,19 +746,25 @@ async def run(args: argparse.Namespace) -> int:
                         panel_to_result[p.id] = MatchResult(p.guild_id, p.channel_id, p.thema, status, action="REVIEW", panel_key=p.panel_key)
                         panel_to_reason[p.id] = f"Gespeicherte ID {current_msg_id} wurde im Channel-Scan nicht gefunden."
 
-                # --- PHASE B: Neue Kandidaten suchen (nur für Panels ohne Ergebnis aus Phase A) ---
+            # --- PHASE B: Neue Kandidaten suchen (nur für Panels ohne Ergebnis aus Phase A) ---
+            # Wir nutzen die gecachten Scans
+            scanned_channels_so_far = 0
+            for (g_id, ch_id), entries in groups.items():
+                scanned_channels_so_far += 1
+                if (g_id, ch_id) not in channel_scan_cache:
+                    continue # Bereits als Fehler/Missing markiert in Phase A
+                
+                prefiltered, meta = channel_scan_cache[(g_id, ch_id)]
+                
                 for (idx, p, selector_hash) in entries:
                     if p.id in panel_to_result:
                         continue
                     
                     cands = []
+                    collided_cand_id = None
                     for item in prefiltered:
                         m_id = item["message_id"]
                         
-                        # Nachricht bereits durch Phase A reserviert?
-                        if m_id in occupied_messages:
-                            continue
-
                         thema = (p.thema or "").strip()
                         thema_lower = thema.lower()
                         title_lower = item["title_text"].lower()
@@ -771,17 +783,23 @@ async def run(args: argparse.Namespace) -> int:
                         if p.description and p.description in item["description_text"]:
                             score += 5
                         
-                        # Footer wird NICHT mehr bewertet (Anforderung 2)
-                        
                         if score >= 10:
+                            # Nachricht bereits durch Phase A (oder vorheriges Panel in Phase B) reserviert?
+                            if m_id in occupied_messages:
+                                collided_cand_id = m_id
+                                continue
                             cands.append({"score": score, "item": item})
                     
                     cands.sort(key=lambda x: (x["score"], x["item"]["message_id"]), reverse=True)
                     panel_to_cands[p.id] = cands
 
                     if not cands:
-                        panel_to_result[p.id] = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_MISSING", action="REVIEW", panel_key=p.panel_key)
-                        panel_to_reason[p.id] = "Keine passenden Nachrichten im Channel gefunden."
+                        if collided_cand_id:
+                            panel_to_result[p.id] = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_COLLISION", action="REVIEW", panel_key=p.panel_key)
+                            panel_to_reason[p.id] = f"Kollision: Die beste Nachricht {collided_cand_id} ist bereits einem anderen Panel zugeordnet."
+                        else:
+                            panel_to_result[p.id] = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_MISSING", action="REVIEW", panel_key=p.panel_key)
+                            panel_to_reason[p.id] = "Keine passenden Nachrichten im Channel gefunden."
                     elif len(cands) > 1 and cands[0]["score"] == cands[1]["score"]:
                         panel_to_result[p.id] = MatchResult(p.guild_id, p.channel_id, p.thema, "PANEL_MESSAGE_AMBIGUOUS", action="REVIEW", panel_key=p.panel_key, candidates=len(cands))
                         ambiguous_panels_count += 1
