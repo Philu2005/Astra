@@ -1880,7 +1880,7 @@ class ConfigCenterView(ui.LayoutView):
                     try:
                         async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
                             async with conn.cursor() as cur:
-                                await cur.execute("DELETE FROM ticketlog WHERE guildID=%s", (self.guild.id,))
+                                await cur.execute("DELETE FROM ticketlog WHERE guildID=%s AND (panel_key IS NULL OR panel_key='')", (self.guild.id,))
                     except Exception:
                         return await inter.response.send_message("Fehler beim Deaktivieren.", ephemeral=True)
                     await inter.response.send_message("<:Astra_accept:1141303821176422460> Logging deaktiviert.", ephemeral=True)
@@ -2147,19 +2147,11 @@ class PanelOverviewView(ui.LayoutView):
             # Da PanelOverviewView nur 1 Panel gleichzeitig anzeigt, ist Guild+Channel-ID sicher.
             # pid ist bereits oben definiert
             refresh_btn = discord.ui.Button(label="Status aktualisieren", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id=f"ov_refresh_{self.guild.id}_{pid}")
-            manage_btn = discord.ui.Button(label="Panel verwalten", style=discord.ButtonStyle.primary, emoji="⚙️", custom_id=f"ov_manage_{self.guild.id}_{pid}")
-
             async def ref_cb(inter: discord.Interaction):
                 await self.refresh(inter)
 
-            async def manage_cb(inter: discord.Interaction):
-                v = ConfigCenterView(self.bot, inter.user, self.guild)
-                await v.initialize(selected_channel_id=int(p["channel_id"]), active_tab=1)
-                await inter.response.edit_message(content=None, view=v)
-
             refresh_btn.callback = ref_cb
-            manage_btn.callback = manage_cb
-            cont.add_item(discord.ui.ActionRow(refresh_btn, manage_btn))
+            cont.add_item(discord.ui.ActionRow(refresh_btn))
 
         close = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, custom_id=f"ov_close_{self.guild.id}_{self.selected_channel_id or 0}")
         async def _ov_close(inter: discord.Interaction):
