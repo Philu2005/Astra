@@ -434,7 +434,6 @@ class BotIPC:
             # Limitierung auf 50 IDs
             target_ids = target_ids[:50]
 
-            from api.permissions import fetch_member_threadsafe
             results = {}
             for uid_raw in target_ids:
                 try:
