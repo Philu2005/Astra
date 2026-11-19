@@ -1331,7 +1331,7 @@ async def _fetch_ticket_panels_async(pool, guild_id: int):
                     {
                         "channel_id": str(r[0]),
                         "category_id": str(r[1]) if r[1] is not None else None,
-                        "role_id": int(r[2]) if r[2] is not None else None,
+                        "role_id": str(r[2]) if r[2] is not None else None,
                         "thema": r[3] or "",
                         "panel_message_id": str(r[4]) if (len(r) > 4 and r[4] is not None) else None,
                         "description": r[5] or "" if len(r) > 5 else "",
@@ -1351,7 +1351,7 @@ async def _fetch_ticket_panels_async(pool, guild_id: int):
                         {
                             "channel_id": str(r[0]),
                             "category_id": str(r[1]) if r[1] is not None else None,
-                            "role_id": int(r[2]) if r[2] is not None else None,
+                            "role_id": str(r[2]) if r[2] is not None else None,
                             "thema": r[3] or "",
                             "panel_message_id": str(r[4]) if (len(r) > 4 and r[4] is not None) else None,
                             "description": r[5] or "" if len(r) > 5 else "",
@@ -1370,7 +1370,7 @@ async def _fetch_ticket_panels_async(pool, guild_id: int):
                         {
                             "channel_id": str(r[0]),
                             "category_id": str(r[1]) if r[1] is not None else None,
-                            "role_id": int(r[2]) if r[2] is not None else None,
+                            "role_id": str(r[2]) if r[2] is not None else None,
                             "thema": r[3] or "",
                             "panel_message_id": None,
                             "description": "",
@@ -1945,7 +1945,7 @@ async def _fetch_open_tickets_async(pool, guild_id: int):
             for r in rows:
                 opened_val = None
                 try:
-                    opened_val = int(r[2]) if r[2] is not None else None
+                    opened_val = str(r[2]) if r[2] is not None else None
                 except Exception:
                     opened_val = None
                 claimed_raw = r[3]
