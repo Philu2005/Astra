@@ -440,10 +440,21 @@ class BotIPC:
                     uid = int(uid_raw)
                     member = g.get_member(uid)
 
+                    logger.info(
+                        "Member lookup: guild=%s user=%s cache_hit=%s",
+                        guild_id, uid, member is not None
+                    )
+
                     if member is None:
                         try:
                             member = await g.fetch_member(uid)
+                            logger.info("Member lookup erfolgreich: user=%s", uid)
+
                         except discord.NotFound:
+                            logger.warning(
+                                "Discord NotFound: guild=%s user=%s",
+                                guild_id, uid
+                            )
                             continue
                         except discord.Forbidden:
                             logger.warning(
