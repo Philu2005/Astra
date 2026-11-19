@@ -942,6 +942,76 @@ def delete_member_warns(guild_id: int, member_id: int):
     return jsonify(success=True, deleted=int(deleted)), 200
 
 
+@api_bp.route("/moderation/members/lookup/<int:guild_id>", methods=["GET"])
+@require_service_auth
+@rate_limit(scope="member_lookup", limit=30, per_seconds=60)
+def lookup_members(guild_id: int):
+    """
+    Löst eine Liste von User-IDs in Benutzerprofile (Name, Avatar) auf.
+    Eingabe: Query-Parameter 'user_ids' (kommagetrennt).
+    """
+    if not is_bot_ready():
+        return jsonify(success=False, error="Service not ready"), 503
+
+    raw_user_ids = request.args.get("user_ids", "")
+    if not raw_user_ids:
+        return jsonify(success=True, members={}), 200
+
+    target_ids = []
+    for rid in raw_user_ids.split(","):
+        uid = validate_user_id(rid.strip())
+        if uid:
+            target_ids.append(uid)
+
+    if not target_ids:
+        return jsonify(success=True, members={}), 200
+
+    # Nur die ersten 50 IDs pro Request erlauben
+    target_ids = target_ids[:50]
+
+    # Berechtigung des Aufrufers prüfen (wie bei anderen Moderations-Endpunkten)
+    caller_id_raw = request.args.get("user_id") or request.headers.get("X-User-ID")
+    caller_id = validate_user_id(caller_id_raw)
+    if caller_id is None:
+        return jsonify(success=False, error="Missing or invalid user_id"), 400
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return jsonify(success=False, error="Server not found"), 404
+
+    perm_info = check_user_guild_permissions(None, guild, caller_id, allow_api_fetch=False)
+    if perm_info is None:
+        return jsonify(success=False, error="Forbidden: Insufficient permissions"), 403
+
+    bot = get_bot_instance()
+    if bot is None:
+        return jsonify(success=False, error="Service not ready"), 503
+
+    # Bot-Instanz für discord.py Guild-Objekt
+    discord_guild = bot.get_guild(guild_id)
+    if not discord_guild:
+        return jsonify(success=False, error="Server not found in bot cache"), 404
+
+    from api.permissions import fetch_member_threadsafe
+    
+    results = {}
+    for uid in target_ids:
+        member = fetch_member_threadsafe(bot, discord_guild, uid, timeout=2.0)
+        if member:
+            results[str(uid)] = {
+                "id": str(member.id),
+                "username": member.name,
+                "display_name": member.display_name,
+                "avatar": str(member.display_avatar.url if member.display_avatar else ""),
+            }
+        else:
+            # Fallback oder als None markieren? Wir lassen es weg oder geben ID zurück.
+            pass
+
+    return jsonify(success=True, members=results), 200
+
+
 # Serverweite Löschung aller Warns einer Guild
 @api_bp.route("/moderation/warns/<int:guild_id>", methods=["DELETE"])
 @require_service_auth
