@@ -313,13 +313,14 @@ async def api_publish_ticket_panel(
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                INSERT INTO ticketsystem(guildID, channelID, thema, roleID, categoryID)
-                    VALUES (%s, %s, %s, %s, %s) AS new
-                ON DUPLICATE KEY UPDATE thema      = new.thema,
-                                        roleID     = new.roleID,
-                                        categoryID = new.categoryID
+                INSERT INTO ticketsystem(guildID, channelID, thema, description, roleID, categoryID)
+                    VALUES (%s, %s, %s, %s, %s, %s) AS new
+                ON DUPLICATE KEY UPDATE thema       = new.thema,
+                                        description = new.description,
+                                        roleID      = new.roleID,
+                                        categoryID  = new.categoryID
                 """,
-                (guild.id, chan.id, title, role.id, cat.id),
+                (guild.id, chan.id, title, description, role.id, cat.id),
             )
             # panelMsgID aktualisieren, wenn Spalte vorhanden
             try:
@@ -732,13 +733,14 @@ class SetupWizardView(ui.LayoutView):
             async with conn.cursor() as cur:
                 await cur.execute(
                     """
-                    INSERT INTO ticketsystem(guildID, channelID, thema, roleID, categoryID)
-                        VALUES (%s, %s, %s, %s, %s) AS new
-                    ON DUPLICATE KEY UPDATE thema      = new.thema,
-                                            roleID     = new.roleID,
-                                            categoryID = new.categoryID
+                    INSERT INTO ticketsystem(guildID, channelID, thema, description, roleID, categoryID)
+                        VALUES (%s, %s, %s, %s, %s, %s) AS new
+                    ON DUPLICATE KEY UPDATE thema       = new.thema,
+                                            description = new.description,
+                                            roleID      = new.roleID,
+                                            categoryID  = new.categoryID
                     """,
-                    (guild.id, chan.id, self.panel_title, role.id, cat.id),
+                    (guild.id, chan.id, self.panel_title, self.panel_desc, role.id, cat.id),
                 )
 
         # =========================
@@ -1240,35 +1242,54 @@ class ConfigCenterView(ui.LayoutView):
         try:
             async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
                 async with conn.cursor() as cur:
-                    # Versuche mit panelMsgID
+                    # Versuche mit panelMsgID & description
                     try:
                         await cur.execute(
-                            "SELECT channelID, thema, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s",
+                            "SELECT channelID, thema, description, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s",
                             (self.guild.id,),
                         )
                         rows = await cur.fetchall()
-                        for ch, thema, role_id, cat_id, msg_id in rows:
+                        for ch, thema, description, role_id, cat_id, msg_id in rows:
                             panels.append({
                                 "channel_id": int(ch),
                                 "thema": thema or "",
+                                "description": description or "",
                                 "role_id": int(role_id) if role_id else None,
                                 "category_id": int(cat_id) if cat_id else None,
                                 "panel_message_id": int(msg_id) if msg_id else None,
                             })
                     except Exception:
-                        await cur.execute(
-                            "SELECT channelID, thema, roleID, categoryID FROM ticketsystem WHERE guildID=%s",
-                            (self.guild.id,),
-                        )
-                        rows = await cur.fetchall()
-                        for ch, thema, role_id, cat_id in rows:
-                            panels.append({
-                                "channel_id": int(ch),
-                                "thema": thema or "",
-                                "role_id": int(role_id) if role_id else None,
-                                "category_id": int(cat_id) if cat_id else None,
-                                "panel_message_id": None,
-                            })
+                        # Fallback ohne panelMsgID/description (alte DB-Struktur)
+                        try:
+                            await cur.execute(
+                                "SELECT channelID, thema, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s",
+                                (self.guild.id,),
+                            )
+                            rows = await cur.fetchall()
+                            for ch, thema, role_id, cat_id, msg_id in rows:
+                                panels.append({
+                                    "channel_id": int(ch),
+                                    "thema": thema or "",
+                                    "description": "",
+                                    "role_id": int(role_id) if role_id else None,
+                                    "category_id": int(cat_id) if cat_id else None,
+                                    "panel_message_id": int(msg_id) if msg_id else None,
+                                })
+                        except Exception:
+                            await cur.execute(
+                                "SELECT channelID, thema, roleID, categoryID FROM ticketsystem WHERE guildID=%s",
+                                (self.guild.id,),
+                            )
+                            rows = await cur.fetchall()
+                            for ch, thema, role_id, cat_id in rows:
+                                panels.append({
+                                    "channel_id": int(ch),
+                                    "thema": thema or "",
+                                    "description": "",
+                                    "role_id": int(role_id) if role_id else None,
+                                    "category_id": int(cat_id) if cat_id else None,
+                                    "panel_message_id": None,
+                                })
         finally:
             self._loading = False
             self._panels_cache = panels
@@ -1304,13 +1325,13 @@ class ConfigCenterView(ui.LayoutView):
         if not self._selected_panel:
             return await interaction.response.send_message("Kein Panel ausgewählt.", ephemeral=True)
         ch_id = int(self._selected_panel["channel_id"])
-        # Update DB-Thema
+        # Update DB-Thema & Beschreibung
         try:
             async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        "UPDATE ticketsystem SET thema=%s WHERE guildID=%s AND channelID=%s",
-                        (thema, self.guild.id, ch_id),
+                        "UPDATE ticketsystem SET thema=%s, description=%s WHERE guildID=%s AND channelID=%s",
+                        (thema, description, self.guild.id, ch_id),
                     )
         except Exception:
             return await interaction.response.send_message("Fehler beim Speichern des Themas.", ephemeral=True)
@@ -1893,15 +1914,21 @@ class PanelOverviewView(ui.LayoutView):
         async with self.bot.pool.acquire() as conn:  # type: ignore[attr-defined]
             async with conn.cursor() as cur:
                 try:
-                    await cur.execute("SELECT channelID, thema, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
+                    await cur.execute("SELECT channelID, thema, description, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
                     rows = await cur.fetchall()
-                    for ch, thema, rid, cid, mid in rows:
-                        panels.append({"channel_id": int(ch), "thema": thema or "", "role_id": rid, "category_id": cid, "panel_message_id": mid})
+                    for ch, thema, description, rid, cid, mid in rows:
+                        panels.append({"channel_id": int(ch), "thema": thema or "", "description": description or "", "role_id": rid, "category_id": cid, "panel_message_id": mid})
                 except Exception:
-                    await cur.execute("SELECT channelID, thema, roleID, categoryID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
-                    rows = await cur.fetchall()
-                    for ch, thema, rid, cid in rows:
-                        panels.append({"channel_id": int(ch), "thema": thema or "", "role_id": rid, "category_id": cid, "panel_message_id": None})
+                    try:
+                        await cur.execute("SELECT channelID, thema, roleID, categoryID, panelMsgID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
+                        rows = await cur.fetchall()
+                        for ch, thema, rid, cid, mid in rows:
+                            panels.append({"channel_id": int(ch), "thema": thema or "", "description": "", "role_id": rid, "category_id": cid, "panel_message_id": mid})
+                    except Exception:
+                        await cur.execute("SELECT channelID, thema, roleID, categoryID FROM ticketsystem WHERE guildID=%s", (self.guild.id,))
+                        rows = await cur.fetchall()
+                        for ch, thema, rid, cid in rows:
+                            panels.append({"channel_id": int(ch), "thema": thema or "", "description": "", "role_id": rid, "category_id": cid, "panel_message_id": None})
         self._panels = panels
         # Keine automatische Vorauswahl: Erst nach expliziter Auswahl anzeigen
         # (Fix: In /ticket config anzeigen wurde bereits ein Panel unten angezeigt,
@@ -1952,6 +1979,7 @@ class PanelOverviewView(ui.LayoutView):
             details = [
                 f"**Thema:** {p.get('thema') or '—'}",
                 f"**Titel:** {p.get('thema') or '—'}",
+                f"**Beschreibung:** {p.get('description') or '—'}",
                 f"**Zielkanal:** {ch.mention if isinstance(ch, discord.abc.GuildChannel) else '#'+str(p['channel_id'])} (`{p['channel_id']}`)",
                 f"**Support‑Rolle:** {role.mention if role else '—'} ({getattr(role,'id','—')})",
                 f"**Kategorie:** {cat.name if isinstance(cat, discord.CategoryChannel) else '—'} ({getattr(cat,'id','—')})",

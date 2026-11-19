@@ -367,7 +367,7 @@ CREATE TABLE IF NOT EXISTS ticketsystem_channels (guildID BIGINT, channelID BIGI
 CREATE TABLE IF NOT EXISTS usertempchannels (guildID BIGINT, userID BIGINT, channelID BIGINT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS ticket_config (guildID BIGINT PRIMARY KEY, autoclose_hours INT DEFAULT 0, remind_minutes INT DEFAULT 0, reopen_hours INT DEFAULT 24, ping_throttle_minutes INT DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS ticket_autoclose_state (channelID BIGINT PRIMARY KEY, reminded TINYINT DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-CREATE TABLE IF NOT EXISTS ticketsystem (guildID BIGINT, channelID BIGINT, categoryID BIGINT, roleID BIGINT, thema TEXT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS ticketsystem (guildID BIGINT, channelID BIGINT, categoryID BIGINT, roleID BIGINT, thema TEXT, description TEXT, panelMsgID BIGINT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS ticketlog (guildID BIGINT, channelID BIGINT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS reminder (userID BIGINT, grund TEXT, time TEXT, remindID BIGINT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS levelsystem (user_xp BIGINT, user_level BIGINT, client_id TEXT, guild_id TEXT, enabled BIGINT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

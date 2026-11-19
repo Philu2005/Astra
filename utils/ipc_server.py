@@ -193,11 +193,27 @@ class BotIPC:
             guild = self.bot.get_guild(guild_id)
             if guild is None:
                 return web.json_response({"success": False, "code": "guild_unavailable"}, status=503)
-            ch = guild.get_channel(channel_id) or await guild.fetch_channel(channel_id)
+
+            ch = guild.get_channel(channel_id)
+            if ch is None:
+                try:
+                    ch = await guild.fetch_channel(channel_id)
+                except discord.NotFound:  # type: ignore
+                    # Kanal selbst existiert nicht mehr -> Nachricht ist zwangsläufig weg
+                    return web.json_response({"success": True, "status": "message_missing"}, status=200)
+                except discord.Forbidden:  # type: ignore
+                    return web.json_response({"success": False, "code": "permission_denied"}, status=403)
+                except Exception:
+                    logger.exception("IPC delete: fetch_channel failed")
+                    return web.json_response({"success": False, "code": "delete_failed"}, status=500)
 
             # Berechtigungen prüfen
-            me = guild.me or await guild.fetch_member(self.bot.user.id)  # type: ignore
-            perms = ch.permissions_for(me) if hasattr(ch, "permissions_for") else None
+            try:
+                me = guild.me or await guild.fetch_member(self.bot.user.id)  # type: ignore
+            except Exception:
+                logger.exception("IPC delete: fetch_member(self) failed")
+                me = None
+            perms = ch.permissions_for(me) if (me is not None and hasattr(ch, "permissions_for")) else None
             if not perms or not getattr(perms, "manage_messages", False):
                 # Fallback: Manche Bots können auch ohne manage_messages eigene Nachrichten löschen,
                 # aber wenn Permissions klar fehlen, geben wir 403 zurück.

@@ -1922,8 +1922,16 @@ def delete_ticket_panel(guild_id: int, channel_id: int, message_id: int):
     if sc not in (200, 410) and not (sc == 200 and (data or {}).get("success")):
         # Unerwarteter Fehler – nicht stillschweigend fortfahren
         code = (data or {}).get("code", "delete_failed")
+        logger.warning(
+            "Ticket panel delete via IPC failed (guild=%s, channel=%s, message=%s): status=%s code=%s",
+            guild_id, channel_id, message_id, sc, code,
+        )
         if sc in (400, 401, 404, 503, 504):
             return _api_error(sc, code, None)
+        if sc == 502 or code == "ipc_unavailable":
+            # Bot-Prozess/IPC nicht erreichbar – klar als Dienst-Ausfall kennzeichnen,
+            # statt generisch als 500 zu maskieren (keine irreführende Erfolgsmeldung).
+            return _api_error(503, "service_unavailable", "Bot IPC not reachable")
         return _api_error(500, code, None)
 
     # DB-Eintrag entfernen (auch wenn Nachricht bereits weg war)
