@@ -761,7 +761,7 @@ async def _fetch_command_usage_7d_global_async(pool, start_utc: datetime, end_ut
                 ),
             )
             rows = await cur.fetchall()
-            return {str(r[0]): int(r[1]) for r in rows}
+            return {str(r[0]): str(r[1]) for r in rows}
 
 
 @api_bp.route("/statistics/commands", methods=["GET"])
@@ -1329,11 +1329,11 @@ async def _fetch_ticket_panels_async(pool, guild_id: int):
                 rows = await cur.fetchall()
                 return [
                     {
-                        "channel_id": int(r[0]),
-                        "category_id": int(r[1]) if r[1] is not None else None,
+                        "channel_id": str(r[0]),
+                        "category_id": str(r[1]) if r[1] is not None else None,
                         "role_id": int(r[2]) if r[2] is not None else None,
                         "thema": r[3] or "",
-                        "panel_message_id": int(r[4]) if (len(r) > 4 and r[4] is not None) else None,
+                        "panel_message_id": str(r[4]) if (len(r) > 4 and r[4] is not None) else None,
                         "description": r[5] or "" if len(r) > 5 else "",
                         "panel_key": r[6] if len(r) > 6 else None,
                     }
@@ -1349,11 +1349,11 @@ async def _fetch_ticket_panels_async(pool, guild_id: int):
                     rows = await cur.fetchall()
                     return [
                         {
-                            "channel_id": int(r[0]),
-                            "category_id": int(r[1]) if r[1] is not None else None,
+                            "channel_id": str(r[0]),
+                            "category_id": str(r[1]) if r[1] is not None else None,
                             "role_id": int(r[2]) if r[2] is not None else None,
                             "thema": r[3] or "",
-                            "panel_message_id": int(r[4]) if (len(r) > 4 and r[4] is not None) else None,
+                            "panel_message_id": str(r[4]) if (len(r) > 4 and r[4] is not None) else None,
                             "description": r[5] or "" if len(r) > 5 else "",
                             "panel_key": None,
                         }
@@ -1368,8 +1368,8 @@ async def _fetch_ticket_panels_async(pool, guild_id: int):
                     rows = await cur.fetchall()
                     return [
                         {
-                            "channel_id": int(r[0]),
-                            "category_id": int(r[1]) if r[1] is not None else None,
+                            "channel_id": str(r[0]),
+                            "category_id": str(r[1]) if r[1] is not None else None,
                             "role_id": int(r[2]) if r[2] is not None else None,
                             "thema": r[3] or "",
                             "panel_message_id": None,
@@ -1954,8 +1954,8 @@ async def _fetch_open_tickets_async(pool, guild_id: int):
                 except Exception:
                     claimed_val = None
                 data.append({
-                    "channel_id": int(r[0]),
-                    "message_id": int(r[1]),
+                    "channel_id": str(r[0]),
+                    "message_id": str(r[1]),
                     "opened_by": opened_val,
                     "claimed_by": claimed_val,
                     "opened_at": r[4],  # formatierte Zeit aus Bot-Logik

@@ -1551,7 +1551,6 @@ class ConfigCenterView(ui.LayoutView):
     def _build(self):
         self.clear_items()
         container = discord.ui.Container(accent_color=get_current_colour().value)
-        self.add_item(container)
 
         # Header
         container.add_item(discord.ui.TextDisplay("# Ticket-Verwaltung\nBitte wähle zunächst ein Ticket-Panel aus, das du anzeigen oder bearbeiten möchtest."))
@@ -1615,6 +1614,7 @@ class ConfigCenterView(ui.LayoutView):
 
             close_btn.callback = close_cb
             container.add_item(discord.ui.ActionRow(close_btn))
+            self.add_item(container)
             return
 
         # Permanente Kategorienavigation (immer sichtbar)
