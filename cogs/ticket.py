@@ -1571,9 +1571,10 @@ class ConfigCenterView(ui.LayoutView):
                 ))
 
         if select_options:
+            pid = self.selected_channel_id or 0
             # Wir verwenden eine eindeutige custom_id für das Select
             select = discord.ui.Select(
-                custom_id=f"cfg_panel_sel_{self.guild.id}",
+                custom_id=f"cfg_panel_sel_{self.guild.id}_{pid}",
                 placeholder="Wähle ein Panel …", 
                 min_values=1, 
                 max_values=1, 
@@ -1607,12 +1608,14 @@ class ConfigCenterView(ui.LayoutView):
             return
 
         # Permanente Kategorienavigation (immer sichtbar)
-        nav0 = discord.ui.Button(label="Übersicht", style=(discord.ButtonStyle.primary if self.active_tab == 0 else discord.ButtonStyle.secondary), emoji="📋", custom_id=f"nav_tab_0_{self.guild.id}")
-        nav1 = discord.ui.Button(label="Panel gestalten", style=(discord.ButtonStyle.primary if self.active_tab == 1 else discord.ButtonStyle.secondary), emoji="📝", custom_id=f"nav_tab_1_{self.guild.id}")
-        nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=(discord.ButtonStyle.primary if self.active_tab == 2 else discord.ButtonStyle.secondary), emoji="🧩", custom_id=f"nav_tab_2_{self.guild.id}")
-        nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=(discord.ButtonStyle.primary if self.active_tab == 3 else discord.ButtonStyle.secondary), emoji="⚙️", custom_id=f"nav_tab_3_{self.guild.id}")
-        nav4 = discord.ui.Button(label="Erinnerungen", style=(discord.ButtonStyle.primary if self.active_tab == 4 else discord.ButtonStyle.secondary), emoji="⏰", custom_id=f"nav_tab_4_{self.guild.id}")
-        nav5 = discord.ui.Button(label="Protokollierung", style=(discord.ButtonStyle.primary if self.active_tab == 5 else discord.ButtonStyle.secondary), emoji="🗒️", custom_id=f"nav_tab_5_{self.guild.id}")
+        # Wir fügen die ChannelID hinzu, um Kollisionen zu vermeiden, falls mehrere Views offen sind
+        pid = self.selected_channel_id
+        nav0 = discord.ui.Button(label="Übersicht", style=(discord.ButtonStyle.primary if self.active_tab == 0 else discord.ButtonStyle.secondary), emoji="📋", custom_id=f"nav_tab_0_{self.guild.id}_{pid}")
+        nav1 = discord.ui.Button(label="Panel gestalten", style=(discord.ButtonStyle.primary if self.active_tab == 1 else discord.ButtonStyle.secondary), emoji="📝", custom_id=f"nav_tab_1_{self.guild.id}_{pid}")
+        nav2 = discord.ui.Button(label="Discord‑Zuordnungen", style=(discord.ButtonStyle.primary if self.active_tab == 2 else discord.ButtonStyle.secondary), emoji="🧩", custom_id=f"nav_tab_2_{self.guild.id}_{pid}")
+        nav3 = discord.ui.Button(label="Ticket‑Verhalten", style=(discord.ButtonStyle.primary if self.active_tab == 3 else discord.ButtonStyle.secondary), emoji="⚙️", custom_id=f"nav_tab_3_{self.guild.id}_{pid}")
+        nav4 = discord.ui.Button(label="Erinnerungen", style=(discord.ButtonStyle.primary if self.active_tab == 4 else discord.ButtonStyle.secondary), emoji="⏰", custom_id=f"nav_tab_4_{self.guild.id}_{pid}")
+        nav5 = discord.ui.Button(label="Protokollierung", style=(discord.ButtonStyle.primary if self.active_tab == 5 else discord.ButtonStyle.secondary), emoji="🗒️", custom_id=f"nav_tab_5_{self.guild.id}_{pid}")
 
         async def goto(inter: discord.Interaction, tab_idx: int):
             self.active_tab = tab_idx
@@ -1868,7 +1871,7 @@ class ConfigCenterView(ui.LayoutView):
             log_ch_id = self._log_channel_id
             container.add_item(discord.ui.TextDisplay(f"Aktueller Log‑Kanal: {('<#'+str(log_ch_id)+'>') if log_ch_id else '—'}"))
 
-            set_sel = discord.ui.ChannelSelect(custom_id=f"tab5_log_sel_{self.guild.id}", channel_types=[discord.ChannelType.text], placeholder="Log‑Kanal wählen", min_values=0, max_values=1)
+            set_sel = discord.ui.ChannelSelect(custom_id=f"tab5_log_sel_{self.guild.id}_{pid}", channel_types=[discord.ChannelType.text], placeholder="Log‑Kanal wählen", min_values=0, max_values=1)
 
             async def set_log_cb(inter: discord.Interaction):
                 ch = set_sel.values[0] if set_sel.values else None
@@ -1897,7 +1900,9 @@ class ConfigCenterView(ui.LayoutView):
             container.add_item(discord.ui.ActionRow(set_sel))
 
         # Footer / Close
-        close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖", custom_id=f"cfg_close_final_{self.guild.id}")
+        # Eindeutige ID basierend auf Guild und ChannelID
+        pid = self.selected_channel_id
+        close_btn = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, emoji="✖", custom_id=f"cfg_close_final_{self.guild.id}_{pid}")
 
         async def close_cb(inter: discord.Interaction):
             await inter.response.defer()
@@ -2090,7 +2095,7 @@ class PanelOverviewView(ui.LayoutView):
             await v.initialize(active_tab=3) # Direkt zu Tab 3 (Ticket-Einstellungen)
             await inter.response.edit_message(content=None, view=v)
 
-        global_btn = discord.ui.Button(label="System-Einstellungen", style=discord.ButtonStyle.secondary, emoji="🔧")
+        global_btn = discord.ui.Button(label="System-Einstellungen", style=discord.ButtonStyle.secondary, emoji="🔧", custom_id=f"ov_global_cfg_{self.guild.id}")
         global_btn.callback = global_cfg_cb
         cont.add_item(discord.ui.ActionRow(global_btn))
 
@@ -2105,8 +2110,9 @@ class PanelOverviewView(ui.LayoutView):
             await self.refresh(inter)
 
         if self._panels:
+            pid = self.selected_channel_id or 0
             opts = [discord.SelectOption(label=self._label(p)[:100], value=str(p["channel_id"]), default=(int(p["channel_id"]) == self.selected_channel_id)) for p in self._panels]
-            sel = discord.ui.Select(placeholder="Panel wählen …", options=opts, min_values=1, max_values=1)
+            sel = discord.ui.Select(custom_id=f"ov_panel_sel_{self.guild.id}_{pid}", placeholder="Panel wählen …", options=opts, min_values=1, max_values=1)
             async def _ov_on_select(inter: discord.Interaction, s=sel):
                 await on_select(inter, s)
             sel.callback = _ov_on_select
@@ -2116,6 +2122,7 @@ class PanelOverviewView(ui.LayoutView):
 
         p = next((x for x in self._panels if int(x["channel_id"]) == int(self.selected_channel_id or 0)), None)
         if p:
+            pid = p["channel_id"]
             cont.add_item(discord.ui.Separator())
             ch = self.guild.get_channel(int(p["channel_id"]))
             role = self.guild.get_role(p.get("role_id") or 0)
@@ -2135,8 +2142,12 @@ class PanelOverviewView(ui.LayoutView):
             cont.add_item(discord.ui.TextDisplay("\n".join(details)))
 
             # Aktionen
-            refresh_btn = discord.ui.Button(label="Status aktualisieren", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id=f"ov_refresh_{self.guild.id}")
-            manage_btn = discord.ui.Button(label="Panel verwalten", style=discord.ButtonStyle.primary, emoji="⚙️", custom_id=f"ov_manage_{self.guild.id}")
+            # Wir verwenden hier KEINE custom_id für Refresh/Manage, da diese dynamisch pro Panel geladen werden 
+            # ODER wir stellen sicher, dass sie wirklich absolut eindeutig sind.
+            # Da PanelOverviewView nur 1 Panel gleichzeitig anzeigt, ist Guild+Channel-ID sicher.
+            # pid ist bereits oben definiert
+            refresh_btn = discord.ui.Button(label="Status aktualisieren", style=discord.ButtonStyle.secondary, emoji="🔄", custom_id=f"ov_refresh_{self.guild.id}_{pid}")
+            manage_btn = discord.ui.Button(label="Panel verwalten", style=discord.ButtonStyle.primary, emoji="⚙️", custom_id=f"ov_manage_{self.guild.id}_{pid}")
 
             async def ref_cb(inter: discord.Interaction):
                 await self.refresh(inter)
@@ -2150,7 +2161,7 @@ class PanelOverviewView(ui.LayoutView):
             manage_btn.callback = manage_cb
             cont.add_item(discord.ui.ActionRow(refresh_btn, manage_btn))
 
-        close = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, custom_id=f"ov_close_{self.guild.id}")
+        close = discord.ui.Button(label="Schließen", style=discord.ButtonStyle.danger, custom_id=f"ov_close_{self.guild.id}_{self.selected_channel_id or 0}")
         async def _ov_close(inter: discord.Interaction):
             await inter.response.defer()
             try:
@@ -2688,7 +2699,11 @@ class Ticket(app_commands.Group):
     @app_commands.command(name="config", description="Alias für /ticket anzeigen (Ticket-Verwaltung).")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def ticket_config(self, interaction: discord.Interaction):
-        return await self.ticket_list(interaction)
+        view = PanelOverviewView(self.bot, interaction.guild)
+        await view._load()
+        view._build()
+        await interaction.response.send_message(view=view, ephemeral=True)
+        return None
 
 
 # =========================================================
