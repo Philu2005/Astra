@@ -102,6 +102,9 @@ class Astra(commands.Bot):
         self.guild_sync_lock = asyncio.Lock()
         self.command_count_lock = asyncio.Lock()
         self.command_count = 0
+        self._stats_sync_task = None
+        self._stats_sync_pending = False
+        self._stats_sync_lock = asyncio.Lock()
 
         self.initial_extensions = [
             "cogs.reminder",
@@ -538,6 +541,9 @@ class Astra(commands.Bot):
             logging.info("[Heartbeat] Starte Heartbeat-Task…")
             self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
+        # Statistiken sofort nach on_ready synchronisieren
+        await self._sync_global_stats()
+
         if self.guild_snapshot_task is None or self.guild_snapshot_task.done():
             logging.info("[GuildSync] Starte Snapshot-Loop…")
             self.guild_snapshot_task = asyncio.create_task(self._guild_snapshot_loop())
@@ -573,6 +579,40 @@ class Astra(commands.Bot):
             "guilds": int(len(self.guilds)),
             "commands": int(self.command_count),
         }
+
+    async def _sync_global_stats(self):
+        """Überträgt nur die globalen Statistiken an die API."""
+        async with self._stats_sync_lock:
+            start_time = time.perf_counter()
+            try:
+                stats = self._build_global_stats()
+                payload = {
+                    "mode": "stats_only",
+                    "stats": stats,
+                    "last_updated": datetime.now(timezone.utc).isoformat()
+                }
+                success = await self._post_internal_api(payload)
+                duration = time.perf_counter() - start_time
+                if success:
+                    logging.info("[StatsSync] Global Stats erfolgreich synchronisiert (%.2fs): %s", duration, stats)
+                else:
+                    logging.warning("[StatsSync] Global Stats Synchronisierung fehlgeschlagen.")
+            except Exception:
+                logging.exception("[StatsSync] Fehler bei der Statistik-Synchronisierung.")
+
+    def _trigger_stats_sync(self):
+        """Triggered eine Statistik-Synchronisierung mit Debounce."""
+        self._stats_sync_pending = True
+        if self._stats_sync_task is None or self._stats_sync_task.done():
+            self._stats_sync_task = asyncio.create_task(self._stats_sync_debounced())
+
+    async def _stats_sync_debounced(self):
+        """Wartet kurz ab, um mehrere aufeinanderfolgende Änderungen zu bündeln."""
+        while self._stats_sync_pending:
+            self._stats_sync_pending = False
+            # Kurze Pause zum Bündeln (z.B. wenn Bot vielen Servern gleichzeitig beitritt)
+            await asyncio.sleep(5)
+            await self._sync_global_stats()
 
     async def _serialize_guild_for_sync(self, guild: discord.Guild) -> dict:
         start_time = time.perf_counter()
@@ -699,19 +739,24 @@ class Astra(commands.Bot):
             await asyncio.sleep(bot_snapshot_sync_interval)
 
     async def on_guild_join(self, guild: discord.Guild):
-        return
+        with guild_cache_lock:
+            guild_cache[guild.id] = guild
+        self._trigger_stats_sync()
 
     async def on_guild_remove(self, guild: discord.Guild):
-        return
+        with guild_cache_lock:
+            guild_cache.pop(guild.id, None)
+        self._trigger_stats_sync()
 
     async def on_guild_update(self, before: discord.Guild, after: discord.Guild):
-        return
+        with guild_cache_lock:
+            guild_cache[after.id] = after
 
     async def on_member_join(self, member: discord.Member):
-        return
+        self._trigger_stats_sync()
 
     async def on_member_remove(self, member: discord.Member):
-        return
+        self._trigger_stats_sync()
 
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         return
@@ -741,6 +786,7 @@ class Astra(commands.Bot):
             return
         async with self.command_count_lock:
             self.command_count += 1
+            self._trigger_stats_sync()
             async with self.pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""

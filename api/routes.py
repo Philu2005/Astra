@@ -374,22 +374,28 @@ def guild_sync():
         return jsonify(success=False, error="Invalid sync payload"), 400
 
     mode = payload.get("mode")
-    if mode != "full_snapshot":
-        return jsonify(success=False, error="Invalid sync payload"), 400
-
-    guilds = payload.get("guilds")
     stats = payload.get("stats")
     last_updated = payload.get("last_updated")
 
-    if not isinstance(guilds, list) or not all(_validate_guild_payload(g) for g in guilds):
-        return jsonify(success=False, error="Invalid sync payload"), 400
-    if not _validate_stats_payload(stats):
-        return jsonify(success=False, error="Invalid sync payload"), 400
-    if not _validate_last_updated(last_updated):
-        return jsonify(success=False, error="Invalid sync payload"), 400
+    if mode == "full_snapshot":
+        guilds = payload.get("guilds")
+        if not isinstance(guilds, list) or not all(_validate_guild_payload(g) for g in guilds):
+            return jsonify(success=False, error="Invalid sync payload"), 400
+        if not _validate_stats_payload(stats):
+            return jsonify(success=False, error="Invalid sync payload"), 400
+        if not _validate_last_updated(last_updated):
+            return jsonify(success=False, error="Invalid sync payload"), 400
 
-    result = guild_state_store.replace_all(guilds, stats, last_updated)
-    return jsonify(success=True, mode="full_snapshot", guilds=result["guilds"]), 200
+        result = guild_state_store.replace_all(guilds, stats, last_updated)
+        return jsonify(success=True, mode="full_snapshot", guilds=result["guilds"]), 200
+
+    if mode == "stats_only":
+        if not _validate_stats_payload(stats):
+            return jsonify(success=False, error="Invalid sync payload"), 400
+        guild_state_store.update_stats(stats)
+        return jsonify(success=True, mode="stats_only"), 200
+
+    return jsonify(success=False, error="Invalid sync mode"), 400
 
 
 def _get_server_data_state() -> tuple[bool, str | None]:
@@ -406,9 +412,13 @@ def _get_server_data_state() -> tuple[bool, str | None]:
 @api_bp.route("/dashboard/stats", methods=["GET"])
 @require_service_auth
 def get_dashboard_stats():
-    stats, last_successful_sync, full_sync_ts = guild_state_store.stats_snapshot()
+    stats, last_successful_sync, full_sync_ts, stats_update_ts = guild_state_store.stats_snapshot()
     stale_after = float(current_app.config.get("GUILD_SNAPSHOT_STALE_AFTER_SECONDS", 120))
-    is_stale = full_sync_ts is None or (time.time() - full_sync_ts) > stale_after
+    
+    # Statistiken sind stale, wenn weder ein Full-Snapshot noch ein Stats-Update innerhalb des Zeitfensters erfolgte
+    last_any_update = max(filter(None, [full_sync_ts, stats_update_ts]), default=0)
+    is_stale = last_any_update == 0 or (time.time() - last_any_update) > stale_after
+    
     return jsonify(
         success=True,
         stats=stats,
