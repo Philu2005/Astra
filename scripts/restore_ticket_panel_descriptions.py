@@ -44,6 +44,7 @@ import time
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
 
+import re
 import aiomysql
 import discord
 from dotenv import load_dotenv
@@ -123,9 +124,17 @@ class DB:
                 if has_key: q_cols.append("panel_key")
                 q_cols.extend(["roleID", "categoryID"])
 
-                # Wir sortieren nach id (falls vorhanden), um deterministische Ergebnisse zu erhalten
-                order_by = "id" if has_id else "guildID, channelID, roleID, categoryID, thema"
-                q = f"SELECT {', '.join(q_cols)} FROM ticketsystem ORDER BY {order_by}"
+                # Wir sortieren nach id (zwingend erforderlich), um deterministische Ergebnisse zu erhalten
+                if not has_id:
+                    raise RuntimeError("Kritischer Fehler: Die Spalte 'id' fehlt in der Tabelle 'ticketsystem'. Bitte führe zuerst die Migration 'migrations/2026_add_id_to_ticketsystem.sql' aus.")
+
+                q_cols = ["id", "guildID", "channelID", "thema"]
+                if has_desc: q_cols.append("description")
+                if has_msg_id: q_cols.append("panelMsgID")
+                if has_key: q_cols.append("panel_key")
+                q_cols.extend(["roleID", "categoryID"])
+
+                q = f"SELECT {', '.join(q_cols)} FROM ticketsystem ORDER BY id ASC"
                 await cur.execute(q)
                 rows = await cur.fetchall()
                 
@@ -135,7 +144,7 @@ class DB:
                 for r in rows:
                     items.append(
                         PanelRow(
-                            id=int(r[col_map["id"]]) if has_id else 0,
+                            id=int(r[col_map["id"]]),
                             guild_id=int(r[col_map["guildID"]]),
                             channel_id=int(r[col_map["channelID"]]),
                             thema=str(r[col_map["thema"]] or ""),
@@ -441,40 +450,35 @@ class PanelScanner:
                     continue
                 if not msg.embeds:
                     continue
-                # Button-ID prüfen
+                
+                # Button-ID prüfen - Berücksichtige verschiedene Versionen
                 has_panel_button = False
+                valid_ids = [PANEL_BUTTON_CUSTOM_ID, "ticket_panel_open", "ticket:open", "open_ticket"]
                 try:
-                    for row in msg.components:  # type: ignore[attr-defined]
+                    for row in msg.components:
                         for comp in getattr(row, "children", []) or []:
-                            if getattr(comp, "custom_id", None) == PANEL_BUTTON_CUSTOM_ID:
+                            cid = getattr(comp, "custom_id", None)
+                            if cid in valid_ids or (cid and cid.startswith("ticket_panel:")):
                                 has_panel_button = True
                                 break
-                        if has_panel_button:
-                            break
+                        if has_panel_button: break
                 except Exception:
-                    try:
-                        for comp in msg.components:
-                            if getattr(comp, "custom_id", None) == PANEL_BUTTON_CUSTOM_ID:
-                                has_panel_button = True
-                                break
-                    except Exception:
-                        pass
+                    pass
+
                 if not has_panel_button:
                     continue
+
                 e = msg.embeds[0]
                 footer_ok = True
                 if e.footer and e.footer.text:
-                    # Wir prüfen auf bekannte Footer-Varianten (alt/neu)
                     known_footers = [
                         PANEL_FOOTER_TEXT,
-                        "Klicke auf den Button um ein Ticket zu erstellen!", # Ohne Komma
+                        "Klicke auf den Button um ein Ticket zu erstellen!",
                         "Benutze den Button um ein Ticket zu erstellen!",
+                        "Klicke unten, um ein Ticket zu eröffnen",
                     ]
                     footer_text = e.footer.text.strip()
-                    footer_ok = any(f in footer_text for f in known_footers)
-                
-                # Wir erlauben auch Nachrichten ohne Footer, solange der Button stimmt,
-                # aber bewerten sie später ggf. niedriger.
+                    footer_ok = any(f.lower() in footer_text.lower() for f in known_footers)
                 
                 title_text = (e.title or "").strip()
                 description_text = (e.description or "").strip()
@@ -485,15 +489,16 @@ class PanelScanner:
                     "created_at": msg.created_at,
                     "author_id": msg.author.id,
                     "has_footer": footer_ok,
-                    "embed_count": len(msg.embeds)
+                    "embed_count": len(msg.embeds),
+                    "components": str(msg.components) # Für Debugging
                 })
         except discord.Forbidden:
             raise PermissionError("Missing permissions to read history")
         except discord.HTTPException:
-            # Teilweiser Scan; liefere was vorhanden ist
             pass
 
-        meta = {"scanned": scanned, "oldest_id": oldest_id, "newest_id": newest_id, "completed": True}
+        completed = (scanned < max_messages)
+        meta = {"scanned": scanned, "oldest_id": oldest_id, "newest_id": newest_id, "completed": completed}
         return prefiltered, meta
 
 
@@ -740,26 +745,38 @@ async def run(args: argparse.Namespace) -> int:
             for t in tickets:
                 g_id = t["guild_id"]
                 ch_id = t["channel_id"]
+                opener_id = t.get("opener_id")
                 
-                # Versuch A: Über Discord den Channel/Kategorie finden
                 guild = client.get_guild(g_id)
                 cat_id = None
+                t_created_at = None
                 if guild:
                     t_chan = guild.get_channel(ch_id)
-                    if t_chan and hasattr(t_chan, "category_id"):
-                        cat_id = t_chan.category_id
+                    if t_chan:
+                        if hasattr(t_chan, "category_id"):
+                            cat_id = t_chan.category_id
+                        t_created_at = t_chan.created_at
                 
-                # Suche nach passenden Panels in der Guild
                 possible_panels = panels_by_guild.get(g_id, [])
                 
-                # Filtere nach Kategorie (falls bekannt)
+                # Filterung verfeinern
                 if cat_id:
                     possible_panels = [p for p in possible_panels if p.category_id == cat_id]
                 
-                # Wenn immer noch mehrere: Prüfe msgID (vielleicht wurde das Ticket aus diesem Panel erstellt)
-                # In der DB von ticketsystem_channels ist msgID die ID der "Willkommens-Nachricht" im Ticket-Kanal.
-                # Das hilft uns nicht direkt das Panel zu finden, es sei denn wir haben Logs.
-                
+                # Wenn immer noch mehrere: Match über Thema im Channel-Namen oder Topic
+                if len(possible_panels) > 1:
+                    refined = []
+                    t_chan = guild.get_channel(ch_id) if guild else None
+                    chan_name = t_chan.name.lower() if t_chan else ""
+                    
+                    for p in possible_panels:
+                        thema_clean = re.sub(r'[^a-z0-9]', '', (p.thema or "").lower())
+                        if thema_clean and thema_clean in chan_name:
+                            refined.append(p)
+                    
+                    if len(refined) == 1:
+                        possible_panels = refined
+
                 if len(possible_panels) == 1:
                     target_p = possible_panels[0]
                     ticket_mappings.append({
@@ -775,7 +792,7 @@ async def run(args: argparse.Namespace) -> int:
                 else:
                     status = "TICKET_UNMAPPED"
                     if not guild: status = "GUILD_NOT_FOUND"
-                    elif not cat_id: status = "CHANNEL_NOT_FOUND"
+                    elif not cat_id: status = "CATEGORY_NOT_FOUND"
                     ticket_results.append({**t, "status": status})
                     unmapped_tickets += 1
 
@@ -810,12 +827,18 @@ async def run(args: argparse.Namespace) -> int:
             elapsed = time.perf_counter() - start_ts
             print("\n=== Scan Summary ===")
             print(f"Total panels found in DB: {total}")
-            print(f"  Eindeutig identifizierbare Panels: {total}")
-            print(f"  Bereits vorhandene Keys     : {already_keys}")
-            print(f"  Neu vorgesehene Keys        : {generated_keys}")
-            print(f"  Unique msg matches          : {unique_msg_matches}")
+            print(f"  Already saved keys     : {already_keys}")
+            print(f"  Newly generated keys   : {generated_keys}")
+            print(f"  Unique msg matches     : {unique_msg_matches}")
             print(f"  Already saved IDs (verified): {already_msg_ids}")
             
+            # Check for key duplicates
+            all_final_keys = [p.panel_key for p in panels]
+            if len(all_final_keys) != len(set(all_final_keys)):
+                LOGGER.error("CRITICAL: Duplicate panel_keys detected! Aborting apply for safety.")
+                exit_code = 1
+                return
+
             print(f"\nTickets (unmapped): {len(tickets)}")
             print(f"  Eindeutig zuordenbare Tickets: {mapped_tickets}")
             print(f"  Mehrdeutige Zuordnungen      : {ambiguous_tickets}")
