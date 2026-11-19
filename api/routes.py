@@ -991,7 +991,7 @@ def lookup_members(guild_id: int):
             "user_ids": target_ids
         }
         # _ipc_request ist in api/routes.py definiert und nutzt aiohttp-POST
-        resp, status = _ipc_request("/ipc/resources/members/lookup", payload)
+        status, resp = _ipc_request("/ipc/resources/members/lookup", payload)
         
         if status == 200 and resp.get("success"):
             return jsonify(success=True, members=resp.get("members", {})), 200
