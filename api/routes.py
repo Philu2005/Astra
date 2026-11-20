@@ -1552,15 +1552,6 @@ def publish_ticket_panel(guild_id: int):
     except Exception:
         return _api_error(400, "invalid_payload", "Invalid payload values")
 
-    # Harte Guild-Channel-Prüfung via Bot
-    bot = get_bot_instance()
-    try:
-        belongs = submit_bot_task(_bot_channel_belongs_to_guild(bot, guild_id, channel_id), timeout=5.0)
-    except Exception:
-        belongs = False
-    if not belongs:
-        return _api_error(400, "invalid_channel", "Channel does not belong to the guild")
-
     # Bereits veröffentlicht? Optional verhindern (ohne force)
     pool = api_db.get_pool()
     if pool is None:
