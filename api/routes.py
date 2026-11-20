@@ -2101,7 +2101,7 @@ def delete_ticket_panel_by_message(guild_id: int, channel_id: int, message_id: i
     )
 
     if sc == 200 and (data or {}).get("success"):
-        return jsonify(success=True, **data), 200
+        return jsonify(data), 200
 
     if sc == 404:
         return _api_error(404, "panel_not_found", "Panel not found")
