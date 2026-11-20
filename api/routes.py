@@ -1521,7 +1521,18 @@ def publish_ticket_panel(guild_id: int):
         return _api_error(403, "permission_denied", "Forbidden")
 
     payload = request.get_json(silent=True) or {}
-    required_fields = ("channel_id", "category_id", "role_id", "title", "description")
+
+    # Dashboard-Kompatibilität: support_role_id auf role_id normalisieren
+    if "role_id" not in payload and "support_role_id" in payload:
+        payload["role_id"] = payload["support_role_id"]
+
+    required_fields = (
+        "channel_id",
+        "category_id",
+        "role_id",
+        "title",
+        "description"
+    )
     for f in required_fields:
         if f not in payload:
             return _api_error(400, "missing_field", f"Missing field: {f}")
