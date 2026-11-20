@@ -338,26 +338,28 @@ class mod(commands.Cog):
     async def _worker_loop(self, channel_id: int):
         while True:
             job = await self._claim_next_job(channel_id)
+
             if not job:
-                evt = self._wake_events[channel_id]
-                evt.clear()
-                await evt.wait()
+                event = self._wake_events[channel_id]
+                event.clear()
+                await event.wait()
                 continue
 
-            # Channel holen
             channel = self.bot.get_channel(channel_id)
+
             if channel is None:
                 try:
                     channel = await self.bot.fetch_channel(channel_id)
-                except Exception:
-                    # Kanal nicht erreichbar → Job entsorgen
-                    await self._mark_job_done(job.id)
-                    continue
-
-            deleted_count = 0
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    logging.exception(
+                        "[CLEAR] Kanal %s für Job %s konnte nicht geladen werden.",
+                        channel_id,
+                        job.id
+                    )
+                    await self._release_job(job.id)
+                    return
 
             try:
-                # Alte Nachrichten liegen hinter der Bulk-Grenze und werden gedrosselt gelöscht.
                 deleted_count = await self._process_old_deletes(
                     channel,
                     job.amount,
@@ -366,6 +368,7 @@ class mod(commands.Cog):
 
                 status_message_id = self._clear_status_messages.pop(job.id, None)
                 bulk_deleted = self._clear_bulk_deleted.pop(job.id, 0)
+
                 if status_message_id:
                     embed = discord.Embed(
                         colour=get_current_colour(),
@@ -381,20 +384,42 @@ class mod(commands.Cog):
                         )
                     )
                     embed.set_author(name=job.requested_by)
+
                     try:
                         status_message = await channel.fetch_message(status_message_id)
                         await status_message.edit(embed=embed)
                     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                        pass
+                        logging.warning(
+                            "[CLEAR] Statusnachricht %s für Job %s konnte nicht aktualisiert werden.",
+                            status_message_id,
+                            job.id
+                        )
 
+                await self._mark_job_done(job.id)
 
-            except Exception as e:
+            except Exception:
+                logging.exception(
+                    "[CLEAR] Job %s in Kanal %s fehlgeschlagen. Job bleibt erhalten.",
+                    job.id,
+                    channel_id
+                )
+
                 self._clear_status_messages.pop(job.id, None)
                 self._clear_bulk_deleted.pop(job.id, None)
-                logging.exception(e)
 
-            finally:
-                await self._mark_job_done(job.id)
+                await self._release_job(job.id)
+                return
+
+    async def _release_job(self, job_id: int):
+        """Gibt einen fehlgeschlagenen Job zur späteren Verarbeitung wieder frei."""
+        async with self.bot.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE clear_jobs SET status='pending' "
+                    "WHERE id=%s AND status='processing'",
+                    (job_id,)
+                )
+                await conn.commit()
 
     async def _claim_next_job(self, channel_id: int) -> Optional[OldDeleteJob]:
         async with self.bot.pool.acquire() as conn:
@@ -476,63 +501,72 @@ class mod(commands.Cog):
         return found
 
     # ---------------- Löschlogik (>14 Tage, gedrosselt) ----------------
-    async def _process_old_deletes(self, channel: discord.TextChannel, amount: int, job_id: Optional[int] = None):
+    async def _process_old_deletes(
+            self,
+            channel: discord.TextChannel,
+            amount: int,
+            job_id: Optional[int] = None
+    ) -> int:
         cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
+
         remaining = amount
+        deleted_count = 0
         last_message = None
-        backoff = 0.0
-        checkpoint = 0  # seit letztem DB-Update gelöschte Anzahl
 
         while remaining > 0:
             scanned_any = False
+
             async for msg in channel.history(
-                limit=MAX_HISTORY_FETCH,
-                before=last_message,
-                oldest_first=False
+                    limit=MAX_HISTORY_FETCH,
+                    before=last_message,
+                    oldest_first=False
             ):
                 scanned_any = True
                 last_message = msg
+
+                # Angepinnte Nachrichten bleiben grundsätzlich erhalten.
                 if msg.pinned:
                     continue
 
+                # Nur Nachrichten älter als die Bulk-Grenze einzeln löschen.
                 if msg.created_at >= cutoff:
                     continue
 
                 try:
-                    await msg.delete()  # kein reason bei PartialMessage
-                    remaining -= 1
-                    checkpoint += 1
-                    backoff = 0.0
+                    await msg.delete()
 
-                    # alle 10 Deletes Fortschritt persistieren
-                    if job_id and checkpoint >= 10:
-                        await self._decrement_job_amount(job_id, checkpoint)
-                        checkpoint = 0
-
-                    await asyncio.sleep(SLEEP_PER_DELETE + random.uniform(0.0, 0.2))
-                    if remaining == 0:
-                        break
                 except discord.NotFound:
+                    # Die Nachricht wurde zwischenzeitlich bereits gelöscht.
                     continue
+
                 except discord.Forbidden:
-                    continue
-                except discord.HTTPException as e:
-                    if getattr(e, "status", None) == 429:
-                        backoff = min(5.0, backoff + 0.7)
-                        await asyncio.sleep(1.8 + backoff)
-                    else:
-                        await asyncio.sleep(0.9)
-                    continue
+                    # Fehlende Berechtigung ist ein echter Fehler.
+                    raise
+
+                except discord.HTTPException:
+                    # HTTP-Fehler nicht verschlucken.
+                    # Der Worker gibt den Job anschließend wieder frei.
+                    raise
+
+                remaining -= 1
+                deleted_count += 1
+
+                # Fortschritt nach jeder erfolgreichen Löschung speichern.
+                if job_id is not None:
+                    await self._decrement_job_amount(job_id, 1)
+
+                await asyncio.sleep(
+                    SLEEP_PER_DELETE + random.uniform(0.0, 0.2)
+                )
+
+                if remaining <= 0:
+                    break
+
             if not scanned_any:
-                # nichts mehr zu löschen → Job sauber beenden
-                remaining = 0
+                # Keine weiteren Nachrichten vorhanden.
                 break
 
-        # Restlichen Fortschritt verbuchen
-        if job_id and checkpoint > 0:
-            await self._decrement_job_amount(job_id, checkpoint)
-
-        return amount - remaining
+        return deleted_count
 
     # ---------------- Commands ----------------
 
@@ -608,7 +642,7 @@ class mod(commands.Cog):
             if channel:
                 await channel.send(embed=embed)
 
-        if user.guild_permissions.kick_members:
+        if user.guild_permissions.ban_members:
             embed = discord.Embed(colour=discord.Colour.red(), description=f"Der User {user.mention} kann nicht gebannt werden, da er die Rechte `Mitglieder Bannen` hat.")
             embed.set_author(name=str(interaction.user), icon_url=interaction.user.display_avatar.url)
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -674,13 +708,47 @@ class mod(commands.Cog):
         status_message = await interaction.followup.send(embed=status_embed, wait=True)
 
         try:
-            # 1) Bulk (≤14 Tage)
-            deleted_bulk = await channel.purge(
-                limit=amount,
-                bulk=True,
-                reason=f"/clear von {interaction.user} ({amount})",
-                check=lambda m: not m.pinned and m.id != status_message.id and m.created_at >= cutoff
-            )
+            # 1) Neuere Nachrichten gezielt sammeln (maximal amount)
+            recent_messages = []
+
+            async for message in channel.history(limit=None, oldest_first=False):
+                if message.id == status_message.id:
+                    continue
+
+                if message.pinned:
+                    continue
+
+                if message.created_at < cutoff:
+                    break
+
+                recent_messages.append(message)
+
+                if len(recent_messages) >= amount:
+                    break
+
+            # 2) Gesammelte Nachrichten löschen
+            deleted_bulk = []
+
+            for index in range(0, len(recent_messages), 100):
+                batch = recent_messages[index:index + 100]
+
+                if len(batch) == 1:
+                    try:
+                        await batch[0].delete(
+                            reason=f"/clear von {interaction.user} ({amount})"
+                        )
+                        deleted_bulk.extend(batch)
+                    except discord.NotFound:
+                        continue
+                elif len(batch) >= 2:
+                    try:
+                        await channel.delete_messages(
+                            batch,
+                            reason=f"/clear von {interaction.user} ({amount})"
+                        )
+                        deleted_bulk.extend(batch)
+                    except discord.HTTPException:
+                        raise
 
             total_deleted += len(deleted_bulk)
             remaining = amount - total_deleted

@@ -592,10 +592,7 @@ class Astra(commands.Bot):
                     "last_updated": datetime.now(timezone.utc).isoformat()
                 }
                 success = await self._post_internal_api(payload)
-                duration = time.perf_counter() - start_time
-                if success:
-                    logging.info("[StatsSync] Global Stats erfolgreich synchronisiert (%.2fs): %s", duration, stats)
-                else:
+                if not success:
                     logging.warning("[StatsSync] Global Stats Synchronisierung fehlgeschlagen.")
             except Exception:
                 logging.exception("[StatsSync] Fehler bei der Statistik-Synchronisierung.")
