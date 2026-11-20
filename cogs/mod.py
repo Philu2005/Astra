@@ -520,6 +520,24 @@ class mod(commands.Cog):
         # Kein cog_load -> Startup-Task
         self._startup_task = bot.loop.create_task(self._startup())
 
+    async def cog_unload(self):
+        tasks = []
+
+        if self._startup_task and not self._startup_task.done():
+            self._startup_task.cancel()
+            tasks.append(self._startup_task)
+
+        for task in self._workers.values():
+            if not task.done():
+                task.cancel()
+                tasks.append(task)
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        self._workers.clear()
+        self._wake_events.clear()
+
     # ---------- Startup: Recovery + Pending-Jobs anwerfen ----------
     async def _startup(self):
         await self.bot.wait_until_ready()
@@ -550,35 +568,25 @@ class mod(commands.Cog):
             self._workers[channel_id] = asyncio.create_task(self._worker_loop(channel_id))
 
     async def _worker_loop(self, channel_id: int):
+        event = self._wake_events[channel_id]
+
         while True:
+            # Event VOR der Datenbankabfrage zurücksetzen.
+            # Dadurch geht kein neues Wake-Signal verloren.
+            event.clear()
+
             job = await self._claim_next_job(channel_id)
 
-            if not job:
-                event = self._wake_events[channel_id]
-                event.clear()
+            if job is None:
                 await event.wait()
                 continue
 
-            channel = self.bot.get_channel(channel_id)
+            try:
+                channel = self.bot.get_channel(channel_id)
 
-            if channel is None:
-                try:
+                if channel is None:
                     channel = await self.bot.fetch_channel(channel_id)
 
-                except (
-                        discord.NotFound,
-                        discord.Forbidden,
-                        discord.HTTPException
-                ):
-                    logging.exception(
-                        "[CLEAR] Kanal %s für Job %s konnte nicht geladen werden.",
-                        channel_id,
-                        job.id
-                    )
-                    await self._release_job(job.id)
-                    return
-
-            try:
                 deleted_count = await self._process_old_deletes(
                     channel,
                     job.amount,
@@ -636,10 +644,15 @@ class mod(commands.Cog):
 
                 await self._mark_job_done(job.id)
 
+            except asyncio.CancelledError:
+                # Beim Bot-Shutdown den Job für den nächsten Start freigeben.
+                await self._release_job(job.id)
+                raise
+
             except Exception:
                 logging.exception(
                     "[CLEAR] Job %s in Kanal %s fehlgeschlagen. "
-                    "Job bleibt erhalten.",
+                    "Neuer Versuch in 30 Sekunden.",
                     job.id,
                     channel_id
                 )
@@ -648,7 +661,9 @@ class mod(commands.Cog):
                 self._clear_bulk_deleted.pop(job.id, None)
 
                 await self._release_job(job.id)
-                return
+
+                # Nicht in einer Endlosschleife sofort erneut versuchen.
+                await asyncio.sleep(30)
 
     async def _release_job(self, job_id: int):
         """Gibt einen fehlgeschlagenen Job zur späteren Verarbeitung wieder frei."""
