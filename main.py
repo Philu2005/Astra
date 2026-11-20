@@ -692,8 +692,6 @@ class Astra(commands.Bot):
         async with self.guild_sync_lock:
             start_total = time.perf_counter()
             try:
-                logging.info("[GuildSync] Starte Erstellung des vollständigen Snapshots für %s Guilds...", len(self.guilds))
-                
                 serialization_start = time.perf_counter()
                 guilds = [await self._serialize_guild_for_sync(guild) for guild in self.guilds]
                 serialization_duration = time.perf_counter() - serialization_start
@@ -715,15 +713,7 @@ class Astra(commands.Bot):
                 
                 total_duration = time.perf_counter() - start_total
                 
-                if success:
-                    logging.info(
-                        "[GuildSync] Snapshot erfolgreich übertragen. "
-                        "Guilds: %s, Members: %s, Roles: %s, Channels: %s. "
-                        "Dauer: Serialisierung=%.2fs, Übertragung=%.2fs, Gesamt=%.2fs.",
-                        len(guilds), total_members, total_roles, total_channels,
-                        serialization_duration, transmission_duration, total_duration
-                    )
-                else:
+                if not success:
                     logging.error("[GuildSync] Snapshot-Übertragung fehlgeschlagen nach Retries.")
             except Exception:
                 logging.exception("[GuildSync] Fehler bei vollständiger Guild-Synchronisation.")
