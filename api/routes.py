@@ -2032,6 +2032,90 @@ def delete_ticket_panel_by_key(guild_id: int, panel_key: str):
     return _api_error(sc if sc != 200 else 500, (data or {}).get("code", "delete_failed"), None)
 
 
+
+@api_bp.route(
+    "/tickets/panels/<int:guild_id>/<int:channel_id>/<int:message_id>",
+    methods=["DELETE"],
+)
+@require_service_auth
+@rate_limit(scope="tickets_panel_delete", limit=10, per_seconds=60)
+def delete_ticket_panel_by_message(guild_id: int, channel_id: int, message_id: int):
+    """
+    Löscht ein Ticket-Panel anhand seiner Guild-, Channel- und Message-ID.
+    Ermittelt den panel_key und verwendet anschließend die zentrale IPC-Löschung.
+    """
+    if not is_bot_ready():
+        return _api_error(503, "service_unavailable", "Service not ready")
+
+    raw_user_id = request.args.get("user_id")
+    user_id = validate_user_id(raw_user_id)
+    if user_id is None:
+        return _api_error(400, "invalid_user_id", "Invalid user_id format")
+
+    cache = get_guild_cache()
+    guild = cache.get(guild_id)
+    if not guild:
+        return _api_error(404, "server_not_found", "Server not found")
+
+    perm_info = check_user_guild_permissions(None, guild, user_id, allow_api_fetch=False)
+    if perm_info is None:
+        return _api_error(403, "permission_denied", "Forbidden")
+
+    # panel_key anhand der übergebenen Panel-IDs aus der Datenbank ermitteln.
+    async def _fetch_panel_key(pool):
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT panel_key
+                    FROM ticketsystem
+                    WHERE guildID=%s AND channelID=%s AND panelMsgID=%s
+                    LIMIT 1
+                    """,
+                    (guild_id, channel_id, message_id),
+                )
+                return await cur.fetchone()
+
+    try:
+        row = api_db.run_coro(
+            _fetch_panel_key(api_db.get_pool()),
+            timeout=5.0,
+        )
+    except Exception:
+        logger.exception("Failed to look up ticket panel by message")
+        return _api_error(500, "database_error", "Failed to find panel")
+
+    if not row or not row[0]:
+        return _api_error(404, "panel_not_found", "Panel not found")
+
+    panel_key = str(row[0])
+
+    # Dieselbe zentrale Löschfunktion wie beim bestehenden panel_key-Endpunkt.
+    sc, data = _ipc_request(
+        "/ipc/panel/delete_complete",
+        {
+            "guild_id": str(guild_id),
+            "panel_key": panel_key,
+        },
+        timeout=30.0,
+    )
+
+    if sc == 200 and (data or {}).get("success"):
+        return jsonify(success=True, **data), 200
+
+    if sc == 404:
+        return _api_error(404, "panel_not_found", "Panel not found")
+
+    if sc == 502 or (data or {}).get("code") == "ipc_unavailable":
+        return _api_error(503, "service_unavailable", "Bot IPC not reachable")
+
+    return _api_error(
+        sc if sc != 200 else 500,
+        (data or {}).get("code", "delete_failed"),
+        None,
+    )
+
+
 async def _fetch_open_tickets_async(pool, guild_id: int):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
