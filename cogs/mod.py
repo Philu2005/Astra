@@ -214,7 +214,8 @@ class OldDeleteJob:
     channel_id: int
     amount: int
     requested_by: str
-    status: str  # 'pending' | 'processing' | 'done'
+    status: str
+    boundary_message_id: Optional[int] = None
 
 
 # ---- Modal für Embeds ----
@@ -288,6 +289,219 @@ class Feedback(discord.ui.Modal, title="Erstelle dein eigenes Embed."):
             await interaction.followup.send('Oops! Etwas ist schiefgelaufen.', ephemeral=True)
 
 
+
+@app_commands.context_menu(name="Bis hierhin löschen")
+@app_commands.default_permissions(manage_messages=True)
+async def clear_until_message(
+    interaction: discord.Interaction,
+    message: discord.Message
+):
+    # Nur auf Servern
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "Diese Funktion kann nur auf Servern verwendet werden.",
+            ephemeral=True
+        )
+
+    # Berechtigung zusätzlich serverseitig prüfen.
+    if not interaction.user.guild_permissions.manage_messages:
+        return await interaction.response.send_message(
+            "Du benötigst die Berechtigung **Nachrichten verwalten**.",
+            ephemeral=True
+        )
+
+    # Nur Textkanäle unterstützen.
+    if not isinstance(message.channel, discord.TextChannel):
+        return await interaction.response.send_message(
+            "Diese Funktion ist nur in normalen Textkanälen verfügbar.",
+            ephemeral=True
+        )
+
+    channel = message.channel
+
+    # Bot-Berechtigungen prüfen.
+    bot_member = interaction.guild.me
+
+    if bot_member is None:
+        return await interaction.response.send_message(
+            "Der Bot konnte seine Serverberechtigungen nicht ermitteln.",
+            ephemeral=True
+        )
+
+    permissions = channel.permissions_for(bot_member)
+
+    if not permissions.manage_messages or not permissions.read_message_history:
+        return await interaction.response.send_message(
+            "Mir fehlen die Berechtigungen **Nachrichten verwalten** "
+            "oder **Nachrichtenverlauf lesen** in diesem Kanal.",
+            ephemeral=True
+        )
+
+    await interaction.response.defer(ephemeral=True)
+
+    cog = interaction.client.get_cog("mod")
+
+    if cog is None:
+        return await interaction.followup.send(
+            "Das Moderationssystem ist momentan nicht verfügbar.",
+            ephemeral=True
+        )
+
+    cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
+
+    boundary_message_id = message.id
+
+    total_deleted = 0
+    recent_messages = []
+
+    try:
+        # Neuere Nachrichten bis einschließlich der ausgewählten
+        # Nachricht einsammeln. Neuere Nachrichten bleiben unberührt.
+        async for msg in channel.history(
+            limit=None,
+            before=discord.Object(id=boundary_message_id + 1),
+            oldest_first=False
+        ):
+            if msg.pinned:
+                continue
+
+            if msg.created_at < cutoff:
+                break
+
+            recent_messages.append(msg)
+
+        # Nachrichten bis 14 Tage in Bulk löschen.
+        for index in range(0, len(recent_messages), 100):
+            batch = recent_messages[index:index + 100]
+
+            if len(batch) == 1:
+                try:
+                    await batch[0].delete(
+                        reason=f"Bis hierhin löschen von {interaction.user}"
+                    )
+                    total_deleted += 1
+
+                except discord.NotFound:
+                    continue
+
+            elif len(batch) >= 2:
+                try:
+                    await channel.delete_messages(
+                        batch,
+                        reason=f"Bis hierhin löschen von {interaction.user}"
+                    )
+                    total_deleted += len(batch)
+
+                except discord.NotFound:
+                    # Falls einzelne Nachrichten zwischenzeitlich
+                    # verschwunden sind, einzeln versuchen.
+                    for msg in batch:
+                        try:
+                            await msg.delete(
+                                reason=(
+                                    f"Bis hierhin löschen von "
+                                    f"{interaction.user}"
+                                )
+                            )
+                            total_deleted += 1
+
+                        except discord.NotFound:
+                            continue
+
+        # Alte Nachrichten innerhalb derselben Grenze zählen.
+        remaining_old = await cog._count_old_messages(
+            channel,
+            boundary_message_id=boundary_message_id
+        )
+
+        job_id = None
+
+        if remaining_old > 0:
+            job_id = await cog._enqueue_job(
+                channel_id=channel.id,
+                amount=remaining_old,
+                requested_by=str(interaction.user),
+                boundary_message_id=boundary_message_id
+            )
+
+            await cog._ensure_worker(channel.id)
+            cog._wake_events[channel.id].set()
+
+        # Ergebnis für den Moderator.
+        if remaining_old > 0:
+            embed = discord.Embed(
+                colour=get_current_colour(),
+                title="Clear läuft im Hintergrund weiter",
+                description=(
+                    "<:Astra_time:1141303932061233202> "
+                    "Die neueren Nachrichten wurden verarbeitet. "
+                    "Die alten Nachrichten werden im Hintergrund gelöscht.\n\n"
+                    f"<:Astra_punkt:1141303896745201696> "
+                    f"**Kanal:** {channel.mention}\n"
+                    f"<:Astra_punkt:1141303896745201696> "
+                    f"**Sofort gelöscht:** {total_deleted}\n"
+                    f"<:Astra_punkt:1141303896745201696> "
+                    f"**Im Hintergrund geplant:** {remaining_old}\n\n"
+                    "<:Astra_light_on:1141303864134467675> "
+                    "Angepinnte Nachrichten bleiben erhalten."
+                )
+            )
+
+        else:
+            embed = discord.Embed(
+                colour=get_current_colour(),
+                title="Clear abgeschlossen",
+                description=(
+                    "<:Astra_accept:1141303821176422460> "
+                    "Der Clear-Vorgang ist abgeschlossen.\n\n"
+                    f"<:Astra_punkt:1141303896745201696> "
+                    f"**Kanal:** {channel.mention}\n"
+                    f"<:Astra_punkt:1141303896745201696> "
+                    f"**Gelöscht:** {total_deleted}\n\n"
+                    "<:Astra_light_on:1141303864134467675> "
+                    "Angepinnte Nachrichten bleiben erhalten."
+                )
+            )
+
+        embed.set_author(
+            name=str(interaction.user),
+            icon_url=interaction.user.display_avatar.url
+        )
+
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True
+        )
+
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "Mir fehlen die Berechtigungen, um die Nachrichten zu löschen.",
+            ephemeral=True
+        )
+
+    except discord.HTTPException as e:
+        logging.exception(
+            "[CLEAR] Kontextmenü-Löschung in Kanal %s fehlgeschlagen.",
+            channel.id
+        )
+
+        await interaction.followup.send(
+            f"Beim Löschen ist ein Discord-Fehler aufgetreten: `{e}`",
+            ephemeral=True
+        )
+
+    except Exception:
+        logging.exception(
+            "[CLEAR] Unerwarteter Fehler beim Kontextmenü-Clear."
+        )
+
+        await interaction.followup.send(
+            "Beim Löschen ist ein unerwarteter Fehler aufgetreten.",
+            ephemeral=True
+        )
+
+
+
 class mod(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -350,7 +564,12 @@ class mod(commands.Cog):
             if channel is None:
                 try:
                     channel = await self.bot.fetch_channel(channel_id)
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+
+                except (
+                        discord.NotFound,
+                        discord.Forbidden,
+                        discord.HTTPException
+                ):
                     logging.exception(
                         "[CLEAR] Kanal %s für Job %s konnte nicht geladen werden.",
                         channel_id,
@@ -363,10 +582,14 @@ class mod(commands.Cog):
                 deleted_count = await self._process_old_deletes(
                     channel,
                     job.amount,
-                    job_id=job.id
+                    job_id=job.id,
+                    boundary_message_id=job.boundary_message_id
                 )
 
-                status_message_id = self._clear_status_messages.pop(job.id, None)
+                status_message_id = self._clear_status_messages.pop(
+                    job.id,
+                    None
+                )
                 bulk_deleted = self._clear_bulk_deleted.pop(job.id, 0)
 
                 if status_message_id:
@@ -374,23 +597,39 @@ class mod(commands.Cog):
                         colour=get_current_colour(),
                         title="Clear abgeschlossen",
                         description=(
-                            "<:Astra_accept:1141303821176422460> Der Clear-Vorgang ist abgeschlossen.\n\n"
-                            f"<:Astra_punkt:1141303896745201696> **Kanal:** {channel.mention}\n"
-                            f"<:Astra_punkt:1141303896745201696> **Sofort gelöscht:** "
-                            f"**{bulk_deleted}** Nachricht{'' if bulk_deleted == 1 else 'en'}\n"
-                            f"<:Astra_punkt:1141303896745201696> **Im Hintergrund gelöscht:** "
-                            f"**{deleted_count}** alte Nachricht{'' if deleted_count == 1 else 'en'}\n\n"
-                            "<:Astra_light_on:1141303864134467675> Alle geplanten Nachrichten wurden verarbeitet."
+                            "<:Astra_accept:1141303821176422460> "
+                            "Der Clear-Vorgang ist abgeschlossen.\n\n"
+                            f"<:Astra_punkt:1141303896745201696> "
+                            f"**Kanal:** {channel.mention}\n"
+                            f"<:Astra_punkt:1141303896745201696> "
+                            f"**Sofort gelöscht:** "
+                            f"**{bulk_deleted}** "
+                            f"Nachricht{'' if bulk_deleted == 1 else 'en'}\n"
+                            f"<:Astra_punkt:1141303896745201696> "
+                            f"**Im Hintergrund gelöscht:** "
+                            f"**{deleted_count}** "
+                            f"alte Nachricht{'' if deleted_count == 1 else 'en'}\n\n"
+                            "<:Astra_light_on:1141303864134467675> "
+                            "Alle geplanten Nachrichten wurden verarbeitet."
                         )
                     )
+
                     embed.set_author(name=job.requested_by)
 
                     try:
-                        status_message = await channel.fetch_message(status_message_id)
+                        status_message = await channel.fetch_message(
+                            status_message_id
+                        )
                         await status_message.edit(embed=embed)
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+
+                    except (
+                            discord.NotFound,
+                            discord.Forbidden,
+                            discord.HTTPException
+                    ):
                         logging.warning(
-                            "[CLEAR] Statusnachricht %s für Job %s konnte nicht aktualisiert werden.",
+                            "[CLEAR] Statusnachricht %s für Job %s "
+                            "konnte nicht aktualisiert werden.",
                             status_message_id,
                             job.id
                         )
@@ -399,7 +638,8 @@ class mod(commands.Cog):
 
             except Exception:
                 logging.exception(
-                    "[CLEAR] Job %s in Kanal %s fehlgeschlagen. Job bleibt erhalten.",
+                    "[CLEAR] Job %s in Kanal %s fehlgeschlagen. "
+                    "Job bleibt erhalten.",
                     job.id,
                     channel_id
                 )
@@ -425,20 +665,45 @@ class mod(commands.Cog):
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT id, channel_id, amount, requested_by, status "
-                    "FROM clear_jobs WHERE channel_id=%s AND status='pending' "
-                    "ORDER BY id ASC LIMIT 1",
-                    (channel_id,),
+                    """
+                    SELECT id,
+                           channel_id,
+                           amount,
+                           requested_by,
+                           status,
+                           boundary_message_id
+                    FROM clear_jobs
+                    WHERE channel_id = %s
+                      AND status = 'pending'
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (channel_id,)
                 )
+
                 row = await cur.fetchone()
+
                 if not row:
                     return None
+
                 job_id = int(row[0])
-                await cur.execute("UPDATE clear_jobs SET status='processing' WHERE id=%s", (job_id,))
+
+                await cur.execute(
+                    "UPDATE clear_jobs SET status='processing' WHERE id=%s",
+                    (job_id,)
+                )
+
                 await conn.commit()
+
                 return OldDeleteJob(
-                    id=job_id, channel_id=int(row[1]), amount=int(row[2]),
-                    requested_by=str(row[3]), status='processing'
+                    id=job_id,
+                    channel_id=int(row[1]),
+                    amount=int(row[2]),
+                    requested_by=str(row[3]),
+                    status="processing",
+                    boundary_message_id=(
+                        int(row[5]) if row[5] is not None else None
+                    )
                 )
 
     async def _mark_job_done(self, job_id: int):
@@ -458,41 +723,72 @@ class mod(commands.Cog):
                 )
                 await conn.commit()
 
-    async def _enqueue_job(self, channel_id: int, amount: int, requested_by: str) -> int:
+    async def _enqueue_job(
+            self,
+            channel_id: int,
+            amount: int,
+            requested_by: str,
+            boundary_message_id: Optional[int] = None
+    ) -> int:
         async with self.bot.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO clear_jobs (channel_id, amount, requested_by, status) "
-                    "VALUES (%s, %s, %s, 'pending')",
-                    (channel_id, amount, requested_by)
+                    """
+                    INSERT INTO clear_jobs (channel_id,
+                                            amount,
+                                            requested_by,
+                                            status,
+                                            boundary_message_id)
+                    VALUES (%s, %s, %s, 'pending', %s)
+                    """,
+                    (
+                        channel_id,
+                        amount,
+                        requested_by,
+                        boundary_message_id
+                    )
                 )
+
                 job_id = cur.lastrowid
                 await conn.commit()
+
                 return int(job_id)
 
-    async def _count_old_messages(self, channel: discord.TextChannel, amount: int) -> int:
+    async def _count_old_messages(
+            self,
+            channel: discord.TextChannel,
+            amount: Optional[int] = None,
+            boundary_message_id: Optional[int] = None
+    ) -> int:
         cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
-        found = 0
-        last_message = None
 
-        while found < amount:
+        found = 0
+        last_message = (
+            discord.Object(id=boundary_message_id + 1)
+            if boundary_message_id is not None
+            else None
+        )
+
+        while amount is None or found < amount:
             scanned_any = False
-            # Wir fangen bei der aktuellsten Nachricht an, um nichts zu verpassen
+
             async for msg in channel.history(
-                limit=MAX_HISTORY_FETCH,
-                before=last_message,
-                oldest_first=False
+                    limit=MAX_HISTORY_FETCH,
+                    before=last_message,
+                    oldest_first=False
             ):
                 scanned_any = True
                 last_message = msg
 
                 if msg.pinned:
                     continue
+
                 if msg.created_at >= cutoff:
                     continue
 
                 found += 1
-                if found >= amount:
+
+                if amount is not None and found >= amount:
                     break
 
             if not scanned_any:
@@ -505,13 +801,19 @@ class mod(commands.Cog):
             self,
             channel: discord.TextChannel,
             amount: int,
-            job_id: Optional[int] = None
+            job_id: Optional[int] = None,
+            boundary_message_id: Optional[int] = None
     ) -> int:
         cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
 
         remaining = amount
         deleted_count = 0
-        last_message = None
+
+        last_message = (
+            discord.Object(id=boundary_message_id + 1)
+            if boundary_message_id is not None
+            else None
+        )
 
         while remaining > 0:
             scanned_any = False
@@ -524,11 +826,11 @@ class mod(commands.Cog):
                 scanned_any = True
                 last_message = msg
 
-                # Angepinnte Nachrichten bleiben grundsätzlich erhalten.
+                # Angepinnte Nachrichten bleiben erhalten.
                 if msg.pinned:
                     continue
 
-                # Nur Nachrichten älter als die Bulk-Grenze einzeln löschen.
+                # Nur Nachrichten älter als 14 Tage einzeln löschen.
                 if msg.created_at >= cutoff:
                     continue
 
@@ -536,16 +838,12 @@ class mod(commands.Cog):
                     await msg.delete()
 
                 except discord.NotFound:
-                    # Die Nachricht wurde zwischenzeitlich bereits gelöscht.
                     continue
 
                 except discord.Forbidden:
-                    # Fehlende Berechtigung ist ein echter Fehler.
                     raise
 
                 except discord.HTTPException:
-                    # HTTP-Fehler nicht verschlucken.
-                    # Der Worker gibt den Job anschließend wieder frei.
                     raise
 
                 remaining -= 1
@@ -563,7 +861,6 @@ class mod(commands.Cog):
                     break
 
             if not scanned_any:
-                # Keine weiteren Nachrichten vorhanden.
                 break
 
         return deleted_count
@@ -893,4 +1190,6 @@ class mod(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(mod(bot))
+
     bot.tree.add_command(report_message)
+    bot.tree.add_command(clear_until_message)
