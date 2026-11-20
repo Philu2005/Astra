@@ -448,30 +448,53 @@ class mod(commands.Cog):
     async def _count_old_messages(self, channel: discord.TextChannel, amount: int) -> int:
         cutoff = utcnow() - timedelta(days=BULK_CUTOFF_DAYS)
         found = 0
+        scanned = 0
+        pinned = 0
         last_message = None
+
+        logging.info(
+            "[CLEAR DEBUG] Suche gestartet | Channel=%s (%s) | "
+            "Gesucht=%s | Cutoff=%s",
+            channel.name, channel.id, amount, cutoff
+        )
 
         while found < amount:
             scanned_any = False
-            # Wir fangen bei der aktuellsten Nachricht an, um nichts zu verpassen
+
             async for msg in channel.history(
-                limit=MAX_HISTORY_FETCH,
-                before=last_message,
-                oldest_first=False
+                    limit=MAX_HISTORY_FETCH,
+                    before=last_message,
+                    oldest_first=False
             ):
                 scanned_any = True
+                scanned += 1
                 last_message = msg
 
                 if msg.pinned:
+                    pinned += 1
                     continue
+
                 if msg.created_at >= cutoff:
                     continue
 
                 found += 1
+
+                logging.info(
+                    "[CLEAR DEBUG] Alte Nachricht gefunden | ID=%s | Datum=%s",
+                    msg.id, msg.created_at
+                )
+
                 if found >= amount:
                     break
 
             if not scanned_any:
                 break
+
+        logging.info(
+            "[CLEAR DEBUG] Suche beendet | Channel=%s (%s) | "
+            "Gescant=%s | Angepinnt=%s | Gefunden=%s",
+            channel.name, channel.id, scanned, pinned, found
+        )
 
         return found
 
